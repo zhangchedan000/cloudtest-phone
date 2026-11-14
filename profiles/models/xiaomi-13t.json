@@ -1,0 +1,26 @@
+{
+  "id": "xiaomi-13t",
+  "schema": 1,
+  "verified": false,
+  "verifyNote": "数值凭公开资料整理，待核实",
+  "gpuFamily": "Mali-G610",
+  "market": "GLOBAL",
+  "values": {
+    "brand": "Xiaomi",
+    "manufacturer": "Xiaomi",
+    "model": "2306EPN60G",
+    "marketName": "Xiaomi 13T",
+    "device": "aristotle",
+    "socModel": "MT6896",
+    "socManufacturer": "Mediatek",
+    "cpuParts": [{ "part": "Cortex-A55", "midr": "0x412fd050", "count": 4 }, { "part": "Cortex-A78", "midr": "0x411fd410", "count": 4 }],
+    "cpuMaxFreq": [2000000, 2000000, 2000000, 2000000, 3000000, 3000000, 3000000, 3100000],
+    "memTotal": 12,
+    "storageTotal": 256,
+    "resolution": { "w": 1220, "h": 2712 },
+    "dpi": 446,
+    "refreshRate": 144,
+    "touchPoints": 10
+  },
+  "androidVersions": [13, 14, 15]
+}

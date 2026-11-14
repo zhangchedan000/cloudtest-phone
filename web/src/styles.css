@@ -1,0 +1,103 @@
+/* 颜色只用主题变量（--fb-*，来自 theme/tokens.ts），这里不写颜色值。 */
+* { box-sizing: border-box; }
+html, body, #root, #root > .ant-app { margin: 0; height: 100%; }
+body { background: var(--fb-bg); color: var(--fb-text); font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif; }
+
+.pp-shell { display: flex; height: 100%; }
+.pp-sidebar { width: 200px; flex: none; background: var(--fb-sidebar-bg); color: var(--fb-sidebar-text); display: flex; flex-direction: column; padding: 16px 10px; }
+.pp-brand { font-weight: 700; font-size: 17px; padding: 6px 12px 18px; display: flex; gap: 8px; align-items: center; }
+.pp-nav { width: 100%; display: flex; gap: 10px; align-items: center; padding: 10px 12px; border: 0; border-radius: 8px; background: transparent; color: var(--fb-sidebar-text); font-size: 14px; cursor: pointer; text-align: left; }
+.pp-nav:hover { background: var(--fb-sidebar-hover); }
+.pp-nav-active { background: var(--fb-sidebar-card); color: var(--fb-on-accent); font-weight: 600; }
+.pp-sidebar-foot { margin-top: auto; padding: 8px 12px; font-size: 12px; color: var(--fb-sidebar-muted); }
+
+.pp-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.pp-header { display: flex; justify-content: space-between; align-items: center; padding: 14px 24px; background: var(--fb-surface); border-bottom: 1px solid var(--fb-line); }
+.pp-header h1 { margin: 0; font-size: 18px; }
+.pp-content { flex: 1; overflow: auto; padding: 20px 24px; }
+.pp-page { display: flex; flex-direction: column; gap: 16px; }
+
+.pp-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.pp-stat { background: var(--fb-surface); border: 1px solid var(--fb-line); border-radius: 12px; padding: 14px 16px; display: flex; flex-direction: column; gap: 4px; }
+.pp-stat span { color: var(--fb-text-muted); font-size: 13px; }
+.pp-stat b { font-size: 24px; }
+.pp-stat-success b { color: var(--fb-success); }
+.pp-stat-danger b { color: var(--fb-danger); }
+
+.pp-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.pp-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 14px; }
+.pp-grid-wide { grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); }
+
+.pp-card .ant-card-body { display: flex; flex-direction: column; gap: 10px; }
+.pp-card-selected { outline: 2px solid var(--fb-accent); }
+.pp-card-top { display: flex; align-items: center; gap: 8px; }
+.pp-card-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pp-card-screen { cursor: pointer; display: flex; justify-content: center; }
+.pp-card-meta { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--fb-text-secondary); }
+.pp-card-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; justify-content: space-between; }
+.pp-card-actions { display: flex; gap: 8px; }
+.pp-card-actions > * { flex: 1; }
+.pp-chip { font-size: 12px; padding: 1px 8px; border-radius: 999px; background: var(--fb-chip); border-left: 3px solid; }
+
+.pp-status { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; white-space: nowrap; }
+.pp-status i { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.pp-issues { display: inline-flex; gap: 8px; font-size: 12px; }
+
+/* 手机画面 */
+.pp-phone { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.pp-phone-screen { position: relative; overflow: hidden; background: var(--fb-sidebar-bg); border: 6px solid var(--fb-sidebar-card); border-radius: 22px; }
+.pp-phone-thumb .pp-phone-screen { width: 120px; height: 240px; border-width: 4px; border-radius: 16px; }
+.pp-phone-large .pp-phone-screen { width: 300px; height: 640px; }
+.pp-phone-status { display: flex; justify-content: space-between; padding: 6px 10px; font-size: 10px; color: var(--fb-on-accent); }
+.pp-phone-large .pp-phone-status { font-size: 13px; padding: 10px 16px; }
+.pp-phone-apps { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; padding: 18px 12px; }
+.pp-phone-large .pp-phone-apps { gap: 22px; padding: 40px 26px; }
+.pp-phone-app { aspect-ratio: 1; border-radius: 22%; opacity: .92; }
+.pp-phone-dock { position: absolute; bottom: 8px; left: 50%; transform: translateX(-50%); width: 40%; height: 4px; border-radius: 4px; background: var(--fb-on-accent-muted); }
+.pp-phone-off { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; color: var(--fb-sidebar-muted); font-size: 13px; }
+.pp-phone-off .anticon { font-size: 26px; }
+.pp-phone-error { color: var(--fb-danger); }
+.pp-phone-caption { font-size: 13px; color: var(--fb-text-muted); }
+
+/* 详情 */
+.pp-detail { display: flex; gap: 24px; align-items: flex-start; }
+.pp-detail-screen { position: sticky; top: 0; display: flex; flex-direction: column; align-items: center; gap: 8px; padding-right: 52px; }
+.pp-detail-controls { position: absolute; right: 0; top: 0; display: flex; flex-direction: column; gap: 8px; }
+.pp-detail-side { flex: 1; min-width: 0; }
+
+/* 参数面板 */
+.pp-params-head { margin-bottom: 12px; }
+.pp-alert { margin-bottom: 8px; }
+.pp-field-table { display: flex; flex-direction: column; }
+.pp-field-row { display: grid; grid-template-columns: 150px minmax(0, 1fr) 190px 130px; gap: 10px; align-items: center; padding: 7px 8px; border-bottom: 1px solid var(--fb-line-soft); border-radius: 6px; }
+.pp-field-row:hover { background: var(--fb-surface-muted); }
+.pp-field-label { color: var(--fb-text-secondary); font-size: 13px; }
+.pp-field-value { min-width: 0; overflow-wrap: anywhere; font-size: 13px; }
+.pp-field-mode { display: flex; align-items: center; gap: 2px; }
+.pp-field-apply { display: flex; gap: 4px; flex-wrap: wrap; }
+.pp-flag-error { background: var(--fb-danger-soft); }
+.pp-flag-warning { background: var(--fb-warning-soft); }
+.pp-changed .pp-field-label::after { content: ' ●'; color: var(--fb-accent); }
+.pp-params-foot { position: sticky; bottom: -24px; display: flex; justify-content: space-between; align-items: center; padding: 12px 0; margin-top: 12px; background: var(--fb-surface); border-top: 1px solid var(--fb-line); }
+.pp-help { display: inline-block; margin-left: 4px; width: 15px; height: 15px; line-height: 15px; text-align: center; border-radius: 50%; background: var(--fb-chip); font-size: 11px; cursor: help; }
+
+.pp-meter { display: grid; grid-template-columns: 40px 1fr; align-items: center; gap: 8px; font-size: 13px; color: var(--fb-text-muted); }
+
+.pp-muted { color: var(--fb-text-muted); }
+.pp-small { font-size: 12px; }
+.pp-center { text-align: center; }
+.pp-mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12.5px; }
+.pp-danger-text { color: var(--fb-danger); }
+
+@media (max-width: 760px) {
+  .pp-shell { flex-direction: column; }
+  .pp-sidebar { width: 100%; flex-direction: row; align-items: center; padding: 8px; overflow-x: auto; }
+  .pp-sidebar nav { display: flex; }
+  .pp-brand, .pp-sidebar-foot { display: none; }
+  .pp-nav { width: auto; white-space: nowrap; }
+  .pp-content { padding: 14px 16px; }
+  .pp-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .pp-detail { flex-direction: column; align-items: center; }
+  .pp-detail-screen { position: static; }
+  .pp-field-row { grid-template-columns: 1fr; gap: 4px; }
+}

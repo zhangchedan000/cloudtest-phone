@@ -1,0 +1,46 @@
+import { ApiOutlined, BulbOutlined, CloudServerOutlined, MobileOutlined, ProfileOutlined } from '@ant-design/icons'
+import { Button, Tooltip } from 'antd'
+import { useState, type ReactNode } from 'react'
+import { applyTheme, useTheme } from '@/theme'
+import { HostsPage } from '@/pages/other/HostsPage'
+import { ModelsPage } from '@/pages/other/ModelsPage'
+import { ProxiesPage } from '@/pages/other/ProxiesPage'
+import { PhonesPage } from '@/pages/phones/PhonesPage'
+
+/** 页面登记表：侧边栏和标题都从这里读（同 Prism 的 registry）。 */
+const PAGES: { key: string; label: string; icon: ReactNode; render: () => ReactNode }[] = [
+  { key: 'phones', label: '云手机', icon: <MobileOutlined />, render: () => <PhonesPage /> },
+  { key: 'proxies', label: '代理 IP', icon: <ApiOutlined />, render: () => <ProxiesPage /> },
+  { key: 'models', label: '机型库', icon: <ProfileOutlined />, render: () => <ModelsPage /> },
+  { key: 'hosts', label: '机器', icon: <CloudServerOutlined />, render: () => <HostsPage /> }
+]
+
+export function App() {
+  const [page, setPage] = useState(() => (location.hash.slice(1) || 'phones'))
+  const theme = useTheme()
+  const current = PAGES.find((p) => p.key === page) ?? PAGES[0]
+  const go = (key: string) => { setPage(key); history.replaceState(null, '', `#${key}`) }
+
+  return (
+    <div className="pp-shell">
+      <aside className="pp-sidebar">
+        <div className="pp-brand"><MobileOutlined /> 云手机</div>
+        <nav>
+          {PAGES.map((p) => (
+            <button key={p.key} className={`pp-nav ${p.key === current.key ? 'pp-nav-active' : ''}`} onClick={() => go(p.key)}>{p.icon}<span>{p.label}</span></button>
+          ))}
+        </nav>
+        <div className="pp-sidebar-foot">预览版 · 假数据</div>
+      </aside>
+      <main className="pp-main">
+        <header className="pp-header">
+          <h1>{current.label}</h1>
+          <Tooltip title={theme.mode === 'dark' ? '浅色' : '深色'}>
+            <Button type="text" icon={<BulbOutlined />} onClick={() => applyTheme({ ...theme, mode: theme.mode === 'dark' ? 'light' : 'dark' })} />
+          </Tooltip>
+        </header>
+        <div className="pp-content">{current.render()}</div>
+      </main>
+    </div>
+  )
+}

@@ -1,0 +1,82 @@
+{
+  "$comment": "设备参数字段清单（唯一定义）。管理页的参数面板、管家程序写入安卓的方式、一致性检查都从这里读。加字段只改这一个文件。",
+  "version": 1,
+  "groups": [
+    { "key": "basic", "label": "基本" },
+    { "key": "ids", "label": "标识" },
+    { "key": "hardware", "label": "硬件" },
+    { "key": "screen", "label": "屏幕" },
+    { "key": "sensors", "label": "传感器" },
+    { "key": "battery", "label": "电池" },
+    { "key": "network", "label": "网络与地区" },
+    { "key": "location", "label": "位置" },
+    { "key": "kernel", "label": "内核" }
+  ],
+  "fields": [
+    { "key": "brand", "group": "basic", "label": "品牌", "type": "string", "modes": ["model", "manual"], "apply": "restart", "sink": { "kind": "prop", "names": ["ro.product.brand", "ro.product.system.brand", "ro.product.vendor.brand", "ro.product.odm.brand", "ro.product.product.brand"] } },
+    { "key": "manufacturer", "group": "basic", "label": "厂商", "type": "string", "modes": ["model", "manual"], "apply": "restart", "sink": { "kind": "prop", "names": ["ro.product.manufacturer", "ro.product.system.manufacturer", "ro.product.vendor.manufacturer", "ro.product.odm.manufacturer", "ro.product.product.manufacturer"] } },
+    { "key": "model", "group": "basic", "label": "型号", "type": "string", "modes": ["model", "manual"], "apply": "restart", "sink": { "kind": "prop", "names": ["ro.product.model", "ro.product.system.model", "ro.product.vendor.model", "ro.product.odm.model", "ro.product.product.model"] } },
+    { "key": "marketName", "group": "basic", "label": "市场名称", "type": "string", "modes": ["model", "manual"], "apply": "restart", "sink": { "kind": "prop", "names": ["ro.product.marketname"] } },
+    { "key": "device", "group": "basic", "label": "设备代号", "type": "string", "modes": ["model", "manual"], "apply": "restart", "sink": { "kind": "prop", "names": ["ro.product.device", "ro.product.system.device", "ro.product.vendor.device", "ro.product.odm.device", "ro.product.product.device", "ro.build.product"] } },
+    { "key": "deviceName", "group": "basic", "label": "设备名（蓝牙/设置里显示）", "type": "string", "modes": ["random", "manual", "model"], "apply": "restart", "sink": { "kind": "setting", "names": ["global:device_name", "secure:bluetooth_name"] } },
+    { "key": "androidVersion", "group": "basic", "label": "安卓版本", "type": "enum", "readonly": true, "note": "由镜像决定，不能只改数字", "modes": ["image"], "apply": "image", "sink": { "kind": "image" } },
+    { "key": "fingerprint", "group": "basic", "label": "Build 指纹", "type": "string", "modes": ["model", "manual"], "apply": "restart", "sink": { "kind": "prop", "names": ["ro.build.fingerprint", "ro.system.build.fingerprint", "ro.vendor.build.fingerprint", "ro.odm.build.fingerprint", "ro.product.build.fingerprint", "ro.bootimage.build.fingerprint"] } },
+    { "key": "buildId", "group": "basic", "label": "Build ID", "type": "string", "modes": ["model", "manual"], "apply": "restart", "sink": { "kind": "prop", "names": ["ro.build.id", "ro.build.display.id"] } },
+    { "key": "incremental", "group": "basic", "label": "版本号（incremental）", "type": "string", "modes": ["model", "manual"], "apply": "restart", "sink": { "kind": "prop", "names": ["ro.build.version.incremental"] } },
+    { "key": "securityPatch", "group": "basic", "label": "安全补丁日期", "type": "date", "modes": ["model", "manual"], "apply": "restart", "sink": { "kind": "prop", "names": ["ro.build.version.security_patch"] } },
+    { "key": "buildDate", "group": "basic", "label": "编译时间", "type": "datetime", "modes": ["model", "manual"], "apply": "restart", "sink": { "kind": "prop", "names": ["ro.build.date.utc"] } },
+
+    { "key": "androidId", "group": "ids", "label": "Android ID", "type": "hex", "length": 16, "modes": ["random", "manual"], "apply": "restart", "sink": { "kind": "setting", "names": ["secure:android_id"] } },
+    { "key": "serial", "group": "ids", "label": "序列号", "type": "string", "pattern": "^[A-Za-z0-9]{8,16}$", "modes": ["random", "manual"], "apply": "restart", "sink": { "kind": "prop", "names": ["ro.serialno", "ro.boot.serialno"] } },
+    { "key": "wifiMac", "group": "ids", "label": "WiFi MAC", "type": "mac", "modes": ["random", "manual"], "apply": "restart", "sink": { "kind": "netif", "names": ["wlan0"] } },
+    { "key": "bluetoothMac", "group": "ids", "label": "蓝牙 MAC", "type": "mac", "modes": ["random", "manual"], "apply": "restart", "sink": { "kind": "setting", "names": ["secure:bluetooth_address"] } },
+    { "key": "gaid", "group": "ids", "label": "广告 ID", "type": "uuid", "modes": ["random", "manual"], "apply": "restart", "sink": { "kind": "app-data", "names": ["gms:adid"] } },
+
+    { "key": "socModel", "group": "hardware", "label": "芯片型号", "type": "string", "modes": ["model", "manual"], "apply": "restart", "sink": { "kind": "prop", "names": ["ro.soc.model", "ro.board.platform", "ro.hardware"] } },
+    { "key": "socManufacturer", "group": "hardware", "label": "芯片厂商", "type": "string", "modes": ["model", "manual"], "apply": "restart", "sink": { "kind": "prop", "names": ["ro.soc.manufacturer"] } },
+    { "key": "cpuParts", "group": "hardware", "label": "CPU 核心型号", "type": "cpu-layout", "modes": ["model", "manual"], "apply": "restart", "sink": { "kind": "fakefile", "names": ["/proc/cpuinfo", "/sys/devices/system/cpu/cpu*/regs/identification/midr_el1"] } },
+    { "key": "cpuMaxFreq", "group": "hardware", "label": "CPU 最高频率", "type": "freq-list", "unit": "kHz", "modes": ["model", "manual"], "apply": "restart", "sink": { "kind": "fakefile", "names": ["/sys/devices/system/cpu/cpu*/cpufreq/cpuinfo_max_freq"] } },
+    { "key": "memTotal", "group": "hardware", "label": "内存", "type": "int", "unit": "GB", "modes": ["model", "manual"], "apply": "restart", "sink": { "kind": "fakefile", "names": ["/proc/meminfo"] }, "note": "同时决定容器内存上限" },
+    { "key": "storageTotal", "group": "hardware", "label": "存储容量", "type": "int", "unit": "GB", "modes": ["model", "manual"], "apply": "restart", "sink": { "kind": "quota" } },
+    { "key": "gpuRenderer", "group": "hardware", "label": "显卡", "type": "string", "readonly": true, "note": "来自真实显卡驱动，跟板子走，改不了", "modes": ["board"], "apply": "board", "sink": { "kind": "board" } },
+
+    { "key": "resolution", "group": "screen", "label": "分辨率", "type": "size", "modes": ["model", "manual"], "apply": "restart", "sink": { "kind": "boot", "names": ["width", "height"] } },
+    { "key": "dpi", "group": "screen", "label": "DPI", "type": "int", "modes": ["model", "manual"], "apply": "restart", "sink": { "kind": "boot", "names": ["dpi"] } },
+    { "key": "refreshRate", "group": "screen", "label": "刷新率", "type": "int", "unit": "Hz", "modes": ["model", "manual"], "apply": "restart", "sink": { "kind": "boot", "names": ["fps"] } },
+    { "key": "touchPoints", "group": "screen", "label": "触控点数", "type": "int", "min": 2, "max": 10, "modes": ["model", "manual"], "apply": "restart", "sink": { "kind": "uinput" } },
+
+    { "key": "sensors", "group": "sensors", "label": "传感器列表", "type": "sensor-list", "modes": ["model", "manual"], "apply": "restart", "sink": { "kind": "sensor-hal" }, "stage": "later" },
+
+    { "key": "batteryLevel", "group": "battery", "label": "电量", "type": "int", "unit": "%", "min": 1, "max": 100, "modes": ["random", "manual"], "apply": "live", "sink": { "kind": "battery" } },
+    { "key": "batteryCharging", "group": "battery", "label": "充电状态", "type": "enum", "options": ["ac", "usb", "none"], "modes": ["random", "manual"], "apply": "live", "sink": { "kind": "battery" } },
+    { "key": "batteryTemp", "group": "battery", "label": "电池温度", "type": "float", "unit": "℃", "modes": ["random", "manual"], "apply": "live", "sink": { "kind": "battery" } },
+    { "key": "batteryHealth", "group": "battery", "label": "健康度", "type": "enum", "options": ["good", "overheat", "cold"], "modes": ["manual"], "apply": "live", "sink": { "kind": "battery" } },
+
+    { "key": "timezone", "group": "network", "label": "时区", "type": "timezone", "modes": ["proxy", "manual"], "apply": "live", "sink": { "kind": "prop", "names": ["persist.sys.timezone"] } },
+    { "key": "locale", "group": "network", "label": "语言", "type": "locale", "modes": ["proxy", "manual"], "apply": "restart", "sink": { "kind": "prop", "names": ["persist.sys.locale"] } },
+    { "key": "wifiSsid", "group": "network", "label": "WiFi 名称", "type": "string", "modes": ["random", "manual"], "apply": "restart", "sink": { "kind": "virt-wifi" }, "stage": "later" },
+    { "key": "wifiRssi", "group": "network", "label": "WiFi 信号强度", "type": "int", "unit": "dBm", "modes": ["random", "manual"], "apply": "live", "sink": { "kind": "virt-wifi" }, "stage": "later" },
+    { "key": "simOperator", "group": "network", "label": "SIM 运营商", "type": "carrier", "modes": ["proxy", "manual", "none"], "apply": "restart", "sink": { "kind": "ril" }, "stage": "later" },
+    { "key": "simCountry", "group": "network", "label": "SIM 国家", "type": "country", "modes": ["proxy", "manual"], "apply": "restart", "sink": { "kind": "ril" }, "stage": "later" },
+
+    { "key": "gps", "group": "location", "label": "GPS 经纬度", "type": "latlng", "modes": ["proxy", "manual"], "apply": "live", "sink": { "kind": "location" } },
+
+    { "key": "kernelRelease", "group": "kernel", "label": "内核版本号", "type": "string", "modes": ["model", "random", "manual"], "apply": "restart", "sink": { "kind": "fakefile", "names": ["/proc/version", "/proc/sys/kernel/osrelease", "uname()"] } },
+    { "key": "kernelBuild", "group": "kernel", "label": "内核编译信息", "type": "string", "modes": ["model", "random", "manual"], "apply": "restart", "sink": { "kind": "fakefile", "names": ["/proc/version", "/proc/sys/kernel/version"] } }
+  ],
+  "modes": {
+    "manual": "手动填写",
+    "random": "按真实范围随机",
+    "model": "跟随机型",
+    "proxy": "跟随代理 IP 所在地",
+    "image": "由安卓镜像决定",
+    "board": "由板子硬件决定",
+    "none": "无"
+  },
+  "apply": {
+    "live": "立即生效",
+    "restart": "重启生效",
+    "image": "换镜像才能改",
+    "board": "换板子才能改"
+  }
+}

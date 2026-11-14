@@ -1,0 +1,26 @@
+{
+  "id": "redmi-k50",
+  "schema": 1,
+  "verified": false,
+  "verifyNote": "数值凭公开资料整理，正式使用前要用固件备份或真机 ADB 核实（fingerprint、buildId 等暂空）",
+  "gpuFamily": "Mali-G610",
+  "market": "CN",
+  "values": {
+    "brand": "Redmi",
+    "manufacturer": "Xiaomi",
+    "model": "22041211AC",
+    "marketName": "Redmi K50",
+    "device": "rubens",
+    "socModel": "MT6895",
+    "socManufacturer": "Mediatek",
+    "cpuParts": [{ "part": "Cortex-A55", "midr": "0x412fd050", "count": 4 }, { "part": "Cortex-A78", "midr": "0x411fd410", "count": 4 }],
+    "cpuMaxFreq": [2000000, 2000000, 2000000, 2000000, 2850000, 2850000, 2850000, 2850000],
+    "memTotal": 8,
+    "storageTotal": 256,
+    "resolution": { "w": 1440, "h": 3200 },
+    "dpi": 560,
+    "refreshRate": 120,
+    "touchPoints": 10
+  },
+  "androidVersions": [12, 13, 14]
+}
