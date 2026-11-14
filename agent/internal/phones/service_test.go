@@ -317,3 +317,49 @@ func TestStartMountsFakeFiles(t *testing.T) {
 		t.Fatalf("挂载状态不对：%+v", st)
 	}
 }
+
+func TestResetClearsDataKeepsIdentity(t *testing.T) {
+	svc, fd, _ := newTestService(t, true, "software")
+	ctx := context.Background()
+	p, _ := svc.Create(CreateRequest{Name: "A", ModelID: "poco-x4-gt", AndroidVersion: 14, ProxyID: DirectDevProxyID})
+	_ = svc.Start(ctx, p.ID)
+	marker := filepath.Join(svc.cfg.DataDir, "phones", p.ID, "data", "app.db")
+	_ = os.WriteFile(marker, []byte("x"), 0o644)
+	if err := svc.Reset(ctx, p.ID, ResetRequest{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(marker); !os.IsNotExist(err) {
+		t.Fatal("重置后旧数据应该不在了")
+	}
+	trash, _ := os.ReadDir(filepath.Join(svc.cfg.DataDir, "trash"))
+	if len(trash) != 1 || !strings.Contains(trash[0].Name(), "-reset-") {
+		t.Fatalf("旧数据应该进回收站：%v", trash)
+	}
+	after := svc.List(ctx)[0]
+	if after.Fields["androidId"].Value != p.Fields["androidId"].Value {
+		t.Fatal("不选「换新机」时，参数不能变")
+	}
+	if !fd.running["pp-"+p.ID] {
+		t.Fatal("原来在运行的，重置后要重新开机")
+	}
+}
+
+func TestResetRenewAndReflash(t *testing.T) {
+	svc, _, _ := newTestService(t, true, "software")
+	svc.cfg.Images[13] = "redroid:13"
+	ctx := context.Background()
+	p, _ := svc.Create(CreateRequest{Name: "A", ModelID: "poco-x4-gt", AndroidVersion: 14, ProxyID: DirectDevProxyID})
+	if err := svc.Reset(ctx, p.ID, ResetRequest{Renew: true, AndroidVersion: 13}); err != nil {
+		t.Fatal(err)
+	}
+	after := svc.List(ctx)[0]
+	if after.AndroidVersion != 13 {
+		t.Fatalf("刷机后应该是 Android 13，实际 %d", after.AndroidVersion)
+	}
+	if after.Fields["androidId"].Value == p.Fields["androidId"].Value {
+		t.Fatal("选了换新机，Android ID 应该变")
+	}
+	if err := svc.Reset(ctx, p.ID, ResetRequest{AndroidVersion: 9}); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("没有镜像的版本应该拒绝：%v", err)
+	}
+}

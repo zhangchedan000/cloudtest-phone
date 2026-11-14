@@ -39,6 +39,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /api/phones/{id}", s.deletePhone)
 	mux.HandleFunc("POST /api/phones/{id}/start", s.action(func(r *http.Request, id string) error { return s.svc.Start(r.Context(), id) }))
 	mux.HandleFunc("POST /api/phones/{id}/stop", s.action(func(r *http.Request, id string) error { return s.svc.Stop(r.Context(), id) }))
+	mux.HandleFunc("POST /api/phones/{id}/reset", s.resetPhone)
 	mux.HandleFunc("POST /api/phones/{id}/renew", s.action(func(_ *http.Request, id string) error { return s.svc.Renew(id) }))
 	mux.HandleFunc("GET /api/proxies", s.listProxies)
 	mux.HandleFunc("POST /api/proxies", s.createProxy)
@@ -165,6 +166,21 @@ func (s *Server) savePhone(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.svc.Save(r.PathValue("id"), req); err != nil {
+		fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func (s *Server) resetPhone(w http.ResponseWriter, r *http.Request) {
+	var req phones.ResetRequest
+	if r.ContentLength > 0 {
+		if err := decode(r, &req); err != nil {
+			fail(w, err)
+			return
+		}
+	}
+	if err := s.svc.Reset(r.Context(), r.PathValue("id"), req); err != nil {
 		fail(w, err)
 		return
 	}
