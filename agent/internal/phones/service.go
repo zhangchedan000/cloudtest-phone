@@ -57,13 +57,14 @@ type Service struct {
 	models []Model
 	now    func() time.Time
 	run    Runner
+	raw    RawRunner
 	fakes  fakeTracker
 	// async 为 false 时伪造文件同步挂载（测试用）。
 	async bool
 }
 
 func NewService(cfg Config, d Docker, st *store.Store, cat *Catalog, models []Model) *Service {
-	return &Service{cfg: cfg, docker: d, store: st, cat: cat, models: models, now: time.Now, run: execRunner{}, async: true}
+	return &Service{cfg: cfg, docker: d, store: st, cat: cat, models: models, now: time.Now, run: execRunner{}, raw: execRaw{}, async: true}
 }
 
 func (s *Service) Models() []Model   { return s.models }

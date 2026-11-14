@@ -5,12 +5,14 @@ import (
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io/fs"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/zhangchedan000/prism-phone/agent/internal/phones"
+	"github.com/zhangchedan000/prism-phone/agent/internal/proxycheck"
 	"github.com/zhangchedan000/prism-phone/agent/internal/selfcheck"
 	"github.com/zhangchedan000/prism-phone/agent/internal/store"
 )
@@ -41,8 +43,13 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/phones/{id}/stop", s.action(func(r *http.Request, id string) error { return s.svc.Stop(r.Context(), id) }))
 	mux.HandleFunc("POST /api/phones/{id}/reset", s.resetPhone)
 	mux.HandleFunc("POST /api/phones/{id}/renew", s.action(func(_ *http.Request, id string) error { return s.svc.Renew(id) }))
+	mux.HandleFunc("GET /api/phones/{id}/screen", s.screen)
+	mux.HandleFunc("POST /api/phones/{id}/input", s.input)
 	mux.HandleFunc("GET /api/proxies", s.listProxies)
 	mux.HandleFunc("POST /api/proxies", s.createProxy)
+	mux.HandleFunc("PUT /api/proxies/{id}", s.updateProxy)
+	mux.HandleFunc("DELETE /api/proxies/{id}", s.deleteProxy)
+	mux.HandleFunc("POST /api/proxies/{id}/check", s.checkProxy)
 	mux.HandleFunc("GET /api/groups", s.listGroups)
 	mux.HandleFunc("POST /api/groups", s.createGroup)
 	if s.web != nil {
@@ -87,7 +94,7 @@ func fail(w http.ResponseWriter, err error) {
 		writeErr(w, http.StatusNotFound, err.Error())
 	case errors.Is(err, phones.ErrInvalid):
 		writeErr(w, http.StatusBadRequest, err.Error())
-	case errors.Is(err, phones.ErrBlocked):
+	case errors.Is(err, phones.ErrBlocked), errors.Is(err, phones.ErrNotRunning), errors.Is(err, ErrInUse):
 		writeErr(w, http.StatusConflict, err.Error())
 	default:
 		writeErr(w, http.StatusInternalServerError, err.Error())
@@ -248,4 +255,118 @@ func (s *Server) createGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusCreated, g)
+}
+
+func (s *Server) screen(w http.ResponseWriter, r *http.Request) {
+	png, err := s.svc.Screenshot(r.Context(), r.PathValue("id"))
+	if err != nil {
+		fail(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", "image/png")
+	w.Header().Set("Cache-Control", "no-store")
+	_, _ = w.Write(png)
+}
+
+func (s *Server) input(w http.ResponseWriter, r *http.Request) {
+	var req phones.InputRequest
+	if err := decode(r, &req); err != nil {
+		fail(w, err)
+		return
+	}
+	if err := s.svc.Input(r.Context(), r.PathValue("id"), req); err != nil {
+		fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+// ErrInUse 代理还被设备用着，不能删。
+var ErrInUse = errors.New("还在使用中")
+
+func (s *Server) updateProxy(w http.ResponseWriter, r *http.Request) {
+	var in store.Proxy
+	if err := decode(r, &in); err != nil {
+		fail(w, err)
+		return
+	}
+	if strings.TrimSpace(in.Name) == "" || strings.TrimSpace(in.Address) == "" {
+		writeErr(w, http.StatusBadRequest, "名称和地址不能为空")
+		return
+	}
+	id := r.PathValue("id")
+	var out store.Proxy
+	err := s.store.Update(func(st *store.State) error {
+		for i := range st.Proxies {
+			if st.Proxies[i].ID == id {
+				changed := st.Proxies[i].Address != in.Address || st.Proxies[i].Protocol != in.Protocol
+				st.Proxies[i].Name, st.Proxies[i].Protocol, st.Proxies[i].Address, st.Proxies[i].Note = in.Name, in.Protocol, in.Address, in.Note
+				if changed {
+					st.Proxies[i].Check = nil // 地址变了，上次检测结果作废
+				}
+				out = st.Proxies[i]
+				return nil
+			}
+		}
+		return store.ErrNotFound
+	})
+	if err != nil {
+		fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+func (s *Server) deleteProxy(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	err := s.store.Update(func(st *store.State) error {
+		for _, p := range st.Phones {
+			if p.ProxyID == id {
+				return fmt.Errorf("%w：设备 %s 还在用这个代理，先给它换一个", ErrInUse, p.Name)
+			}
+		}
+		for i := range st.Proxies {
+			if st.Proxies[i].ID == id {
+				st.Proxies = append(st.Proxies[:i], st.Proxies[i+1:]...)
+				return nil
+			}
+		}
+		return store.ErrNotFound
+	})
+	if err != nil {
+		fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+// checkProxy 检测代理并把结果存起来（开机前检查会用到）。
+func (s *Server) checkProxy(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	var px *store.Proxy
+	for _, p := range s.store.Snapshot().Proxies {
+		if p.ID == id {
+			p := p
+			px = &p
+		}
+	}
+	if px == nil {
+		fail(w, store.ErrNotFound)
+		return
+	}
+	res := proxycheck.Check(r.Context(), *px)
+	err := s.store.Update(func(st *store.State) error {
+		for i := range st.Proxies {
+			if st.Proxies[i].ID == id {
+				st.Proxies[i].Check = &res
+				return nil
+			}
+		}
+		return store.ErrNotFound
+	})
+	if err != nil {
+		fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, res)
 }
