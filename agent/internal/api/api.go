@@ -66,6 +66,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/proxies/import", s.importProxies)
 	mux.HandleFunc("GET /api/groups", s.listGroups)
 	mux.HandleFunc("POST /api/groups", s.createGroup)
+	mux.HandleFunc("PUT /api/groups/{id}", s.updateGroup)
+	mux.HandleFunc("DELETE /api/groups/{id}", s.deleteGroup)
 	if s.web != nil {
 		mux.Handle("/", http.FileServerFS(s.web))
 	}
@@ -462,4 +464,67 @@ func (s *Server) importProxies(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"added": len(added), "duplicates": len(nodes) - len(added), "skipped": skipped})
+}
+
+func (s *Server) updateGroup(w http.ResponseWriter, r *http.Request) {
+	var in store.Group
+	if err := decode(r, &in); err != nil {
+		fail(w, err)
+		return
+	}
+	if strings.TrimSpace(in.Name) == "" {
+		writeErr(w, http.StatusBadRequest, "分组名不能为空")
+		return
+	}
+	id := r.PathValue("id")
+	var out store.Group
+	err := s.store.Update(func(st *store.State) error {
+		for i := range st.Groups {
+			if st.Groups[i].ID == id {
+				st.Groups[i].Name = strings.TrimSpace(in.Name)
+				if in.Color != "" {
+					st.Groups[i].Color = in.Color
+				}
+				out = st.Groups[i]
+				return nil
+			}
+		}
+		return store.ErrNotFound
+	})
+	if err != nil {
+		fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+// deleteGroup 删分组：组里的设备变成「未分组」，设备本身不动。
+func (s *Server) deleteGroup(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	moved := 0
+	err := s.store.Update(func(st *store.State) error {
+		found := false
+		for i := range st.Groups {
+			if st.Groups[i].ID == id {
+				st.Groups = append(st.Groups[:i], st.Groups[i+1:]...)
+				found = true
+				break
+			}
+		}
+		if !found {
+			return store.ErrNotFound
+		}
+		for i := range st.Phones {
+			if st.Phones[i].GroupID == id {
+				st.Phones[i].GroupID = ""
+				moved++
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "ungrouped": moved})
 }

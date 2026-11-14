@@ -67,7 +67,9 @@ export const api = {
   deleteProxy: (id: string) => call('DELETE', `/proxies/${id}`),
   importProxies: (req: { url?: string; text?: string; note?: string }) => call<{ added: number; duplicates: number; skipped?: string[] }>('POST', '/proxies/import', req),
   groups: () => call<Group[]>('GET', '/groups'),
-  createGroup: (group: Omit<Group, 'id'>) => call<Group>('POST', '/groups', group)
+  createGroup: (group: Omit<Group, 'id'>) => call<Group>('POST', '/groups', group),
+  updateGroup: (group: Group) => call<Group>('PUT', `/groups/${group.id}`, group),
+  deleteGroup: (id: string) => call('DELETE', `/groups/${id}`)
 }
 
 /** 上传文件（安装 APK / 传到手机目录），带进度回调。 */

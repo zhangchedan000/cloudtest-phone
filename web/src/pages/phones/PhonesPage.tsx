@@ -6,6 +6,7 @@ import { IssueBadge, ProxyCell, StatusDot } from '@/components/bits'
 import { blocksStart } from '@/data/consistency'
 import { useWorkspace } from '@/data/store'
 import type { Phone } from '@/data/types'
+import { GroupsModal } from './GroupsModal'
 import { NewPhoneModal } from './NewPhoneModal'
 import { PhoneDrawer } from './PhoneDrawer'
 
@@ -17,6 +18,7 @@ export function PhonesPage() {
   const [hostId, setHostId] = useState<string>('all')
   const [query, setQuery] = useState('')
   const [selected, setSelected] = useState<string[]>([])
+  const [managingGroups, setManagingGroups] = useState(false)
   const [open, setOpen] = useState<Phone>()
   const [creating, setCreating] = useState(false)
 
@@ -66,6 +68,7 @@ export function PhonesPage() {
         <Space wrap>
           <Segmented value={view} onChange={(v) => setView(v as 'cards' | 'list')} options={[{ value: 'cards', icon: <AppstoreOutlined />, label: '画面' }, { value: 'list', icon: <UnorderedListOutlined />, label: '列表' }]} />
           <Select style={{ width: 150 }} value={groupId} onChange={setGroupId} options={[{ value: 'all', label: '全部分组' }, ...ws.groups.map((g) => ({ value: g.id, label: g.name }))]} />
+          <Button onClick={() => setManagingGroups(true)}>分组管理</Button>
           <Select style={{ width: 150 }} value={hostId} onChange={setHostId} options={[{ value: 'all', label: '全部机器' }, ...ws.hosts.map((h) => ({ value: h.id, label: h.name }))]} />
           <Input allowClear prefix={<SearchOutlined />} placeholder="名称 / 机型" value={query} onChange={(e) => setQuery(e.target.value)} style={{ width: 200 }} />
         </Space>
@@ -126,6 +129,7 @@ export function PhonesPage() {
       )}
 
       <PhoneDrawer phone={open} onClose={() => setOpen(undefined)} />
+      <GroupsModal open={managingGroups} onClose={() => setManagingGroups(false)} />
       <NewPhoneModal open={creating} onClose={() => setCreating(false)} />
     </div>
   )

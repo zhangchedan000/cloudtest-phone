@@ -36,6 +36,8 @@ interface Workspace {
   addProxy: (proxy: Proxy) => Promise<void>
   checkProxies: (ids: string[]) => Promise<void>
   removeProxy: (id: string) => Promise<void>
+  saveGroup: (group: Omit<Group, 'id'> & { id?: string }) => Promise<void>
+  removeGroup: (id: string) => Promise<void>
   importProxies: (req: { url?: string; text?: string; note?: string }) => Promise<{ added: number; duplicates: number; skipped?: string[] }>
   input: (id: string, req: InputRequest) => Promise<void>
   login: (token: string) => Promise<void>
@@ -170,6 +172,21 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         const result = await api.importProxies(req)
         await load().catch(() => undefined)
         return result
+      },
+      saveGroup: async (group) => {
+        if (!live) {
+          setGroups((list) => (group.id ? list.map((g) => (g.id === group.id ? { ...g, ...group } as Group : g)) : [...list, { ...group, id: `g-${Date.now().toString(36)}` }]))
+          return
+        }
+        await each([group.id ?? 'new'], '保存分组', () => (group.id ? api.updateGroup(group as Group) : api.createGroup(group)))
+      },
+      removeGroup: async (id) => {
+        if (!live) {
+          setGroups((list) => list.filter((g) => g.id !== id))
+          setPhones((list) => list.map((p) => (p.groupId === id ? { ...p, groupId: '' } : p)))
+          return
+        }
+        await each([id], '删除分组', () => api.deleteGroup(id))
       },
       input: async (id, req) => {
         if (!live) return
