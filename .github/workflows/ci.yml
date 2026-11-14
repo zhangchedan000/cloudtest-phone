@@ -1,0 +1,46 @@
+name: 测试和编译
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache-dependency-path: agent/go.mod
+      - name: 管理页：安装依赖
+        working-directory: web
+        run: npm ci
+      - name: 管理页：类型检查和单元测试
+        working-directory: web
+        run: npx tsc --noEmit && npx vitest run
+      - name: 管理页：编译
+        working-directory: web
+        run: npm run build
+      - name: 管家程序：单元测试
+        working-directory: agent
+        run: |
+          mkdir -p internal/assets/web && cp -r ../profiles internal/assets/profiles
+          echo ok > internal/assets/web/index.html
+          go vet ./... && go test ./...
+      - name: 管家程序：编译 ARM64（内嵌管理页和机型库）
+        run: bash agent/build.sh "$PWD/prism-phone-agent-linux-arm64"
+      - name: 脚本语法检查
+        run: for f in host/*.sh; do bash -n "$f"; done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: prism-phone-agent-linux-arm64
+          path: prism-phone-agent-linux-arm64
+          retention-days: 30
