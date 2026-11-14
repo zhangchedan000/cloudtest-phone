@@ -30,3 +30,16 @@
 | 甲骨文阿什本 ARM（`instance-20260727-1515`） | 开发测试机，可重启，**不能失联** |
 | 甲骨文新加坡 ARM（`instance-20260730-1622`） | 跑现有业务（Prism 团队服务等），**不动** |
 | RK3588 板子（待买） | 最终运行环境，显卡加速 |
+
+## 部署（ARM64 Linux，root）
+
+```bash
+git clone https://github.com/zhangchedan000/prism-phone /opt/prism-phone/repo && cd /opt/prism-phone/repo
+bash host/setup-host.sh                      # 第一次：Docker、binderfs 等
+bash host/install-agent.sh --no-pull         # 编译并安装管家程序（systemd 服务 prism-phone-agent）
+bash host/itest-api.sh                       # 实机测试，逐项打勾
+```
+
+- 更新：`cd /opt/prism-phone/repo && git pull && bash host/install-agent.sh --no-pull`（新程序起不来会自动换回旧的）
+- 参数：`/etc/prism-phone/agent.env`；管理页默认只监听本机，在自己电脑上 `ssh -L 8099:127.0.0.1:8099 服务器` 后打开 http://127.0.0.1:8099
+- 网络模块（每台手机走自己的代理）：`bash host/network.sh install` → 管家程序参数加 `-mihomo-api 127.0.0.1:9090` → `bash host/network.sh apply`（3 分钟内不 `confirm` 自动撤销）
