@@ -59,6 +59,7 @@ type Service struct {
 	run      Runner
 	raw      RawRunner
 	boots    bootTracker
+	streams  streamTracker
 	settings settingsTracker
 	// netGuard 网络模块开着时检查这台设备有没有出口；返回错误就禁止开机（绝不走宿主机网络）。
 	netGuard func(id string) error

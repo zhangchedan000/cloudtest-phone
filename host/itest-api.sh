@@ -40,6 +40,12 @@ done
 curl -s -m 60 -o "$TMP/s1.png" "$BASE/api/phones/$ID/screen" ${PP_TOKEN:+-H "Authorization: Bearer $PP_TOKEN"}
 file -b "$TMP/s1.png" | grep -q PNG && ok "截屏：$(file -b "$TMP/s1.png" | cut -d, -f2)" || bad "截屏失败"
 
+curl -s -m 8 -o "$TMP/v.h264" "$BASE/api/phones/$ID/stream?w=540&h=1230&br=2000000" ${PP_TOKEN:+-H "Authorization: Bearer $PP_TOKEN"}
+vb=$(stat -c %s "$TMP/v.h264" 2>/dev/null || echo 0)
+[ "$vb" -gt 2000 ] && head -c 4 "$TMP/v.h264" | od -An -tx1 | grep -q "00 00 00 01" && ok "视频流：8 秒收到 $((vb/1024)) KB H.264" || bad "视频流：只收到 $vb 字节（$(head -c 200 "$TMP/v.h264")）"
+sleep 2
+docker exec "$C" pgrep -x screenrecord >/dev/null && bad "页面断开后 screenrecord 还在跑" || ok "页面断开后 screenrecord 已停"
+
 for body in '{"kind":"key","key":"home"}' '{"kind":"tap","x":540,"y":1200}' '{"kind":"swipe","x":540,"y":2000,"x2":540,"y2":600,"durationMs":300}' '{"kind":"key","key":"back"}' '{"kind":"text","text":"hello world"}'; do
   r=$(api POST "/phones/$ID/input" "$body"); echo "$r" | grep -q '"ok":true' && ok "操作 $body" || bad "操作 $body：$r"
 done

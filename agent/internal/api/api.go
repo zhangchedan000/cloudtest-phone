@@ -54,6 +54,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/phones/{id}/reset", s.resetPhone)
 	mux.HandleFunc("POST /api/phones/{id}/renew", s.action(func(_ *http.Request, id string) error { return s.svc.Renew(id) }))
 	mux.HandleFunc("GET /api/phones/{id}/screen", s.screen)
+	mux.HandleFunc("GET /api/phones/{id}/stream", s.stream)
 	mux.HandleFunc("POST /api/phones/{id}/input", s.input)
 	mux.HandleFunc("POST /api/phones/{id}/apk", s.installAPK)
 	mux.HandleFunc("GET /api/phones/{id}/logs", s.logs)

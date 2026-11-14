@@ -150,3 +150,13 @@ func TestReadyOutput(t *testing.T) {
 		}
 	}
 }
+
+func TestStreamArgs(t *testing.T) {
+	got := strings.Join(streamArgs(StreamOptions{Width: 541, Height: 1230, BitRate: 1_000_000}), " ")
+	if got != "screenrecord --output-format=h264 --time-limit 180 --size 528x1216 --bit-rate 1000000 -" {
+		t.Fatalf("参数不对：%s", got)
+	}
+	if got := strings.Join(streamArgs(StreamOptions{Width: 99999, BitRate: -1}), " "); got != "screenrecord --output-format=h264 --time-limit 180 --bit-rate 2000000 -" {
+		t.Fatalf("不合理的参数应用默认值：%s", got)
+	}
+}
