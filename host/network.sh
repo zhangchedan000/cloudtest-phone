@@ -86,6 +86,9 @@ apply_rules() {
     log "已安排 3 分钟后自动撤销；确认没问题后执行：bash $0 confirm"
   fi
 
+  # 透明代理要的内核模块：内核里有，但不会自动加载（踩坑 #19）；顺便设成开机自动加载
+  modprobe nft_tproxy && modprobe nft_socket || die "内核没有 nft_tproxy 模块，透明代理用不了"
+  printf 'nft_tproxy\nnft_socket\n' > /etc/modules-load.d/prism-phone.conf
   local rules
   rules=$(cat <<EOF
 table ip prism_phone {
@@ -101,7 +104,8 @@ table ip prism_phone {
     ip saddr != $SUBNET return
     # 发给网关本身的（DNS、管家程序）不代理
     ip daddr $GATEWAY return
-    meta l4proto { tcp, udp } tproxy to 127.0.0.1:$TPROXY_PORT meta mark set $MARK accept
+    meta l4proto tcp tproxy to 127.0.0.1:$TPROXY_PORT meta mark set $MARK accept
+    meta l4proto udp tproxy to 127.0.0.1:$TPROXY_PORT meta mark set $MARK accept
   }
   chain pp_forward {
     type filter hook forward priority filter; policy accept;
