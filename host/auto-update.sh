@@ -28,7 +28,10 @@ run() {
   local here there
   here=$(git rev-parse HEAD)
   there=$(git rev-parse "origin/$BRANCH")
-  if [ "$here" = "$there" ] && [ -z "$(git status --porcelain)" ]; then
+  # 正在运行的管家程序是哪个提交编译的（-version 输出 git describe，例如 6809783 或 6809783-dirty）
+  local running
+  running=$(/usr/local/bin/prism-phone-agent -version 2>/dev/null || true)
+  if [ "$here" = "$there" ] && [ -z "$(git status --porcelain)" ] && [ "$running" = "$(git rev-parse --short=7 HEAD)" ]; then
     return 0
   fi
   if [ -n "$(git status --porcelain)" ]; then
