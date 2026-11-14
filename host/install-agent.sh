@@ -16,6 +16,11 @@ set -euo pipefail
 log() { printf '[agent] %s\n' "$*"; }
 die() { printf '[agent] 错误：%s\n' "$*" >&2; exit 1; }
 [ "$(id -u)" = 0 ] || die "请用 root 运行"
+# systemd 定时任务里没有 HOME，Go 和 npm 找不到缓存目录（踩坑 #17）
+export HOME=${HOME:-/root}
+export GOPATH=${GOPATH:-$HOME/go}
+export GOCACHE=${GOCACHE:-$HOME/.cache/go-build}
+export PATH=$PATH:/usr/local/go/bin
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 BIN=/usr/local/bin/prism-phone-agent

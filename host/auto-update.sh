@@ -56,6 +56,7 @@ After=network-online.target
 
 [Service]
 Type=oneshot
+Environment=HOME=/root
 ExecStart=/bin/bash $REPO/host/auto-update.sh run
 EOF
   cat > /etc/systemd/system/prism-phone-auto-update.timer <<'EOF'
