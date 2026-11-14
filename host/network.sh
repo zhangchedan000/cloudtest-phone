@@ -87,8 +87,11 @@ apply_rules() {
   fi
 
   # 透明代理要的内核模块：内核里有，但不会自动加载（踩坑 #19）；顺便设成开机自动加载
-  modprobe nft_tproxy && modprobe nft_socket || die "内核没有 nft_tproxy 模块，透明代理用不了"
-  printf 'nft_tproxy\nnft_socket\n' > /etc/modules-load.d/prism-phone.conf
+  local m
+  for m in nft_tproxy nft_socket nft_nat nft_chain_nat; do
+    modprobe "$m" || die "内核没有 $m 模块，透明代理用不了"
+  done
+  printf '%s\n' nft_tproxy nft_socket nft_nat nft_chain_nat > /etc/modules-load.d/prism-phone.conf
   local rules
   rules=$(cat <<EOF
 table ip prism_phone {
