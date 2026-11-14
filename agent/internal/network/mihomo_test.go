@@ -12,7 +12,7 @@ func state() store.State {
 		Proxies: []store.Proxy{
 			{ID: "p1", Name: "达拉斯", Protocol: "socks5", Address: `socks5://user:p%22a%3Ass@1.2.3.4:1080`},
 			{ID: "p2", Name: "纽约", Protocol: "http", Address: "5.6.7.8:3128"},
-			{ID: "p3", Name: "节点", Protocol: "vless", Address: "vless://x@h:443"},
+			{ID: "p3", Name: "订阅", Protocol: "subscription", Address: "https://sub.example.com/clash"},
 		},
 		Phones: []store.Phone{
 			{ID: "a", IP: "10.88.0.10", ProxyID: "p1"},
@@ -30,7 +30,7 @@ func TestEachPhoneGoesThroughItsOwnProxy(t *testing.T) {
 	y := res.YAML
 	for _, want := range []string{
 		"SRC-IP-CIDR,10.88.0.10/32,px-p1", "SRC-IP-CIDR,10.88.0.11/32,px-p2", "MATCH,REJECT",
-		`password: "p\"a:ss"`, "type: socks5", "type: http", `server: "5.6.7.8"`,
+		`"password":"p\"a:ss"`, `"type":"socks5"`, `"type":"http"`, `"server":"5.6.7.8"`, `"port":1080`,
 	} {
 		if !strings.Contains(y, want) {
 			t.Fatalf("配置里缺 %q：\n%s", want, y)
@@ -39,7 +39,7 @@ func TestEachPhoneGoesThroughItsOwnProxy(t *testing.T) {
 	if strings.HasSuffix(strings.TrimSpace(y), "DIRECT") || strings.Contains(y, "10.88.0.15/32,DIRECT") {
 		t.Fatal("正式机器不允许直连")
 	}
-	for id, reason := range map[string]string{"c": "还没接入", "d": "没有分配代理", "e": "删除", "f": ""} {
+	for id, reason := range map[string]string{"c": "订阅链接还没接入", "d": "没有分配代理", "e": "删除", "f": ""} {
 		got, blocked := res.Blocked[id]
 		if reason == "" {
 			continue

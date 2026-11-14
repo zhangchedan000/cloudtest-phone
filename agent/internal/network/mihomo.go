@@ -9,6 +9,7 @@
 package network
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/url"
 	"sort"
@@ -36,44 +37,51 @@ type Result struct {
 	Blocked map[string]string // 设备 ID → 原因
 }
 
-// outbound 一个代理在 mihomo 里的写法。
-func outbound(px store.Proxy) (map[string]string, error) {
+// outbound 一个代理在 mihomo 里的写法（键值和 mihomo 配置文件一致）。
+func outbound(px store.Proxy) (map[string]any, error) {
+	name := "px-" + px.ID
+	if px.Protocol == "subscription" {
+		return nil, fmt.Errorf("订阅链接还没接入，请先添加单个节点")
+	}
 	addr := strings.TrimSpace(px.Address)
 	if !strings.Contains(addr, "://") {
 		addr = px.Protocol + "://" + addr
 	}
-	u, err := url.Parse(addr)
-	if err != nil || u.Hostname() == "" || u.Port() == "" {
-		return nil, fmt.Errorf("地址格式不对")
-	}
-	if _, err := strconv.Atoi(u.Port()); err != nil {
-		return nil, fmt.Errorf("端口不对")
-	}
-	out := map[string]string{"name": "px-" + px.ID, "server": u.Hostname(), "port": u.Port()}
-	switch strings.ToLower(u.Scheme) {
-	case "socks5", "socks5h", "socks":
-		out["type"] = "socks5"
-		out["udp"] = "true"
-	case "http":
-		out["type"] = "http"
-	case "https":
-		out["type"] = "http"
-		out["tls"] = "true"
-	default:
-		return nil, fmt.Errorf("%s 协议还没接入（目前支持 HTTP / HTTPS / SOCKS5）", u.Scheme)
-	}
-	if u.User != nil {
-		out["username"] = u.User.Username()
-		if p, ok := u.User.Password(); ok {
-			out["password"] = p
+	scheme, _, _ := strings.Cut(addr, "://")
+	var out map[string]any
+	switch strings.ToLower(scheme) {
+	case "socks5", "socks5h", "socks", "http", "https":
+		u, err := url.Parse(addr)
+		if err != nil || u.Hostname() == "" || portOK(u.Port()) != nil {
+			return nil, fmt.Errorf("地址格式不对")
 		}
+		out = map[string]any{"name": name, "server": u.Hostname(), "port": u.Port()}
+		switch strings.ToLower(u.Scheme) {
+		case "http":
+			out["type"] = "http"
+		case "https":
+			out["type"] = "http"
+			out["tls"] = true
+		default:
+			out["type"] = "socks5"
+			out["udp"] = true
+		}
+		if u.User != nil {
+			out["username"] = u.User.Username()
+			if p, ok := u.User.Password(); ok {
+				out["password"] = p
+			}
+		}
+	default:
+		ob, err := linkOutbound(name, addr)
+		if err != nil {
+			return nil, err
+		}
+		out = ob
 	}
+	port, _ := strconv.Atoi(fmt.Sprint(out["port"]))
+	out["port"] = port
 	return out, nil
-}
-
-// yamlString 生成安全的 YAML 字符串（双引号转义），密码里有特殊字符也不会坏。
-func yamlString(s string) string {
-	return strconv.Quote(s)
 }
 
 // Build 按当前的设备和代理生成 mihomo 配置。
@@ -83,7 +91,7 @@ func Build(st store.State, opt Options) Result {
 	for _, px := range st.Proxies {
 		proxies[px.ID] = px
 	}
-	used := map[string]map[string]string{}
+	used := map[string]map[string]any{}
 	var rules []string
 	phones := append([]store.Phone(nil), st.Phones...)
 	sort.Slice(phones, func(i, j int) bool { return phones[i].IP < phones[j].IP })
@@ -110,7 +118,7 @@ func Build(st store.State, opt Options) Result {
 				continue
 			}
 			used[px.ID] = ob
-			rules = append(rules, src+ob["name"])
+			rules = append(rules, src+ob["name"].(string))
 		}
 	}
 	// 其余所有流量（包括没分到出口的设备）一律拒绝。
@@ -139,18 +147,12 @@ func Build(st store.State, opt Options) Result {
 		b.WriteString("  []\n")
 	}
 	for _, id := range ids {
-		ob := used[id]
-		fmt.Fprintf(&b, "  - name: %s\n    type: %s\n    server: %s\n    port: %s\n", yamlString(ob["name"]), ob["type"], yamlString(ob["server"]), ob["port"])
-		for _, k := range []string{"username", "password"} {
-			if v, ok := ob[k]; ok {
-				fmt.Fprintf(&b, "    %s: %s\n", k, yamlString(v))
-			}
+		// 每个代理写成一行 JSON（JSON 也是合法的 YAML），密码、路径里有特殊字符也不会写坏。
+		line, err := json.Marshal(used[id])
+		if err != nil {
+			continue
 		}
-		for _, k := range []string{"tls", "udp"} {
-			if v, ok := ob[k]; ok {
-				fmt.Fprintf(&b, "    %s: %s\n", k, v)
-			}
-		}
+		fmt.Fprintf(&b, "  - %s\n", line)
 	}
 	b.WriteString("rules:\n")
 	for _, r := range rules {
@@ -158,4 +160,9 @@ func Build(st store.State, opt Options) Result {
 	}
 	res.YAML = b.String()
 	return res
+}
+
+// yamlString 生成安全的 YAML 字符串（双引号转义）。
+func yamlString(s string) string {
+	return strconv.Quote(s)
 }
