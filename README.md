@@ -42,6 +42,6 @@ bash host/install-agent.sh --no-pull         # 编译并安装管家程序（sys
 bash host/itest-api.sh                       # 实机测试，逐项打勾
 ```
 
-- 更新：`cd /opt/prism-phone/repo && git pull && bash host/install-agent.sh --no-pull`（新程序起不来会自动换回旧的）
+- 更新：**以 GitHub 为准**。`bash host/auto-update.sh install` 之后服务器每 10 分钟自动跟 GitHub 同步并更新管家程序；手动立即同步：`bash host/auto-update.sh run`（新程序起不来会自动换回旧的）
 - 参数：`/etc/prism-phone/agent.env`；管理页默认只监听本机，在自己电脑上 `ssh -L 8099:127.0.0.1:8099 服务器` 后打开 http://127.0.0.1:8099
 - 网络模块（每台手机走自己的代理）：`bash host/network.sh install` → 管家程序参数加 `-mihomo-api 127.0.0.1:9090` → `bash host/network.sh apply`（3 分钟内不 `confirm` 自动撤销）
