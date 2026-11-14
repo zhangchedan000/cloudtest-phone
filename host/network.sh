@@ -132,11 +132,30 @@ EOF
   ip route replace local 0.0.0.0/0 dev lo table "$TABLE"
   nft delete table ip prism_phone 2>/dev/null || true
   printf '%s\n' "$rules" | nft -f -
+  # 甲骨文镜像自带的主机防火墙（iptables INPUT）除了 SSH 全部拒绝，透明代理和 DNS 改写后的流量算「进本机」，
+  # 会被拒（踩坑 #21）。只放行：从容器网桥来、已被透明代理打标的流量，和发给 mihomo DNS 端口的流量。
+  input_rules "$br" -I
   # IPv6：云手机一律不给（代理大多只有 IPv4，留着 IPv6 会绕过代理）
   if command -v ip6tables >/dev/null; then
     ip6tables -C FORWARD -i "$br" -j DROP 2>/dev/null || ip6tables -I FORWARD -i "$br" -j DROP
   fi
   log "规则已加到 $br（容器网段 $SUBNET）。宿主机自己的网络没变。"
+}
+
+# input_rules 网桥 -I（加）/ -D（删）：主机防火墙里给云手机的三条放行规则（都限定从容器网桥进来）。
+input_rules() {
+  local br=$1 op=$2 spec
+  command -v iptables >/dev/null || return 0
+  for spec in "-i $br -m mark --mark $MARK -j ACCEPT" \
+              "-i $br -d $GATEWAY -p udp --dport $DNS_PORT -j ACCEPT" \
+              "-i $br -d $GATEWAY -p tcp --dport $DNS_PORT -j ACCEPT"; do
+    # shellcheck disable=SC2086
+    if [ "$op" = -I ]; then
+      iptables -C INPUT $spec 2>/dev/null || iptables -I INPUT 1 $spec
+    else
+      while iptables -C INPUT $spec 2>/dev/null; do iptables -D INPUT $spec; done
+    fi
+  done
 }
 
 rollback() {
@@ -146,6 +165,7 @@ rollback() {
   local br
   br=$( (bridge) 2>/dev/null ) || true
   [ -n "$br" ] && ip6tables -D FORWARD -i "$br" -j DROP 2>/dev/null || true
+  [ -n "$br" ] && input_rules "$br" -D
   systemctl stop prism-phone-net-rollback.timer 2>/dev/null || true
   systemctl disable prism-phone-net.service >/dev/null 2>&1 || true
   log "已撤销：prism_phone 表和策略路由都删了（云手机此时没有网络出口；管家程序也会禁止开机）"
