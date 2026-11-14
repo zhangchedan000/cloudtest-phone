@@ -1,5 +1,5 @@
 import { AppstoreOutlined, DeleteOutlined, DownOutlined, PlusOutlined, PoweroffOutlined, ReloadOutlined, SearchOutlined, UnorderedListOutlined } from '@ant-design/icons'
-import { App, Button, Card, Checkbox, Dropdown, Empty, Input, Modal, Segmented, Select, Space, Table, Tooltip } from 'antd'
+import { Alert, App, Button, Card, Checkbox, Dropdown, Empty, Input, Modal, Segmented, Select, Space, Table, Tooltip } from 'antd'
 import { useMemo, useState } from 'react'
 import { PhoneScreen } from '@/components/PhoneScreen'
 import { IssueBadge, ProxyCell, StatusDot } from '@/components/bits'
@@ -58,6 +58,9 @@ export function PhonesPage() {
         <Stat label="机器在线" value={`${ws.hosts.filter((h) => h.online).length} / ${ws.hosts.length}`} />
       </div>
 
+      {ws.mode === 'live' && ws.hosts[0] && !ws.hosts[0].networkEnabled && (
+        <Alert type="warning" showIcon className="pp-alert" title="网络模块没开：云手机直接用服务器自己的网络，只适合开发测试。正式使用前在服务器上运行 host/network.sh，并给管家程序加 -mihomo-api 参数。" />
+      )}
       <div className="pp-toolbar">
         <Space wrap>
           <Segmented value={view} onChange={(v) => setView(v as 'cards' | 'list')} options={[{ value: 'cards', icon: <AppstoreOutlined />, label: '画面' }, { value: 'list', icon: <UnorderedListOutlined />, label: '列表' }]} />

@@ -102,3 +102,21 @@ func TestStartingUntilAndroidBooted(t *testing.T) {
 		t.Fatalf("开机完成应是 running，得到 %s", got)
 	}
 }
+
+func TestNetworkReasonShownInList(t *testing.T) {
+	svc, _, _ := newTestService(t, true, "software")
+	p, _ := svc.Create(CreateRequest{Name: "A", ModelID: "poco-x4-gt", AndroidVersion: 14, ProxyID: DirectDevProxyID})
+	svc.SetNetworkGuard(func(id string) error {
+		if id == p.ID {
+			return errors.New("没有网络出口：没有分配代理")
+		}
+		return nil
+	})
+	views := svc.List(context.Background())
+	if len(views) != 1 || !strings.Contains(views[0].Network, "没有分配代理") {
+		t.Fatalf("列表里应显示网络原因：%+v", views)
+	}
+	if err := svc.Start(context.Background(), p.ID); !errors.Is(err, ErrBlocked) {
+		t.Fatalf("没有出口应禁止开机：%v", err)
+	}
+}

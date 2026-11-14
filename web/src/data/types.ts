@@ -65,6 +65,8 @@ export interface Phone {
   fields: Record<string, FieldSetting>
   /** 管家程序返回：开机后设置（时区、语言）的结果。 */
   settings?: { state: 'pending' | 'applied' | 'failed'; applied?: string[]; error?: string }
+  /** 管家程序返回：网络模块开着时，这台设备为什么没有出口（没有就是正常）。 */
+  network?: string
 }
 
 export type ProxyProtocol = 'socks5' | 'http' | 'https' | 'ss' | 'vmess' | 'vless' | 'trojan' | 'hysteria2' | 'subscription'
@@ -108,4 +110,6 @@ export interface Host {
   online: boolean
   kernel: string
   maxRunning: number
+  /** 网络模块（mihomo）开没开；没开时云手机直接用服务器网络，只适合开发测试。 */
+  networkEnabled?: boolean
 }

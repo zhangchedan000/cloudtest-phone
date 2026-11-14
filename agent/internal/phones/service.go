@@ -74,6 +74,9 @@ func NewService(cfg Config, d Docker, st *store.Store, cat *Catalog, models []Mo
 // SetNetworkGuard 接上网络模块（mihomo）的开机前检查。
 func (s *Service) SetNetworkGuard(fn func(id string) error) { s.netGuard = fn }
 
+// NetworkEnabled 网络模块（mihomo）开没开。没开时云手机直接用宿主机网络，只适合开发测试。
+func (s *Service) NetworkEnabled() bool { return s.netGuard != nil }
+
 func (s *Service) Models() []Model   { return s.models }
 func (s *Service) Catalog() *Catalog { return s.cat }
 func (s *Service) Config() Config    { return s.cfg }
@@ -550,6 +553,8 @@ type PhoneView struct {
 	Resolved []ResolvedField `json:"resolved"`
 	Fakes    *FakeStatus     `json:"fakes,omitempty"`
 	Settings *SettingsStatus `json:"settings,omitempty"`
+	// Network 网络模块开着时，这台设备为什么没有出口（空 = 正常或网络模块没开）。
+	Network string `json:"network,omitempty"`
 }
 
 func (s *Service) List(ctx context.Context) []PhoneView {
@@ -557,7 +562,13 @@ func (s *Service) List(ctx context.Context) []PhoneView {
 	out := make([]PhoneView, 0, len(st.Phones))
 	for _, p := range st.Phones {
 		p.Status = s.State(ctx, p.ID)
-		out = append(out, PhoneView{Phone: p, Issues: s.Check(p, st), Resolved: s.resolve(p, st), Fakes: s.fakes.get(p.ID), Settings: s.settings.get(p.ID)})
+		view := PhoneView{Phone: p, Issues: s.Check(p, st), Resolved: s.resolve(p, st), Fakes: s.fakes.get(p.ID), Settings: s.settings.get(p.ID)}
+		if s.netGuard != nil {
+			if err := s.netGuard(p.ID); err != nil {
+				view.Network = err.Error()
+			}
+		}
+		out = append(out, view)
 	}
 	return out
 }

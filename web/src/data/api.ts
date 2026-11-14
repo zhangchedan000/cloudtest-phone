@@ -46,6 +46,7 @@ export interface HostInfo {
   maxRunning: number
   androidVersions: number[]
   system?: Record<string, unknown>
+  network?: boolean
 }
 
 export interface InputRequest { kind: 'tap' | 'swipe' | 'text' | 'key'; x?: number; y?: number; x2?: number; y2?: number; durationMs?: number; text?: string; key?: string }

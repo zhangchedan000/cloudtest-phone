@@ -52,7 +52,7 @@ function hostFromInfo(info: HostInfo): Host {
     id: info.id, name: info.name || info.id, location: info.devHost ? '开发机' : '—', arch: String(sys.arch ?? 'arm64'),
     gpu: info.gpuFamily === 'software' ? '无（软件渲染）' : info.gpuFamily, gpuFamily: info.gpuFamily,
     cpus: num(sys.cpus), memGb: num(sys.memGb), memUsedGb: num(num(sys.memGb) - num(sys.memAvailGb)), diskGb: num(sys.diskGb), diskUsedGb: num(num(sys.diskGb) - num(sys.diskFreeGb)),
-    online: true, kernel: String(sys.kernel ?? '—'), maxRunning: info.maxRunning
+    online: true, kernel: String(sys.kernel ?? '—'), maxRunning: info.maxRunning, networkEnabled: info.network === true
   }
 }
 
@@ -100,7 +100,11 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const hostOf = useCallback((phone: Phone) => hosts.find((h) => h.id === phone.hostId) ?? (mode === 'live' ? hosts[0] : undefined), [hosts, mode])
   const groupOf = useCallback((phone: Phone) => groups.find((g) => g.id === phone.groupId), [groups])
   const issuesOf = useCallback(
-    (phone: Phone) => checkPhone({ phone, model: modelOf(phone), proxy: proxyOf(phone), host: hostOf(phone), others: phones }),
+    (phone: Phone) => [
+      ...checkPhone({ phone, model: modelOf(phone), proxy: proxyOf(phone), host: hostOf(phone), others: phones }),
+      // 管家程序算出来的网络出口问题（网络模块开着才有）：没有出口禁止开机。
+      ...(phone.network ? [{ level: 'error' as const, code: 'network', message: phone.network }] : [])
+    ],
     [phones, modelOf, proxyOf, hostOf]
   )
 
