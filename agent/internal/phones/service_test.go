@@ -29,7 +29,10 @@ func (f *fakeDocker) CreateContainer(_ context.Context, spec docker.ContainerSpe
 	f.created[spec.Name] = spec
 	return spec.Name, nil
 }
-func (f *fakeDocker) StartContainer(_ context.Context, name string) error { f.running[name] = true; return nil }
+func (f *fakeDocker) StartContainer(_ context.Context, name string) error {
+	f.running[name] = true
+	return nil
+}
 func (f *fakeDocker) StopContainer(_ context.Context, name string, _ int) error {
 	f.running[name] = false
 	return nil
@@ -69,7 +72,21 @@ func newTestService(t *testing.T, dev bool, gpu string) (*Service, *fakeDocker, 
 	cat, models := loadRealProfiles(t)
 	fd := newFake()
 	cfg := Config{HostID: "h1", GPUFamily: gpu, GPUMode: "guest", Images: map[int]string{14: "redroid:14"}, DataDir: dir, Network: "pp-net", Subnet: "10.88.0.0/16", MemoryMB: 3072, CPUs: 2, MaxRunning: 2, DevHost: dev}
-	return NewService(cfg, fd, st, cat, models), fd, st
+	svc := NewService(cfg, fd, st, cat, models)
+	svc.run = &fakeRunner{}
+	svc.async = false
+	return svc, fd, st
+}
+
+// fakeRunner 假装执行 docker exec：getprop 返回已开机，其他命令都成功，记下调用。
+type fakeRunner struct{ calls []string }
+
+func (r *fakeRunner) Run(_ context.Context, name string, args ...string) (string, error) {
+	r.calls = append(r.calls, name+" "+strings.Join(args, " "))
+	if len(args) >= 3 && args[2] == "getprop" {
+		return "1", nil
+	}
+	return "", nil
 }
 
 func addProxy(t *testing.T, st *store.Store, id string, ok bool) {
@@ -261,4 +278,42 @@ func TestProfilesLoadFromSameFilesAsWeb(t *testing.T) {
 		t.Fatalf("字段 %d 个、机型 %d 个，太少", len(cat.Fields), len(models))
 	}
 	_ = fstest.MapFS{}
+}
+
+func TestStartMountsFakeFiles(t *testing.T) {
+	svc, fd, _ := newTestService(t, true, "software")
+	svc.cfg.HostCPUs = 4
+	p, _ := svc.Create(CreateRequest{Name: "A", ModelID: "poco-x4-gt", AndroidVersion: 14, ProxyID: DirectDevProxyID})
+	if err := svc.Start(context.Background(), p.ID); err != nil {
+		t.Fatal(err)
+	}
+	spec := fd.created["pp-"+p.ID]
+	if len(spec.Binds) != 2 || !strings.HasSuffix(spec.Binds[1], ":"+fakeMount+":ro") {
+		t.Fatalf("伪造目录没挂进容器：%v", spec.Binds)
+	}
+	cpuinfo, err := os.ReadFile(filepath.Join(svc.fakeDir(p.ID), "cpuinfo"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 宿主机只有 4 核：只写 4 个核（都是 A55，part 0xd05），不能写出 8 个
+	if n := strings.Count(string(cpuinfo), "processor\t:"); n != 4 {
+		t.Fatalf("应该写 4 个核，实际 %d：\n%s", n, cpuinfo)
+	}
+	if !strings.Contains(string(cpuinfo), "CPU part\t: 0xd05") {
+		t.Fatalf("CPU 型号不对：\n%s", cpuinfo)
+	}
+	ver, _ := os.ReadFile(filepath.Join(svc.fakeDir(p.ID), "proc_version"))
+	if !strings.HasPrefix(string(ver), "Linux version 5.10.") {
+		t.Fatalf("/proc/version 应该是 5.10（POCO X4 GT 出厂 Android 12）：%s", ver)
+	}
+	r := svc.run.(*fakeRunner)
+	joined := strings.Join(r.calls, "\n")
+	for _, want := range []string{"mount -o bind " + fakeMount + "/cpuinfo /proc/cpuinfo", "mount -o bind " + fakeMount + "/proc_version /proc/version", "umount -l " + fakeMount, "rmdir " + fakeMount} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("缺少命令 %q：\n%s", want, joined)
+		}
+	}
+	if st := svc.fakes.get(p.ID); st == nil || st.State != "applied" {
+		t.Fatalf("挂载状态不对：%+v", st)
+	}
 }

@@ -143,6 +143,7 @@ type ContainerState struct {
 	Status    string `json:"Status"`
 	StartedAt string `json:"StartedAt"`
 	ExitCode  int    `json:"ExitCode"`
+	Pid       int    `json:"Pid"`
 }
 
 type ContainerInfo struct {

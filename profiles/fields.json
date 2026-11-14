@@ -62,8 +62,8 @@
 
     { "key": "gps", "group": "location", "label": "GPS 经纬度", "type": "latlng", "modes": ["proxy", "manual"], "apply": "live", "sink": { "kind": "location" } },
 
-    { "key": "kernelRelease", "group": "kernel", "label": "内核版本号", "type": "string", "modes": ["model", "random", "manual"], "apply": "restart", "sink": { "kind": "fakefile", "names": ["/proc/version", "/proc/sys/kernel/osrelease", "uname()"] } },
-    { "key": "kernelBuild", "group": "kernel", "label": "内核编译信息", "type": "string", "modes": ["model", "random", "manual"], "apply": "restart", "sink": { "kind": "fakefile", "names": ["/proc/version", "/proc/sys/kernel/version"] } }
+    { "key": "kernelRelease", "group": "kernel", "label": "内核版本号", "type": "string", "modes": ["random", "model", "manual"], "apply": "restart", "sink": { "kind": "fakefile", "names": ["/proc/version", "/proc/sys/kernel/osrelease", "uname()"] } },
+    { "key": "kernelBuild", "group": "kernel", "label": "内核编译信息", "type": "string", "modes": ["random", "model", "manual"], "apply": "restart", "sink": { "kind": "fakefile", "names": ["/proc/version", "/proc/sys/kernel/version"] } }
   ],
   "modes": {
     "manual": "手动填写",

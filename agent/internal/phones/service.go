@@ -28,19 +28,23 @@ type Docker interface {
 
 // Config 这台机器（板子）的配置。板子相关的东西都在这里，换板子只改配置。
 type Config struct {
-	HostID    string
-	HostName  string
-	GPUFamily string            // "software" 表示没有显卡（开发机）
-	GPUMode   string            // Redroid 的 gpu_mode：guest（软件渲染）/ host
-	Images    map[int]string    // 安卓版本 → 镜像
-	DataDir   string            // 每台云手机的 /data 放在 DataDir/phones/<id>/data
-	Network   string            // 容器网络名
-	Subnet    string            // 例如 10.88.0.0/16
-	MemoryMB  int64             // 每台容器内存上限（保护宿主机）
-	CPUs      float64           // 每台容器 CPU 上限
-	MaxRunning int              // 同时最多运行几台
+	HostID     string
+	HostName   string
+	GPUFamily  string         // "software" 表示没有显卡（开发机）
+	GPUMode    string         // Redroid 的 gpu_mode：guest（软件渲染）/ host
+	Images     map[int]string // 安卓版本 → 镜像
+	DataDir    string         // 每台云手机的 /data 放在 DataDir/phones/<id>/data
+	Network    string         // 容器网络名
+	Subnet     string         // 例如 10.88.0.0/16
+	MemoryMB   int64          // 每台容器内存上限（保护宿主机）
+	CPUs       float64        // 每台容器 CPU 上限
+	MaxRunning int            // 同时最多运行几台
 	// DevHost 开发机：允许「直连（仅开发）」代理，方便没代理时测试。正式机器必须是 false。
 	DevHost bool
+	// HostCPUs 宿主机核数（0 = 自动）；BootTimeout / PollEvery 等开机的超时和间隔（0 = 默认）。
+	HostCPUs    int
+	BootTimeout time.Duration
+	PollEvery   time.Duration
 }
 
 const DirectDevProxyID = "direct-dev"
@@ -52,15 +56,19 @@ type Service struct {
 	cat    *Catalog
 	models []Model
 	now    func() time.Time
+	run    Runner
+	fakes  fakeTracker
+	// async 为 false 时伪造文件同步挂载（测试用）。
+	async bool
 }
 
 func NewService(cfg Config, d Docker, st *store.Store, cat *Catalog, models []Model) *Service {
-	return &Service{cfg: cfg, docker: d, store: st, cat: cat, models: models, now: time.Now}
+	return &Service{cfg: cfg, docker: d, store: st, cat: cat, models: models, now: time.Now, run: execRunner{}, async: true}
 }
 
-func (s *Service) Models() []Model      { return s.models }
-func (s *Service) Catalog() *Catalog    { return s.cat }
-func (s *Service) Config() Config       { return s.cfg }
+func (s *Service) Models() []Model   { return s.models }
+func (s *Service) Catalog() *Catalog { return s.cat }
+func (s *Service) Config() Config    { return s.cfg }
 
 func (s *Service) model(id string) *Model {
 	for i := range s.models {
@@ -224,6 +232,11 @@ func (s *Service) resolve(p store.Phone, st store.State) []ResolvedField {
 			rf.Reason = "后期功能"
 		case f.Sink.Kind == "boot":
 			rf.Applied = true
+		case f.Sink.Kind == "fakefile":
+			rf.Applied = true
+			if contains(f.Sink.Names, "uname()") {
+				rf.Reason = "文件已伪造；uname() 系统调用还没拦截（待做 seccomp）"
+			}
 		case f.Sink.Kind == "prop" && !allReadOnlyProps(f.Sink.Names):
 			// 实测：persist.* 属性用启动参数设不进去，要开机后设置。
 			rf.Reason = "开机后设置（待实现）"
@@ -417,6 +430,14 @@ func (s *Service) Start(ctx context.Context, id string) error {
 	if err := os.MkdirAll(dataDir, 0o755); err != nil {
 		return err
 	}
+	binds := []string{dataDir + ":/data"}
+	hasFakes, err := s.prepareFakes(*p, st)
+	if err != nil {
+		return fmt.Errorf("生成伪造文件：%w", err)
+	}
+	if hasFakes {
+		binds = append(binds, s.fakeDir(p.ID)+":"+fakeMount+":ro")
+	}
 	// 每次开机重建容器（/data 在外面，不受影响），保证最新参数生效。
 	name := containerName(p.ID)
 	if err := s.docker.RemoveContainer(ctx, name); err != nil {
@@ -427,7 +448,7 @@ func (s *Service) Start(ctx context.Context, id string) error {
 		Image:      s.cfg.Images[p.AndroidVersion],
 		Cmd:        s.BootArgs(*p, st),
 		Labels:     map[string]string{"prism-phone": "1", "prism-phone.id": p.ID},
-		Binds:      []string{dataDir + ":/data"},
+		Binds:      binds,
 		MemoryMB:   s.cfg.MemoryMB,
 		NanoCPUs:   int64(s.cfg.CPUs * 1e9),
 		Network:    s.cfg.Network,
@@ -439,6 +460,13 @@ func (s *Service) Start(ctx context.Context, id string) error {
 	}
 	if err := s.docker.StartContainer(ctx, name); err != nil {
 		return fmt.Errorf("启动容器：%w", err)
+	}
+	if hasFakes {
+		if s.async {
+			go s.applyFakes(context.Background(), p.ID)
+		} else {
+			s.applyFakes(ctx, p.ID)
+		}
 	}
 	now := s.now().UTC()
 	return s.store.Update(func(st *store.State) error {
@@ -499,6 +527,7 @@ type PhoneView struct {
 	store.Phone
 	Issues   []Issue         `json:"issues"`
 	Resolved []ResolvedField `json:"resolved"`
+	Fakes    *FakeStatus     `json:"fakes,omitempty"`
 }
 
 func (s *Service) List(ctx context.Context) []PhoneView {
@@ -510,7 +539,7 @@ func (s *Service) List(ctx context.Context) []PhoneView {
 		} else {
 			p.Status = "stopped"
 		}
-		out = append(out, PhoneView{Phone: p, Issues: s.Check(p, st), Resolved: s.resolve(p, st)})
+		out = append(out, PhoneView{Phone: p, Issues: s.Check(p, st), Resolved: s.resolve(p, st), Fakes: s.fakes.get(p.ID)})
 	}
 	return out
 }
