@@ -42,7 +42,11 @@ echo "$dns" | grep -q "198\.18\." && ok "DNS 经 mihomo（fake-ip）：$dns" || 
 host_ip=$(curl -s -m 10 https://ipinfo.io/ip)
 body=$(docker exec "$C" sh -c 'printf "GET /ip HTTP/1.1\r\nHost: ipinfo.io\r\nConnection: close\r\n\r\n" | nc -w 10 ipinfo.io 80' 2>&1 | tail -1)
 [ -n "$host_ip" ] && [ "$body" = "$host_ip" ] && ok "出口经 mihomo 直连，IP = 服务器 IP $host_ip" || bad "出口不对：手机 [$body] 服务器 [$host_ip]"
-curl -s -m 5 127.0.0.1:9090/connections | grep -q "\"sourceIP\":\"$IP\"" && ok "mihomo 能看到这台手机的连接" || echo "（mihomo 连接列表里没看到，连接可能已关闭）"
+# 出口 IP 和服务器一样（开发机直连），光看 IP 分不出走没走 mihomo；开一条慢连接，在 mihomo 的连接列表里找这台手机。
+docker exec "$C" sh -c '(sleep 8; printf "GET / HTTP/1.0\r\n\r\n") | nc -w 12 example.com 80' >/dev/null 2>&1 &
+sleep 4
+curl -s -m 5 127.0.0.1:9090/connections | grep -q "\"sourceIP\":\"$IP\"" && ok "mihomo 里能看到这台手机的连接（流量确实经过网络模块）" || bad "mihomo 里看不到这台手机的连接（流量没经过网络模块）"
+wait
 ssh_ok=$(ss -ltn | grep -c ':22 ')
 [ "$ssh_ok" -ge 1 ] && ok "服务器 SSH 照常监听" || bad "SSH 没在监听"
 
@@ -55,5 +59,7 @@ else
   sed -i 's# -mihomo-api 127.0.0.1:9090##' "$ENVF"; systemctl restart prism-phone-agent
   echo "有失败，已撤销规则并关掉网络模块（回到开发模式）"
 fi
+# 管家程序可能刚重启，等它起来再清理测试手机
+for _ in $(seq 1 30); do curl -s -m 2 "$BASE/api/health" >/dev/null && break; sleep 2; done
 api POST "/phones/$ID/stop" >/dev/null; api DELETE "/phones/$ID" >/dev/null
 echo "=== 通过 $pass 项，失败 $failn 项 ==="

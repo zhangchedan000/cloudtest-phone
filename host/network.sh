@@ -86,19 +86,16 @@ apply_rules() {
     log "已安排 3 分钟后自动撤销；确认没问题后执行：bash $0 confirm"
   fi
 
-  ip rule add fwmark "$MARK" lookup "$TABLE" priority 9233 2>/dev/null || true
-  ip route replace local 0.0.0.0/0 dev lo table "$TABLE"
-  nft -f - <<EOF
-table ip prism_phone
-delete table ip prism_phone
+  local rules
+  rules=$(cat <<EOF
 table ip prism_phone {
-  chain dns {
+  chain pp_dns {
     type nat hook prerouting priority dstnat; policy accept;
     # 云手机的 DNS（不管它写的是哪个服务器）都交给 mihomo，不用宿主机的 DNS
     iifname "$br" ip saddr $SUBNET udp dport 53 dnat to $GATEWAY:$DNS_PORT
     iifname "$br" ip saddr $SUBNET tcp dport 53 dnat to $GATEWAY:$DNS_PORT
   }
-  chain tproxy {
+  chain pp_tproxy {
     type filter hook prerouting priority mangle; policy accept;
     iifname != "$br" return
     ip saddr != $SUBNET return
@@ -106,13 +103,20 @@ table ip prism_phone {
     ip daddr $GATEWAY return
     meta l4proto { tcp, udp } tproxy to 127.0.0.1:$TPROXY_PORT meta mark set $MARK accept
   }
-  chain forward {
+  chain pp_forward {
     type filter hook forward priority filter; policy accept;
     # 兜底：容器流量不允许被直接转发出去（只能经 mihomo）。透明代理的流量走 input，不经过这里。
     iifname "$br" ip saddr $SUBNET oifname != "$br" drop
   }
 }
 EOF
+)
+  # 先检查语法，有错就什么都不改（踩坑 #18：链名 tproxy 是关键字）
+  printf '%s\n' "$rules" | nft -c -f - || die "规则语法不对，没有改动任何东西"
+  ip rule add fwmark "$MARK" lookup "$TABLE" priority 9233 2>/dev/null || true
+  ip route replace local 0.0.0.0/0 dev lo table "$TABLE"
+  nft delete table ip prism_phone 2>/dev/null || true
+  printf '%s\n' "$rules" | nft -f -
   # IPv6：云手机一律不给（代理大多只有 IPv4，留着 IPv6 会绕过代理）
   if command -v ip6tables >/dev/null; then
     ip6tables -C FORWARD -i "$br" -j DROP 2>/dev/null || ip6tables -I FORWARD -i "$br" -j DROP
