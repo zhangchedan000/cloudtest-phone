@@ -39,7 +39,7 @@ func isLiveProp(key string) bool {
 func (s *Service) waitBooted(ctx context.Context, id string) bool {
 	deadline := time.Now().Add(s.bootTimeout())
 	for {
-		switch s.State(ctx, id) {
+		switch s.androidState(ctx, id) {
 		case "running":
 			return true
 		case "stopped":

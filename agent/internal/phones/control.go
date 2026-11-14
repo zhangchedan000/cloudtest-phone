@@ -71,8 +71,20 @@ func readyOutput(out string) bool {
 	return len(lines) >= 2 && strings.TrimSpace(lines[0]) == "1" && strings.HasSuffix(strings.TrimSpace(lines[len(lines)-1]), ": found")
 }
 
-// State 设备的真实状态：stopped（容器没在跑）/ starting（容器在跑，安卓还没开机完成）/ running。
+// State 设备的真实状态：stopped（容器没在跑）/ starting（容器在跑，安卓还没开机完成，
+// 或者开机后设置还没做完——设置语言会重启一次安卓框架）/ running。
 func (s *Service) State(ctx context.Context, id string) string {
+	st := s.androidState(ctx, id)
+	if st == "running" {
+		if set := s.settings.get(id); set != nil && set.State == "pending" {
+			return "starting"
+		}
+	}
+	return st
+}
+
+// androidState 只看安卓本身有没有就绪（不管开机后设置）。
+func (s *Service) androidState(ctx context.Context, id string) string {
 	info, err := s.docker.InspectContainer(ctx, containerName(id))
 	if err != nil || !info.State.Running {
 		return "stopped"

@@ -65,3 +65,20 @@ func mustPhone(t *testing.T, svc *Service, id string) *store.Phone {
 	}
 	return p
 }
+
+func TestStartingUntilSettingsDone(t *testing.T) {
+	svc, _, _ := newTestService(t, true, "software")
+	p, _ := svc.Create(CreateRequest{Name: "A", ModelID: "poco-x4-gt", AndroidVersion: 14, ProxyID: DirectDevProxyID})
+	ctx := context.Background()
+	if err := svc.Start(ctx, p.ID); err != nil {
+		t.Fatal(err)
+	}
+	svc.settings.set(p.ID, SettingsStatus{State: "pending"})
+	if got := svc.State(ctx, p.ID); got != "starting" {
+		t.Fatalf("开机后设置没做完应算开机中：%s", got)
+	}
+	svc.settings.set(p.ID, SettingsStatus{State: "applied"})
+	if got := svc.State(ctx, p.ID); got != "running" {
+		t.Fatalf("设置做完应算运行中：%s", got)
+	}
+}

@@ -480,6 +480,8 @@ func (s *Service) Start(ctx context.Context, id string) error {
 	if err := s.docker.StartContainer(ctx, name); err != nil {
 		return fmt.Errorf("启动容器：%w", err)
 	}
+	// 先标成「设置中」，开机后设置做完之前设备都算开机中（不会在框架重启前就让人操作）。
+	s.settings.set(p.ID, SettingsStatus{State: "pending"})
 	if s.async {
 		go s.applySettings(context.Background(), p.ID)
 	} else {
