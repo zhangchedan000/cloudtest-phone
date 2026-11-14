@@ -2,7 +2,7 @@
 
 在 ARM 机器上用容器跑多台安卓（Redroid），每台有独立的机型档案和独立代理，用网页统一管理。以后作为 Prism 指纹浏览器的一个页面接入。
 
-> 接手前先读：[`docs/进度记录.md`](docs/进度记录.md)、[`docs/踩坑记录.md`](docs/踩坑记录.md)、[`docs/架构.md`](docs/架构.md)，再看 `git log`。
+> 接手前先读 [`CLAUDE.md`](CLAUDE.md)，再按顺序读 [`docs/进度记录.md`](docs/进度记录.md)、[`docs/踩坑记录.md`](docs/踩坑记录.md)、[`docs/架构.md`](docs/架构.md)、`git log`。
 
 ## 目录
 
