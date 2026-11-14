@@ -98,6 +98,13 @@ func (s *Service) applySettings(ctx context.Context, id string) {
 		// 语言变了：重启安卓框架（不是重启容器，几十秒）。
 		if out, err := s.run.Run(ctx, "docker", "exec", name, "setprop", "ctl.restart", "zygote"); err != nil {
 			problems = append(problems, fmt.Sprintf("重启安卓框架失败：%v %s", err, out))
+		} else {
+			// 框架重启期间设备算「开机中」，等它重新就绪再报完成（踩坑 #15）。
+			s.boots.forget(id)
+			time.Sleep(3 * s.pollEvery())
+			if !s.waitBooted(ctx, id) {
+				problems = append(problems, "安卓框架重启后没有恢复")
+			}
 		}
 	}
 	status := SettingsStatus{State: "applied", Applied: applied}

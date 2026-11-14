@@ -118,14 +118,17 @@ func (s *Service) UploadFile(ctx context.Context, id, dirKey, fileName string, r
 	defer cleanup()
 	name := containerName(id)
 	remote := dir + "/" + safe
+	// 实测（踩坑 #16）：/sdcard 是安卓自己挂的虚拟目录，docker cp 看不到；真正的文件在 /data/media/0 下。
+	backing := "/data/media/0" + strings.TrimPrefix(remote, "/sdcard")
 	if out, err := s.run.Run(ctx, "docker", "exec", name, "mkdir", "-p", dir); err != nil {
 		return "", fmt.Errorf("建目录失败：%v %s", err, out)
 	}
-	if out, err := s.run.Run(ctx, "docker", "cp", local, name+":"+remote); err != nil {
+	if out, err := s.run.Run(ctx, "docker", "cp", local, name+":"+backing); err != nil {
 		return "", fmt.Errorf("传进手机失败：%v %s", err, out)
 	}
-	// docker cp 进去的文件属于 root；改成媒体存储能读的权限，再让媒体库扫描一下（相册里才看得到）。
-	_, _ = s.run.Run(ctx, "docker", "exec", name, "chmod", "664", remote)
+	// docker cp 进去的文件属于 root；交给媒体存储用户，再让媒体库扫描一下（相册里才看得到）。
+	_, _ = s.run.Run(ctx, "docker", "exec", name, "chown", "media_rw:media_rw", backing)
+	_, _ = s.run.Run(ctx, "docker", "exec", name, "chmod", "664", backing)
 	_, _ = s.run.Run(ctx, "docker", "exec", name, "am", "broadcast", "-a", "android.intent.action.MEDIA_SCANNER_SCAN_FILE", "-d", "file://"+remote)
 	return remote, nil
 }

@@ -48,6 +48,12 @@ func (b *bootTracker) done(id, startedAt string) bool {
 	return startedAt != "" && b.booted[id] == startedAt
 }
 
+func (b *bootTracker) forget(id string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	delete(b.booted, id)
+}
+
 func (b *bootTracker) mark(id, startedAt string) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -55,6 +61,14 @@ func (b *bootTracker) mark(id, startedAt string) {
 		b.booted = map[string]string{}
 	}
 	b.booted[id] = startedAt
+}
+
+// readyProbe 在容器里问：开机完成没有、input 服务在不在。
+const readyProbe = "getprop sys.boot_completed; service check input"
+
+func readyOutput(out string) bool {
+	lines := strings.Split(strings.TrimSpace(out), "\n")
+	return len(lines) >= 2 && strings.TrimSpace(lines[0]) == "1" && strings.HasSuffix(strings.TrimSpace(lines[len(lines)-1]), ": found")
 }
 
 // State 设备的真实状态：stopped（容器没在跑）/ starting（容器在跑，安卓还没开机完成）/ running。
@@ -66,8 +80,10 @@ func (s *Service) State(ctx context.Context, id string) string {
 	if s.boots.done(id, info.State.StartedAt) {
 		return "running"
 	}
-	out, _ := s.run.Run(ctx, "docker", "exec", containerName(id), "getprop", "sys.boot_completed")
-	if strings.TrimSpace(out) != "1" {
+	// 实测（踩坑 #15）：sys.boot_completed=1 之后安卓框架还可能重启（例如改了语言），
+	// 这段时间 input 服务不在，操作会失败。所以要「开机完成」并且「input 服务在」才算运行中。
+	out, _ := s.run.Run(ctx, "docker", "exec", containerName(id), "sh", "-c", readyProbe)
+	if !readyOutput(out) {
 		return "starting"
 	}
 	s.boots.mark(id, info.State.StartedAt)

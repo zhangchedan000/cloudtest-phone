@@ -64,7 +64,7 @@ func TestInstallAndUpload(t *testing.T) {
 		t.Fatal("空文件应拒绝")
 	}
 	calls := strings.Join(r.calls, "\n")
-	for _, want := range []string{"pm install -r /data/local/tmp/pp-install.apk", ":/sdcard/DCIM/Camera/视频.mp4", "MEDIA_SCANNER_SCAN_FILE"} {
+	for _, want := range []string{"pm install -r /data/local/tmp/pp-install.apk", ":/data/media/0/DCIM/Camera/视频.mp4", "chown media_rw:media_rw /data/media/0/DCIM/Camera/视频.mp4", "MEDIA_SCANNER_SCAN_FILE"} {
 		if !strings.Contains(calls, want) {
 			t.Fatalf("缺少命令 %q：\n%s", want, calls)
 		}

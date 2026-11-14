@@ -70,8 +70,8 @@ func TestScreenshotAndInputNeedARunningPhone(t *testing.T) {
 type notBooted struct{ fakeRunner }
 
 func (r *notBooted) Run(ctx context.Context, name string, args ...string) (string, error) {
-	if len(args) >= 3 && args[2] == "getprop" {
-		return "0", nil
+	if len(args) >= 5 && args[2] == "sh" && args[4] == readyProbe {
+		return "1\nService input: not found", nil
 	}
 	return r.fakeRunner.Run(ctx, name, args...)
 }
@@ -135,5 +135,18 @@ func TestLogs(t *testing.T) {
 	r := svc.run.(*fakeRunner)
 	if last := r.calls[len(r.calls)-1]; !strings.HasSuffix(last, "logcat -d -t 300 *:W") {
 		t.Fatalf("参数应被纠正为默认值：%s", last)
+	}
+}
+
+func TestReadyOutput(t *testing.T) {
+	for out, want := range map[string]bool{
+		"1\nService input: found":     true,
+		"1\nService input: not found": false,
+		"\nService input: found":      false,
+		"1":                           false,
+	} {
+		if readyOutput(out) != want {
+			t.Fatalf("%q 应为 %v", out, want)
+		}
 	}
 }

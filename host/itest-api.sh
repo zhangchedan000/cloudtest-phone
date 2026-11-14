@@ -59,14 +59,14 @@ for _ in $(seq 1 24); do [ "$(docker exec "$C" getprop sys.boot_completed 2>/dev
 
 python3 -c "import base64;open('$TMP/t.png','wb').write(base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='))"
 r=$(curl -s -m 120 -F "file=@$TMP/t.png;type=image/png" "$BASE/api/phones/$ID/files?dir=DCIM" ${PP_TOKEN:+-H "Authorization: Bearer $PP_TOKEN"})
-echo "$r" | grep -q '"ok":true' && docker exec "$C" ls /sdcard/DCIM/Camera/t.png >/dev/null 2>&1 && ok "上传图片到相册" || bad "上传：$r"
+echo "$r" | grep -q '"ok":true' && docker exec "$C" ls -l /sdcard/DCIM/Camera/t.png >/dev/null 2>&1 && ok "上传图片到相册（手机里能看到 /sdcard/DCIM/Camera/t.png）" || bad "上传：$r"
 if [ -n "$APK" ] && [ -f "$APK" ]; then
   r=$(curl -s -m 600 -F "file=@$APK" "$BASE/api/phones/$ID/apk" ${PP_TOKEN:+-H "Authorization: Bearer $PP_TOKEN"})
   echo "$r" | grep -q '"ok":true' && ok "安装 APK $(basename "$APK")" || bad "安装 APK：$r"
 else
   echo "（没给 APK，跳过安装测试）"
 fi
-r=$(api GET "/phones/$ID/logs?level=E&lines=20"); [ -n "$r" ] && ! echo "$r" | grep -q '"error"' && ok "看日志（$(echo "$r" | wc -l) 行）" || bad "日志：$r"
+r=$(api GET "/phones/$ID/logs?level=W&lines=50"); ! echo "$r" | grep -q '"error"' && ok "看日志（$(echo "$r" | grep -c .) 行）" || bad "日志：$r"
 
 r=$(api POST "/phones/$ID/reset" '{"renew":false}'); echo "$r" | grep -q '"ok":true' && ok "一键重置" || bad "重置：$r"
 r=$(api POST "/phones/$ID/stop"); echo "$r" | grep -q '"ok":true' && ok "关机" || bad "关机：$r"

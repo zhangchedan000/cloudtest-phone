@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 	"testing/fstest"
+	"time"
 
 	"github.com/zhangchedan000/prism-phone/agent/internal/docker"
 	"github.com/zhangchedan000/prism-phone/agent/internal/store"
@@ -71,7 +72,7 @@ func newTestService(t *testing.T, dev bool, gpu string) (*Service, *fakeDocker, 
 	}
 	cat, models := loadRealProfiles(t)
 	fd := newFake()
-	cfg := Config{HostID: "h1", GPUFamily: gpu, GPUMode: "guest", Images: map[int]string{14: "redroid:14"}, DataDir: dir, Network: "pp-net", Subnet: "10.88.0.0/16", MemoryMB: 3072, CPUs: 2, MaxRunning: 2, DevHost: dev}
+	cfg := Config{HostID: "h1", GPUFamily: gpu, GPUMode: "guest", Images: map[int]string{14: "redroid:14"}, DataDir: dir, Network: "pp-net", Subnet: "10.88.0.0/16", MemoryMB: 3072, CPUs: 2, MaxRunning: 2, DevHost: dev, PollEvery: time.Millisecond}
 	svc := NewService(cfg, fd, st, cat, models)
 	svc.run = &fakeRunner{}
 	svc.async = false
@@ -85,6 +86,9 @@ func (r *fakeRunner) Run(_ context.Context, name string, args ...string) (string
 	r.calls = append(r.calls, name+" "+strings.Join(args, " "))
 	if len(args) >= 3 && args[2] == "getprop" {
 		return "1", nil
+	}
+	if len(args) >= 5 && args[2] == "sh" && args[4] == readyProbe {
+		return "1\nService input: found", nil
 	}
 	return "", nil
 }
