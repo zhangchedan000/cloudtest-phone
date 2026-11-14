@@ -109,4 +109,8 @@ body { background: var(--fb-bg); color: var(--fb-text); font-family: Inter, ui-s
 .pp-login { max-width: 360px; margin: 120px auto; display: flex; flex-direction: column; gap: 12px; }
 .pp-logs { display: flex; flex-direction: column; gap: 10px; }
 .pp-log-text { max-height: 560px; overflow: auto; margin: 0; padding: 10px; border-radius: 8px; background: var(--fb-sidebar-bg); color: #d6dde8; font: 11px/1.5 ui-monospace, Consolas, monospace; white-space: pre-wrap; word-break: break-all; }
+.pp-live-quality { position: absolute; top: 6px; right: 6px; display: flex; gap: 2px; padding: 2px; border-radius: 6px; background: rgba(0,0,0,.55); opacity: .35; transition: opacity .2s; }
+.pp-live:hover .pp-live-quality { opacity: 1; }
+.pp-live-quality button { border: 0; background: transparent; color: #fff; font-size: 11px; padding: 1px 6px; border-radius: 4px; cursor: pointer; }
+.pp-live-quality button.on { background: rgba(255,255,255,.28); }
 .pp-live-note { position: absolute; left: 6px; right: 6px; bottom: 6px; padding: 2px 6px; border-radius: 6px; background: rgba(0,0,0,.6); color: #fff; font-size: 11px; text-align: center; }

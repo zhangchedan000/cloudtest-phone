@@ -6,6 +6,19 @@ import { playStream, videoSupported } from './h264'
 
 type VideoState = 'off' | 'connecting' | 'playing' | 'failed'
 
+/** 画质档位：分辨率（相对手机原分辨率）+ 码率。网慢选流畅，局域网可以选高清。 */
+export const QUALITIES = {
+  smooth: { label: '流畅', scale: 1 / 3, bitRate: 800_000 },
+  normal: { label: '标准', scale: 1 / 2, bitRate: 2_000_000 },
+  hd: { label: '高清', scale: 1, bitRate: 6_000_000 }
+} as const
+export type Quality = keyof typeof QUALITIES
+const QUALITY_KEY = 'pp-stream-quality'
+function savedQuality(): Quality {
+  try { const q = localStorage.getItem(QUALITY_KEY); if (q && q in QUALITIES) return q as Quality } catch { /* 无痕模式等 */ }
+  return 'normal'
+}
+
 /**
  * 运行中设备的实时画面。
  * - 大屏：视频流（H.264 + 浏览器 WebCodecs 解码），浏览器不支持或连不上时退回定时截屏（1 秒一张）。
@@ -20,6 +33,7 @@ export function LiveScreen({ id, size }: { id: string; size: 'thumb' | 'large' }
   const [device, setDevice] = useState<{ w: number; h: number }>()
   const [video, setVideo] = useState<VideoState>(size === 'large' && videoSupported() ? 'connecting' : 'off')
   const [videoError, setVideoError] = useState('')
+  const [quality, setQuality] = useState<Quality>(savedQuality)
   const down = useRef<{ x: number; y: number; at: number } | null>(null)
   const canvas = useRef<HTMLCanvasElement>(null)
   const wantVideo = video === 'connecting' || video === 'playing'
@@ -31,19 +45,20 @@ export function LiveScreen({ id, size }: { id: string; size: 'thumb' | 'large' }
     return () => clearTimeout(timer)
   }, [tick, size, video])
 
-  // 视频流：先靠一张截图知道手机分辨率，再按一半分辨率要视频；180 秒到时间自动重连。
+  // 视频流：先靠一张截图知道手机分辨率，再按画质档位要视频；180 秒到时间自动重连，换档位立即重连。
   useEffect(() => {
     if (!wantVideo || !device || !canvas.current) return
     const abort = new AbortController()
     const el = canvas.current
     const token = savedToken()
-    const w = Math.round(device.w / 2)
-    const h = Math.round(device.h / 2)
+    const q = QUALITIES[quality]
+    const w = Math.round(device.w * q.scale)
+    const h = Math.round(device.h * q.scale)
     void (async () => {
       while (!abort.signal.aborted) {
         try {
           setVideo('playing')
-          await playStream(`/api/phones/${id}/stream?w=${w}&h=${h}&br=2000000`, token ? { Authorization: `Bearer ${token}` } : {}, el, abort.signal)
+          await playStream(`/api/phones/${id}/stream?w=${w}&h=${h}&br=${q.bitRate}`, token ? { Authorization: `Bearer ${token}` } : {}, el, abort.signal)
         } catch (error) {
           if (abort.signal.aborted) return
           setVideoError((error as Error).message)
@@ -53,7 +68,7 @@ export function LiveScreen({ id, size }: { id: string; size: 'thumb' | 'large' }
       }
     })()
     return () => abort.abort()
-  }, [id, device, wantVideo])
+  }, [id, device, wantVideo, quality])
 
   const toDevice = (event: PointerEvent<HTMLElement>) => {
     if (!device) return undefined
@@ -97,6 +112,15 @@ export function LiveScreen({ id, size }: { id: string; size: 'thumb' | 'large' }
       )}
       {wantVideo && <canvas ref={canvas} className="pp-live-img" style={{ display: showVideo ? undefined : 'none', cursor: 'pointer' }} {...pointer} />}
       {!loaded && !showVideo && <div className="pp-phone-off">{failed ? <span>画面还没出来（可能在开机）</span> : <><LoadingOutlined /><span>加载画面…</span></>}</div>}
+      {showVideo && (
+        <div className="pp-live-quality">
+          {(Object.keys(QUALITIES) as Quality[]).map((k) => (
+            <button key={k} type="button" className={k === quality ? 'on' : ''} onClick={() => { setQuality(k); try { localStorage.setItem(QUALITY_KEY, k) } catch { /* 忽略 */ } }}>
+              {QUALITIES[k].label}
+            </button>
+          ))}
+        </div>
+      )}
       {video === 'failed' && size === 'large' && <div className="pp-live-note" title={videoError}>视频流不可用，已改用截图</div>}
     </div>
   )
