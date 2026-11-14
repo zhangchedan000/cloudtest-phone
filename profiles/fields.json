@@ -32,7 +32,8 @@
     { "key": "bluetoothMac", "group": "ids", "label": "蓝牙 MAC", "type": "mac", "modes": ["random", "manual"], "apply": "restart", "sink": { "kind": "setting", "names": ["secure:bluetooth_address"] } },
     { "key": "gaid", "group": "ids", "label": "广告 ID", "type": "uuid", "modes": ["random", "manual"], "apply": "restart", "sink": { "kind": "app-data", "names": ["gms:adid"] } },
 
-    { "key": "socModel", "group": "hardware", "label": "芯片型号", "type": "string", "modes": ["model", "manual"], "apply": "restart", "sink": { "kind": "prop", "names": ["ro.soc.model", "ro.board.platform", "ro.hardware"] } },
+    { "key": "socModel", "group": "hardware", "label": "芯片型号", "type": "string", "modes": ["model", "manual"], "apply": "restart", "sink": { "kind": "prop", "names": ["ro.soc.model"] } },
+    { "key": "boardPlatform", "group": "hardware", "label": "硬件平台名（ro.hardware / ro.board.platform）", "type": "string", "modes": ["model", "manual"], "apply": "image", "stage": "later", "note": "安卓按这两个名字加载硬件驱动，启动参数改了会开不了机（实测）。要编译镜像时连驱动文件名一起改。", "sink": { "kind": "image", "names": ["ro.hardware", "ro.board.platform"] } },
     { "key": "socManufacturer", "group": "hardware", "label": "芯片厂商", "type": "string", "modes": ["model", "manual"], "apply": "restart", "sink": { "kind": "prop", "names": ["ro.soc.manufacturer"] } },
     { "key": "cpuParts", "group": "hardware", "label": "CPU 核心型号", "type": "cpu-layout", "modes": ["model", "manual"], "apply": "restart", "sink": { "kind": "fakefile", "names": ["/proc/cpuinfo", "/sys/devices/system/cpu/cpu*/regs/identification/midr_el1"] } },
     { "key": "cpuMaxFreq", "group": "hardware", "label": "CPU 最高频率", "type": "freq-list", "unit": "kHz", "modes": ["model", "manual"], "apply": "restart", "sink": { "kind": "fakefile", "names": ["/sys/devices/system/cpu/cpu*/cpufreq/cpuinfo_max_freq"] } },

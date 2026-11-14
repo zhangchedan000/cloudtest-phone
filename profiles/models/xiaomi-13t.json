@@ -13,14 +13,42 @@
     "device": "aristotle",
     "socModel": "MT6896",
     "socManufacturer": "Mediatek",
-    "cpuParts": [{ "part": "Cortex-A55", "midr": "0x412fd050", "count": 4 }, { "part": "Cortex-A78", "midr": "0x411fd410", "count": 4 }],
-    "cpuMaxFreq": [2000000, 2000000, 2000000, 2000000, 3000000, 3000000, 3000000, 3100000],
+    "cpuParts": [
+      {
+        "part": "Cortex-A55",
+        "midr": "0x412fd050",
+        "count": 4
+      },
+      {
+        "part": "Cortex-A78",
+        "midr": "0x411fd410",
+        "count": 4
+      }
+    ],
+    "cpuMaxFreq": [
+      2000000,
+      2000000,
+      2000000,
+      2000000,
+      3000000,
+      3000000,
+      3000000,
+      3100000
+    ],
     "memTotal": 12,
     "storageTotal": 256,
-    "resolution": { "w": 1220, "h": 2712 },
+    "resolution": {
+      "w": 1220,
+      "h": 2712
+    },
     "dpi": 446,
     "refreshRate": 144,
-    "touchPoints": 10
+    "touchPoints": 10,
+    "boardPlatform": "mt6896"
   },
-  "androidVersions": [13, 14, 15]
+  "androidVersions": [
+    13,
+    14,
+    15
+  ]
 }

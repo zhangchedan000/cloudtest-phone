@@ -172,6 +172,10 @@ func TestStartCreatesContainerWithProps(t *testing.T) {
 	if strings.Contains(cmd, "ro.product.marketname") {
 		t.Errorf("带空格的市场名不该出现在启动参数里：%s", cmd)
 	}
+	// ro.hardware / ro.board.platform 改了会开不了机（实测），不能传
+	if strings.Contains(cmd, "ro.hardware=") || strings.Contains(cmd, "ro.board.platform=") {
+		t.Errorf("ro.hardware / ro.board.platform 不能出现在启动参数里：%s", cmd)
+	}
 	// persist.* 用启动参数设不进去，不传
 	if strings.Contains(cmd, "persist.sys") {
 		t.Errorf("persist 属性不该在启动参数里：%s", cmd)

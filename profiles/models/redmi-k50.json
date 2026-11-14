@@ -13,14 +13,42 @@
     "device": "rubens",
     "socModel": "MT6895",
     "socManufacturer": "Mediatek",
-    "cpuParts": [{ "part": "Cortex-A55", "midr": "0x412fd050", "count": 4 }, { "part": "Cortex-A78", "midr": "0x411fd410", "count": 4 }],
-    "cpuMaxFreq": [2000000, 2000000, 2000000, 2000000, 2850000, 2850000, 2850000, 2850000],
+    "cpuParts": [
+      {
+        "part": "Cortex-A55",
+        "midr": "0x412fd050",
+        "count": 4
+      },
+      {
+        "part": "Cortex-A78",
+        "midr": "0x411fd410",
+        "count": 4
+      }
+    ],
+    "cpuMaxFreq": [
+      2000000,
+      2000000,
+      2000000,
+      2000000,
+      2850000,
+      2850000,
+      2850000,
+      2850000
+    ],
     "memTotal": 8,
     "storageTotal": 256,
-    "resolution": { "w": 1440, "h": 3200 },
+    "resolution": {
+      "w": 1440,
+      "h": 3200
+    },
     "dpi": 560,
     "refreshRate": 120,
-    "touchPoints": 10
+    "touchPoints": 10,
+    "boardPlatform": "mt6895"
   },
-  "androidVersions": [12, 13, 14]
+  "androidVersions": [
+    12,
+    13,
+    14
+  ]
 }
