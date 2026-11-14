@@ -47,7 +47,8 @@ func (c *Client) do(ctx context.Context, method, path string, query url.Values, 
 		}
 		reader = bytes.NewReader(raw)
 	}
-	u := "http://docker/v1.43" + path
+	// 不写死接口版本：Docker 29 要求 ≥1.44，旧版本 Docker 又不认新版本号，不带版本号就用守护进程自己的版本。
+	u := "http://docker" + path
 	if len(query) > 0 {
 		u += "?" + query.Encode()
 	}
