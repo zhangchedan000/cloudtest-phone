@@ -29,7 +29,13 @@ type Options struct {
 	Subnet     string // 容器网段，例如 10.88.0.0/16
 	DevHost    bool   // 开发机才允许「直连（仅开发）」
 	APIListen  string // mihomo 控制接口（只监听本机），空 = 不开
+	// CheckPort 检测入口：只监听 127.0.0.1 的本地代理端口，背后是可切换的 pp-check 分组，
+	// 管家程序检测 vless / trojan 等协议时把它切到要测的节点。0 = 不开。
+	CheckPort int
 }
+
+// CheckGroup 检测入口背后的分组名。
+const CheckGroup = "pp-check"
 
 // Result 生成的配置，以及哪些设备没能分到出口（会被拦截，管理页要提示）。
 type Result struct {
@@ -133,6 +139,22 @@ func Build(st store.State, opt Options) Result {
 	// 其余所有流量（包括没分到出口的设备）一律拒绝。
 	rules = append(rules, "MATCH,REJECT")
 
+	// 检测入口：代理库里所有能用的节点都放进配置，供 pp-check 分组切换（不影响任何设备的规则）。
+	var checkable []string
+	if opt.CheckPort > 0 {
+		for _, px := range st.Proxies {
+			if _, ok := used[px.ID]; !ok {
+				if ob, err := outbound(px); err == nil {
+					used[px.ID] = ob
+				}
+			}
+			if ob, ok := used[px.ID]; ok {
+				checkable = append(checkable, ob["name"].(string))
+			}
+		}
+		sort.Strings(checkable)
+	}
+
 	var b strings.Builder
 	b.WriteString("# 管家程序自动生成，不要手改（改了也会被覆盖）\n")
 	fmt.Fprintf(&b, "tproxy-port: %d\n", opt.TProxyPort)
@@ -162,6 +184,11 @@ func Build(st store.State, opt Options) Result {
 			continue
 		}
 		fmt.Fprintf(&b, "  - %s\n", line)
+	}
+	if opt.CheckPort > 0 {
+		group, _ := json.Marshal(map[string]any{"name": CheckGroup, "type": "select", "proxies": append([]string{"REJECT"}, checkable...)})
+		fmt.Fprintf(&b, "proxy-groups:\n  - %s\n", group)
+		fmt.Fprintf(&b, "listeners:\n  - {name: pp-check-in, type: mixed, listen: 127.0.0.1, port: %d, proxy: %s}\n", opt.CheckPort, CheckGroup)
 	}
 	b.WriteString("rules:\n")
 	for _, r := range rules {

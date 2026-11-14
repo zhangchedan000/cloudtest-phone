@@ -21,6 +21,7 @@ type Syncer struct {
 	Client *http.Client // 测试时换掉
 
 	mu      sync.Mutex
+	checkMu sync.Mutex
 	last    string
 	blocked map[string]string
 	err     error

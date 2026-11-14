@@ -59,7 +59,7 @@ func proxyURL(px store.Proxy) (*url.URL, error) {
 func Check(ctx context.Context, px store.Proxy) store.ProxyCheck {
 	res := store.ProxyCheck{CheckedAt: time.Now()}
 	if !Supported(px.Protocol) {
-		res.Error = fmt.Sprintf("%s 协议要等网络模块（mihomo）接入后才能检测", px.Protocol)
+		res.Error = fmt.Sprintf("%s 协议要开网络模块（管家程序加 -mihomo-api）才能检测", px.Protocol)
 		return res
 	}
 	u, err := proxyURL(px)

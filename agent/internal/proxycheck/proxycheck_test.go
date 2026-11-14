@@ -66,7 +66,7 @@ func TestCheckExplainsFailures(t *testing.T) {
 	if got := Check(context.Background(), store.Proxy{Protocol: "socks5", Address: "socks5://" + addr}); got.OK || !strings.Contains(got.Error, "拒绝连接") {
 		t.Fatalf("应提示拒绝连接：%+v", got)
 	}
-	if got := Check(context.Background(), store.Proxy{Protocol: "vless", Address: "vless://x"}); got.OK || !strings.Contains(got.Error, "mihomo") {
+	if got := Check(context.Background(), store.Proxy{Protocol: "vless", Address: "vless://x"}); got.OK || !strings.Contains(got.Error, "网络模块") {
 		t.Fatalf("vless 应提示等网络模块：%+v", got)
 	}
 	if got := Check(context.Background(), store.Proxy{Protocol: "http", Address: "http://"}); got.OK || !strings.Contains(got.Error, "格式") {

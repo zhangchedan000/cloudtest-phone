@@ -47,6 +47,7 @@ func main() {
 	mihomoAPI := flag.String("mihomo-api", "", "网络模块：mihomo 控制接口地址（例如 127.0.0.1:9090）；空 = 不开网络模块（只适合开发测试）")
 	tproxyPort := flag.Int("tproxy-port", 7893, "网络模块：mihomo 透明代理端口")
 	dnsListen := flag.String("dns-listen", "10.88.0.1:1053", "网络模块：mihomo DNS 监听地址（容器网关）")
+	checkPort := flag.Int("check-port", 7899, "网络模块：检测入口端口（只监听 127.0.0.1，用来检测 vless / trojan 等节点；0 = 不开）")
 	showVersion := flag.Bool("version", false, "显示版本")
 	flag.Parse()
 	if *showVersion {
@@ -82,7 +83,7 @@ func main() {
 	if *mihomoAPI != "" {
 		net = &netcfg.Syncer{
 			Path: filepath.Join(*dataDir, "mihomo", "config.yaml"),
-			Opt:  netcfg.Options{TProxyPort: *tproxyPort, DNSListen: *dnsListen, Subnet: *subnet, DevHost: *devHost, APIListen: *mihomoAPI},
+			Opt:  netcfg.Options{TProxyPort: *tproxyPort, DNSListen: *dnsListen, Subnet: *subnet, DevHost: *devHost, APIListen: *mihomoAPI, CheckPort: *checkPort},
 		}
 		syncNet := func() {
 			if err := net.Sync(context.Background(), st.Snapshot()); err != nil {
@@ -128,7 +129,11 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	srv := &http.Server{Addr: *listen, Handler: api.New(svc, st, webFS, token, check).Handler(), ReadHeaderTimeout: 10 * time.Second}
+	apiServer := api.New(svc, st, webFS, token, check)
+	if net != nil && net.CanCheck() {
+		apiServer.SetNetworkCheck(net.Check)
+	}
+	srv := &http.Server{Addr: *listen, Handler: apiServer.Handler(), ReadHeaderTimeout: 10 * time.Second}
 	go func() {
 		log.Printf("prism-phone-agent %s 监听 %s（机器 %s，显卡 %s，机型 %d 个）", version, *listen, cfg.HostName, cfg.GPUFamily, len(models))
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {

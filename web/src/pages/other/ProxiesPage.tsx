@@ -41,7 +41,7 @@ export function ProxiesPage() {
   return (
     <div className="pp-page">
       <div className="pp-toolbar">
-        <span className="pp-muted">代理不通时，用它的云手机禁止开机，不会走本机网络。HTTP / HTTPS / SOCKS5 现在就能检测，其他协议要等网络模块。</span>
+        <span className="pp-muted">代理不通时，用它的云手机禁止开机，不会走本机网络。HTTP / HTTPS / SOCKS5 随时能检测；vless、trojan、Clash 节点等要开网络模块才能检测。</span>
         <Space>
           <Button icon={<ReloadOutlined />} loading={checking.length > 1} onClick={() => void check(ws.proxies.filter((p) => p.id !== 'direct-dev').map((p) => p.id))}>全部检测</Button>
           <Button icon={<CloudDownloadOutlined />} onClick={() => setImporting(true)}>导入订阅</Button>

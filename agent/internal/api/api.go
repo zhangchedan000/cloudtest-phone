@@ -2,6 +2,7 @@
 package api
 
 import (
+	"context"
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
@@ -25,6 +26,13 @@ type Server struct {
 	web   fs.FS
 	token string
 	check func() selfcheck.Report
+	// netCheck 网络模块开着时，经 mihomo 检测 HTTP / SOCKS5 以外的协议（vless、trojan、Clash 节点……）。
+	netCheck func(ctx context.Context, st store.State, px store.Proxy) store.ProxyCheck
+}
+
+// SetNetworkCheck 接上网络模块的节点检测。
+func (s *Server) SetNetworkCheck(fn func(ctx context.Context, st store.State, px store.Proxy) store.ProxyCheck) {
+	s.netCheck = fn
 }
 
 func New(svc *phones.Service, st *store.Store, web fs.FS, token string, check func() selfcheck.Report) *Server {
@@ -363,7 +371,12 @@ func (s *Server) checkProxy(w http.ResponseWriter, r *http.Request) {
 		fail(w, store.ErrNotFound)
 		return
 	}
-	res := proxycheck.Check(r.Context(), *px)
+	var res store.ProxyCheck
+	if !proxycheck.Supported(px.Protocol) && s.netCheck != nil {
+		res = s.netCheck(r.Context(), s.store.Snapshot(), *px)
+	} else {
+		res = proxycheck.Check(r.Context(), *px)
+	}
 	err := s.store.Update(func(st *store.State) error {
 		for i := range st.Proxies {
 			if st.Proxies[i].ID == id {
