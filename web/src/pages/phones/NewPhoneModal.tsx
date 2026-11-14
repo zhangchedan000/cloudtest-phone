@@ -44,7 +44,7 @@ export function NewPhoneModal({ open, onClose }: { open: boolean; onClose: () =>
         <Form.Item label="所在机器" name="hostId" rules={[{ required: true }]}><Select options={ws.hosts.map((h) => ({ value: h.id, label: `${h.name}（${h.gpu}）${h.online ? '' : ' · 离线'}`, disabled: !h.online }))} /></Form.Item>
         <Form.Item label="机型" name="modelId" rules={[{ required: true }]}><Select options={ws.models.map((m) => ({ value: m.id, label: `${String(m.values.marketName)} · ${m.gpuFamily}${m.verified ? '' : ' · 待核实'}` }))} /></Form.Item>
         {gpuWarn && <Alert type="error" showIcon title="这个机型的显卡和机器对不上，会露馅" className="pp-alert" />}
-        <Form.Item label="安卓版本" name="androidVersion"><Select options={[12, 13, 14, 15].map((v) => ({ value: v, label: `Android ${v}`, disabled: v !== 14 }))} /></Form.Item>
+        <Form.Item label="安卓版本" name="androidVersion"><Select options={(host?.androidVersions?.length ? host.androidVersions : [14]).map((v) => ({ value: v, label: `Android ${v}` }))} /></Form.Item>
         <Form.Item label="代理" name="proxyId" rules={[{ required: true, message: '必须分配代理：没有代理禁止开机' }]}><Select options={ws.proxies.map((p) => ({ value: p.id, label: p.name }))} /></Form.Item>
         <Form.Item label="分组" name="groupId"><Select options={ws.groups.map((g) => ({ value: g.id, label: g.name }))} /></Form.Item>
       </Form>

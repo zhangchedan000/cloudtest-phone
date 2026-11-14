@@ -2,7 +2,7 @@ import {
   AppstoreAddOutlined, ArrowLeftOutlined, BorderOutlined, CameraOutlined, CopyOutlined, HomeOutlined,
   PoweroffOutlined, RedoOutlined, RotateRightOutlined, SoundOutlined, UploadOutlined
 } from '@ant-design/icons'
-import { App, Button, Descriptions, Drawer, Input, Space, Tabs, Tooltip } from 'antd'
+import { App, Button, Descriptions, Drawer, Dropdown, Input, Modal, Space, Tabs, Tooltip } from 'antd'
 import { screenUrl, upload, type InputRequest } from '@/data/api'
 import { useRef, useState } from 'react'
 import { PhoneScreen } from '@/components/PhoneScreen'
@@ -66,6 +66,27 @@ export function PhoneDrawer({ phone, onClose }: { phone?: Phone; onClose: () => 
       title={<Space size={12}><b>{live.name}</b><StatusDot status={live.status} /><span className="pp-muted">{String(model?.values.marketName ?? '')} · Android {live.androidVersion}</span></Space>}
       extra={
         <Space>
+          <Dropdown
+            disabled={!liveMode}
+            menu={{
+              items: [
+                { key: 'reset', label: '一键重置（清空数据，恢复出厂）' },
+                { type: 'divider' as const },
+                ...(host?.androidVersions ?? []).filter((v) => v !== live.androidVersion).map((v) => ({ key: `flash-${v}`, label: `刷机：换成 Android ${v}（清空数据）` }))
+              ],
+              onClick: ({ key }) => {
+                const version = key.startsWith('flash-') ? Number(key.slice(6)) : undefined
+                Modal.confirm({
+                  title: version ? `把 ${live.name} 刷成 Android ${version}？` : `重置 ${live.name}？`,
+                  content: '手机里的 App、账号登录、相册全部清空。旧数据挪到服务器回收站，误操作还能找回。参数和代理不变。',
+                  okButtonProps: { danger: true },
+                  onOk: () => ws.resetPhones([live.id], version)
+                })
+              }
+            }}
+          >
+            <Button>重置 / 刷机</Button>
+          </Dropdown>
           {running ? (
             <>
               <Button icon={<RedoOutlined />} onClick={() => void ws.setStatus([live.id], 'stopped').then(() => ws.setStatus([live.id], 'running'))}>重启</Button>

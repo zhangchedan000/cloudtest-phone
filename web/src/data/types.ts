@@ -114,4 +114,6 @@ export interface Host {
   maxRunning: number
   /** 网络模块（mihomo）开没开；没开时云手机直接用服务器网络，只适合开发测试。 */
   networkEnabled?: boolean
+  /** 这台机器装了哪些安卓版本的镜像。 */
+  androidVersions?: number[]
 }

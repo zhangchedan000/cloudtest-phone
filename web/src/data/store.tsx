@@ -32,7 +32,7 @@ interface Workspace {
   assign: (ids: string[], patch: { proxyId?: string; groupId?: string }) => Promise<void>
   addPhone: (phone: Phone) => Promise<void>
   removePhones: (ids: string[]) => Promise<void>
-  resetPhones: (ids: string[]) => Promise<void>
+  resetPhones: (ids: string[], androidVersion?: number) => Promise<void>
   addProxy: (proxy: Proxy) => Promise<void>
   checkProxies: (ids: string[]) => Promise<void>
   removeProxy: (id: string) => Promise<void>
@@ -56,7 +56,7 @@ function hostFromInfo(info: HostInfo): Host {
     id: info.id, name: info.name || info.id, location: info.devHost ? '开发机' : '—', arch: String(sys.arch ?? 'arm64'),
     gpu: info.gpuFamily === 'software' ? '无（软件渲染）' : info.gpuFamily, gpuFamily: info.gpuFamily,
     cpus: num(sys.cpus), memGb: num(sys.memGb), memUsedGb: num(num(sys.memGb) - num(sys.memAvailGb)), diskGb: num(sys.diskGb), diskUsedGb: num(num(sys.diskGb) - num(sys.diskFreeGb)),
-    online: true, kernel: String(sys.kernel ?? '—'), maxRunning: info.maxRunning, networkEnabled: info.network === true
+    online: true, kernel: String(sys.kernel ?? '—'), maxRunning: info.maxRunning, networkEnabled: info.network === true, androidVersions: [...(info.androidVersions ?? [])].sort((a, b) => a - b)
   }
 }
 
@@ -147,9 +147,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         // 字段由管家程序按机型生成，页面只传基本信息。
         await each([phone.id], '创建', () => api.createPhone({ name: phone.name, modelId: phone.modelId, androidVersion: phone.androidVersion, proxyId: phone.proxyId, groupId: phone.groupId, note: phone.note }))
       },
-      resetPhones: async (ids) => {
+      resetPhones: async (ids, androidVersion) => {
         if (!live) { message.info('预览模式：接上管家程序后可用'); return }
-        await each(ids, '重置', (id) => api.reset(id), true)
+        await each(ids, androidVersion ? '刷机' : '重置', (id) => api.reset(id, androidVersion), true)
       },
       removePhones: async (ids) => {
         if (!live) { setPhones((list) => list.filter((p) => !ids.includes(p.id))); return }
