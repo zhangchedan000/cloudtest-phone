@@ -3,7 +3,8 @@ import {
   PoweroffOutlined, RedoOutlined, RotateRightOutlined, SoundOutlined, UploadOutlined
 } from '@ant-design/icons'
 import { App, Button, Descriptions, Drawer, Input, Space, Tabs, Tooltip } from 'antd'
-import { screenUrl, type InputRequest } from '@/data/api'
+import { screenUrl, upload, type InputRequest } from '@/data/api'
+import { useRef, useState } from 'react'
 import { PhoneScreen } from '@/components/PhoneScreen'
 import { ProxyCell, StatusDot } from '@/components/bits'
 import { blocksStart } from '@/data/consistency'
@@ -15,6 +16,10 @@ import { ParamPanel } from './ParamPanel'
 export function PhoneDrawer({ phone, onClose }: { phone?: Phone; onClose: () => void }) {
   const ws = useWorkspace()
   const { message } = App.useApp()
+  // hooks 要在 return 之前
+  const apkInput = useRef<HTMLInputElement>(null)
+  const fileInput = useRef<HTMLInputElement>(null)
+  const [uploading, setUploading] = useState<string>('')
   if (!phone) return null
   const live = ws.phones.find((p) => p.id === phone.id) ?? phone
   const issues = ws.issuesOf(live)
@@ -23,6 +28,21 @@ export function PhoneDrawer({ phone, onClose }: { phone?: Phone; onClose: () => 
   const host = ws.hostOf(live)
   const running = live.status === 'running'
   const liveMode = ws.mode === 'live'
+  const sendFile = async (kind: 'apk' | 'file', file: File | undefined) => {
+    if (!file) return
+    // 图片、视频放进相册（DCIM），其他文件放下载目录
+    const dir = /^(image|video)\//.test(file.type) ? 'DCIM' : 'Download'
+    const path = kind === 'apk' ? `/phones/${live.id}/apk` : `/phones/${live.id}/files?dir=${dir}`
+    try {
+      setUploading(`${file.name} 0%`)
+      const result = await upload(path, file, (p) => setUploading(`${file.name} ${p}%${p === 100 ? (kind === 'apk' ? '，安装中…' : '，处理中…') : ''}`))
+      message.success(kind === 'apk' ? `已安装 ${file.name}` : `已上传到 ${result.path}`)
+    } catch (error) {
+      message.error((error as Error).message)
+    } finally {
+      setUploading('')
+    }
+  }
   const todo = (what: string) => () => message.info(`${what}：还没做`)
   const key = (k: string) => () => (liveMode ? void ws.input(live.id, { kind: 'key', key: k } as InputRequest) : message.info('预览模式：接上管家程序后可用'))
 
@@ -31,7 +51,8 @@ export function PhoneDrawer({ phone, onClose }: { phone?: Phone; onClose: () => 
     { icon: <BorderOutlined />, tip: '多任务', onClick: key('recents') }, { icon: <SoundOutlined />, tip: '音量 +', onClick: key('volume_up') },
     { icon: <RotateRightOutlined />, tip: '旋转', onClick: todo('旋转') },
     { icon: <CameraOutlined />, tip: '截图（新窗口打开原图）', onClick: () => (liveMode ? void window.open(screenUrl(live.id, Date.now()), '_blank') : message.info('预览模式：接上管家程序后可用')) },
-    { icon: <UploadOutlined />, tip: '上传文件到相册', onClick: todo('上传文件') }, { icon: <AppstoreAddOutlined />, tip: '安装 APK', onClick: todo('安装 APK') },
+    { icon: <UploadOutlined />, tip: '上传文件（图片、视频进相册，其他进下载目录）', onClick: () => (liveMode ? fileInput.current?.click() : message.info('预览模式：接上管家程序后可用')) },
+    { icon: <AppstoreAddOutlined />, tip: '安装 APK', onClick: () => (liveMode ? apkInput.current?.click() : message.info('预览模式：接上管家程序后可用')) },
     { icon: <CopyOutlined />, tip: '剪贴板', onClick: todo('剪贴板') }
   ]
 
@@ -63,6 +84,9 @@ export function PhoneDrawer({ phone, onClose }: { phone?: Phone; onClose: () => 
           <div className="pp-detail-controls">
             {controls.map((c) => <Tooltip key={c.tip} title={c.tip} placement="left"><Button disabled={!running} icon={c.icon} onClick={c.onClick} /></Tooltip>)}
           </div>
+          <input ref={apkInput} type="file" accept=".apk" hidden onChange={(e) => { void sendFile('apk', e.target.files?.[0]); e.target.value = '' }} />
+          <input ref={fileInput} type="file" hidden onChange={(e) => { void sendFile('file', e.target.files?.[0]); e.target.value = '' }} />
+          {uploading && <p className="pp-small pp-center">上传：{uploading}</p>}
           <Input.Search
             className="pp-send-text"
             disabled={!running || !liveMode}

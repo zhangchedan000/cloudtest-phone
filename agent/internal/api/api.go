@@ -45,6 +45,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/phones/{id}/renew", s.action(func(_ *http.Request, id string) error { return s.svc.Renew(id) }))
 	mux.HandleFunc("GET /api/phones/{id}/screen", s.screen)
 	mux.HandleFunc("POST /api/phones/{id}/input", s.input)
+	mux.HandleFunc("POST /api/phones/{id}/apk", s.installAPK)
+	mux.HandleFunc("POST /api/phones/{id}/files", s.uploadFile)
 	mux.HandleFunc("GET /api/proxies", s.listProxies)
 	mux.HandleFunc("POST /api/proxies", s.createProxy)
 	mux.HandleFunc("PUT /api/proxies/{id}", s.updateProxy)

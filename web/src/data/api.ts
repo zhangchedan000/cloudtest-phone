@@ -68,6 +68,27 @@ export const api = {
   createGroup: (group: Omit<Group, 'id'>) => call<Group>('POST', '/groups', group)
 }
 
+/** 上传文件（安装 APK / 传到手机目录），带进度回调。 */
+export function upload(path: string, file: File, onProgress?: (percent: number) => void): Promise<{ ok: boolean; path?: string; output?: string }> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest()
+    xhr.open('POST', `/api${path}`)
+    const token = savedToken()
+    if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`)
+    xhr.upload.onprogress = (event) => { if (event.lengthComputable) onProgress?.(Math.round((event.loaded / event.total) * 100)) }
+    xhr.onload = () => {
+      let data: { error?: string } & Record<string, unknown> = {}
+      try { data = JSON.parse(xhr.responseText) } catch { /* 非 JSON */ }
+      if (xhr.status >= 200 && xhr.status < 300) resolve(data as { ok: boolean })
+      else reject(new ApiError(data.error ?? `上传失败（${xhr.status}）`, xhr.status))
+    }
+    xhr.onerror = () => reject(new ApiError('上传失败：网络断了', 0))
+    const form = new FormData()
+    form.append('file', file)
+    xhr.send(form)
+  })
+}
+
 /** 截屏地址（img 标签用；token 走 cookie，所以登录时也写一份 cookie）。 */
 export function screenUrl(id: string, tick: number): string {
   return `/api/phones/${id}/screen?t=${tick}`
