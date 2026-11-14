@@ -9,10 +9,10 @@ import (
 
 func TestSafeFileName(t *testing.T) {
 	for in, want := range map[string]string{
-		"视频 01.mp4":       "视频 01.mp4",
-		"../../etc/passwd": "passwd",
+		"视频 01.mp4":         "视频 01.mp4",
+		"../../etc/passwd":  "passwd",
 		`C:\x\a;rm -rf.jpg`: "a_rm -rf.jpg",
-		".hidden":          "hidden",
+		".hidden":           "hidden",
 	} {
 		got, err := safeFileName(in)
 		if err != nil || got != want {

@@ -190,3 +190,23 @@ func (s *Service) Input(ctx context.Context, id string, req InputRequest) error 
 	}
 	return nil
 }
+
+// Logs 最近的安卓日志（logcat），排查开不了机、App 闪退用。level：V/D/I/W/E，默认 W 只看警告和错误。
+func (s *Service) Logs(ctx context.Context, id string, lines int, level string) (string, error) {
+	if err := s.requireRunning(ctx, id, false); err != nil {
+		return "", err
+	}
+	if lines <= 0 || lines > 2000 {
+		lines = 300
+	}
+	switch level {
+	case "V", "D", "I", "W", "E":
+	default:
+		level = "W"
+	}
+	out, err := s.run.Run(ctx, "docker", "exec", containerName(id), "logcat", "-d", "-t", strconv.Itoa(lines), "*:"+level)
+	if err != nil {
+		return "", fmt.Errorf("读日志失败：%v %s", err, out)
+	}
+	return out, nil
+}

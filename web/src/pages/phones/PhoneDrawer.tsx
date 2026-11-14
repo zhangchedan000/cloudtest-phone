@@ -10,6 +10,7 @@ import { ProxyCell, StatusDot } from '@/components/bits'
 import { blocksStart } from '@/data/consistency'
 import { useWorkspace } from '@/data/store'
 import type { Phone } from '@/data/types'
+import { LogsPanel } from './LogsPanel'
 import { ParamPanel } from './ParamPanel'
 
 /** 单台设备：左边大屏操作，右边参数、检查、信息。 */
@@ -100,6 +101,7 @@ export function PhoneDrawer({ phone, onClose }: { phone?: Phone; onClose: () => 
           <Tabs
             items={[
               { key: 'params', label: '参数', children: <ParamPanel phone={live} onSaved={(restart) => message.success(restart && running ? '已保存，正在重启这台安卓' : '已保存')} /> },
+              { key: 'logs', label: '日志', children: <LogsPanel phone={live} /> },
               {
                 key: 'info', label: '信息', children: (
                   <Descriptions column={1} size="small" bordered items={[

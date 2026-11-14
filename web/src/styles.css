@@ -107,3 +107,5 @@ body { background: var(--fb-bg); color: var(--fb-text); font-family: Inter, ui-s
 .pp-live-img { width: 100%; height: 100%; object-fit: contain; touch-action: none; user-select: none; }
 .pp-live .pp-phone-off { position: absolute; inset: 0; }
 .pp-login { max-width: 360px; margin: 120px auto; display: flex; flex-direction: column; gap: 12px; }
+.pp-logs { display: flex; flex-direction: column; gap: 10px; }
+.pp-log-text { max-height: 560px; overflow: auto; margin: 0; padding: 10px; border-radius: 8px; background: var(--fb-sidebar-bg); color: #d6dde8; font: 11px/1.5 ui-monospace, Consolas, monospace; white-space: pre-wrap; word-break: break-all; }

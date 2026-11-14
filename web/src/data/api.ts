@@ -89,6 +89,19 @@ export function upload(path: string, file: File, onProgress?: (percent: number) 
   })
 }
 
+/** 安卓日志（纯文本）。 */
+export async function logs(id: string, level: string, lines: number): Promise<string> {
+  const token = savedToken()
+  const response = await fetch(`/api/phones/${id}/logs?level=${level}&lines=${lines}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
+  const text = await response.text()
+  if (!response.ok) {
+    let message = `读日志失败（${response.status}）`
+    try { message = (JSON.parse(text) as { error?: string }).error ?? message } catch { /* 非 JSON */ }
+    throw new ApiError(message, response.status)
+  }
+  return text
+}
+
 /** 截屏地址（img 标签用；token 走 cookie，所以登录时也写一份 cookie）。 */
 export function screenUrl(id: string, tick: number): string {
   return `/api/phones/${id}/screen?t=${tick}`

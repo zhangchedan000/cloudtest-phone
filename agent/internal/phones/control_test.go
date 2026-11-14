@@ -120,3 +120,20 @@ func TestNetworkReasonShownInList(t *testing.T) {
 		t.Fatalf("没有出口应禁止开机：%v", err)
 	}
 }
+
+func TestLogs(t *testing.T) {
+	svc, _, _ := newTestService(t, true, "software")
+	p, _ := svc.Create(CreateRequest{Name: "A", ModelID: "poco-x4-gt", AndroidVersion: 14, ProxyID: DirectDevProxyID})
+	ctx := context.Background()
+	if _, err := svc.Logs(ctx, p.ID, 10, "E"); !errors.Is(err, ErrNotRunning) {
+		t.Fatal("关机时应拒绝")
+	}
+	_ = svc.Start(ctx, p.ID)
+	if _, err := svc.Logs(ctx, p.ID, 99999, "X; reboot"); err != nil {
+		t.Fatal(err)
+	}
+	r := svc.run.(*fakeRunner)
+	if last := r.calls[len(r.calls)-1]; !strings.HasSuffix(last, "logcat -d -t 300 *:W") {
+		t.Fatalf("参数应被纠正为默认值：%s", last)
+	}
+}

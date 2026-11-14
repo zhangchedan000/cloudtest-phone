@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io/fs"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -46,6 +47,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/phones/{id}/screen", s.screen)
 	mux.HandleFunc("POST /api/phones/{id}/input", s.input)
 	mux.HandleFunc("POST /api/phones/{id}/apk", s.installAPK)
+	mux.HandleFunc("GET /api/phones/{id}/logs", s.logs)
 	mux.HandleFunc("POST /api/phones/{id}/files", s.uploadFile)
 	mux.HandleFunc("GET /api/proxies", s.listProxies)
 	mux.HandleFunc("POST /api/proxies", s.createProxy)
@@ -393,4 +395,15 @@ func protocolFromAddress(px *store.Proxy) {
 		}
 		px.Protocol = scheme
 	}
+}
+
+func (s *Server) logs(w http.ResponseWriter, r *http.Request) {
+	lines, _ := strconv.Atoi(r.URL.Query().Get("lines"))
+	out, err := s.svc.Logs(r.Context(), r.PathValue("id"), lines, r.URL.Query().Get("level"))
+	if err != nil {
+		fail(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	_, _ = w.Write([]byte(out))
 }
