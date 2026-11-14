@@ -34,6 +34,7 @@ bridge() {
   # 没指定时 Docker 用 br-<网络 ID 前 12 位>（踩坑 #20：第一版写死了后者，规则一直没匹配上）
   local name id
   name=$(docker network inspect -f '{{index .Options "com.docker.network.bridge.name"}}' "$DOCKER_NET" 2>/dev/null) || true
+  [ "$name" = "<no value>" ] && name=""
   if [ -z "$name" ]; then
     id=$(docker network inspect -f '{{.Id}}' "$DOCKER_NET" 2>/dev/null | cut -c1-12) || true
     [ -n "$id" ] || die "Docker 网络 $DOCKER_NET 不存在（先用管家程序开一次机，它会建网络）"
