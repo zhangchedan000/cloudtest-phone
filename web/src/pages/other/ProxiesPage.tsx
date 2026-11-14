@@ -1,5 +1,5 @@
-import { DeleteOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons'
-import { Button, Form, Input, Modal, Select, Space, Table, Tag } from 'antd'
+import { CloudDownloadOutlined, DeleteOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons'
+import { App, Button, Form, Input, Modal, Select, Space, Table, Tag } from 'antd'
 import { useState } from 'react'
 
 import { useWorkspace } from '@/data/store'
@@ -13,7 +13,26 @@ export function ProxiesPage() {
   const [adding, setAdding] = useState(false)
   const [form] = Form.useForm<{ name: string; protocol: ProxyProtocol; address: string }>()
   const usage = (id: string) => ws.phones.filter((p) => p.proxyId === id).length
+  const { message } = App.useApp()
   const [checking, setChecking] = useState<string[]>([])
+  const [importing, setImporting] = useState(false)
+  const [importBusy, setImportBusy] = useState(false)
+  const [importForm] = Form.useForm<{ url?: string; text?: string; note?: string }>()
+  const doImport = async (v: { url?: string; text?: string; note?: string }) => {
+    if (!v.url?.trim() && !v.text?.trim()) { message.warning('填订阅地址，或者粘贴订阅内容'); return }
+    setImportBusy(true)
+    try {
+      const r = await ws.importProxies(v)
+      const extra = [r.duplicates ? `${r.duplicates} 个已存在跳过` : '', r.skipped?.length ? `${r.skipped.length} 个不支持跳过` : ''].filter(Boolean).join('，')
+      message.success(`导入了 ${r.added} 个节点${extra ? `（${extra}）` : ''}`)
+      setImporting(false)
+      importForm.resetFields()
+    } catch (error) {
+      message.error((error as Error).message)
+    } finally {
+      setImportBusy(false)
+    }
+  }
   const check = async (ids: string[]) => {
     setChecking(ids)
     try { await ws.checkProxies(ids) } finally { setChecking([]) }
@@ -25,6 +44,7 @@ export function ProxiesPage() {
         <span className="pp-muted">代理不通时，用它的云手机禁止开机，不会走本机网络。HTTP / HTTPS / SOCKS5 现在就能检测，其他协议要等网络模块。</span>
         <Space>
           <Button icon={<ReloadOutlined />} loading={checking.length > 1} onClick={() => void check(ws.proxies.filter((p) => p.id !== 'direct-dev').map((p) => p.id))}>全部检测</Button>
+          <Button icon={<CloudDownloadOutlined />} onClick={() => setImporting(true)}>导入订阅</Button>
           <Button type="primary" icon={<PlusOutlined />} onClick={() => setAdding(true)}>添加代理</Button>
         </Space>
       </div>
@@ -34,8 +54,8 @@ export function ProxiesPage() {
         pagination={false}
         columns={[
           { title: '名称', dataIndex: 'name' },
-          { title: '协议', dataIndex: 'protocol', render: (v: string) => <Tag>{v === 'subscription' ? 'Clash 订阅' : v}</Tag> },
-          { title: '地址', dataIndex: 'address', render: (v: string) => <span className="pp-mono pp-small">{v}</span> },
+          { title: '协议', dataIndex: 'protocol', render: (v: string, p) => <Tag>{v === 'subscription' ? '订阅链接' : v === 'clash' ? `Clash 节点 · ${clashType(p.address)}` : v}</Tag> },
+          { title: '地址', dataIndex: 'address', render: (v: string, p) => <span className="pp-mono pp-small">{p.protocol === 'clash' ? clashServer(v) : v.length > 60 ? `${v.slice(0, 60)}…` : v}</span> },
           { title: '出口 IP', render: (_, p) => p.check?.exitIp ?? '—' },
           { title: '地区 / 时区', render: (_, p) => (p.check?.ok ? `${p.check.country} ${p.check.city} · ${p.check.timezone}` : '—') },
           { title: '延迟', render: (_, p) => (p.check?.latencyMs ? `${p.check.latencyMs} ms` : '—') },
@@ -52,6 +72,14 @@ export function ProxiesPage() {
           }
         ]}
       />
+      <Modal open={importing} title="导入订阅" okText="导入" confirmLoading={importBusy} onCancel={() => setImporting(false)} onOk={() => importForm.submit()} destroyOnHidden>
+        <p className="pp-muted pp-small">订阅里的节点会拆成代理库里的一条条代理，每台云手机固定用其中一个。支持 Clash 订阅和分享链接列表；已经有的节点自动跳过。</p>
+        <Form form={importForm} layout="vertical" onFinish={(v) => void doImport(v)}>
+          <Form.Item label="订阅地址" name="url" extra="由服务器去下载"><Input placeholder="https://…" /></Form.Item>
+          <Form.Item label="或者粘贴订阅内容 / 多行分享链接" name="text"><Input.TextArea autoSize={{ minRows: 3, maxRows: 10 }} placeholder={'vless://…\ntrojan://…'} /></Form.Item>
+          <Form.Item label="备注（可选）" name="note"><Input placeholder="例如：XX 机场 美国" /></Form.Item>
+        </Form>
+      </Modal>
       <Modal open={adding} title="添加代理" onCancel={() => setAdding(false)} onOk={() => form.submit()} destroyOnHidden>
         <Form form={form} layout="vertical" initialValues={{ protocol: 'socks5' }} onFinish={(v) => { void ws.addProxy({ id: `p-${Date.now().toString(36)}`, ...v }); setAdding(false) }}>
           <Form.Item label="名称" name="name" rules={[{ required: true }]}><Input placeholder="例如：美国住宅 · 达拉斯" /></Form.Item>
@@ -62,3 +90,10 @@ export function ProxiesPage() {
     </div>
   )
 }
+
+/** Clash 节点的地址列存的是节点配置（JSON），表格里只显示类型和服务器。 */
+function clashNode(address: string): { type?: string; server?: string; port?: number } {
+  try { return JSON.parse(address) as { type?: string; server?: string; port?: number } } catch { return {} }
+}
+function clashType(address: string): string { return clashNode(address).type ?? '?' }
+function clashServer(address: string): string { const n = clashNode(address); return n.server ? `${n.server}:${n.port ?? ''}` : '（节点配置）' }

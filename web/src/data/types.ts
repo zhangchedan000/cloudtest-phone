@@ -69,7 +69,7 @@ export interface Phone {
   network?: string
 }
 
-export type ProxyProtocol = 'socks5' | 'http' | 'https' | 'ss' | 'vmess' | 'vless' | 'trojan' | 'hysteria2' | 'subscription'
+export type ProxyProtocol = 'socks5' | 'http' | 'https' | 'ss' | 'vmess' | 'vless' | 'trojan' | 'hysteria2' | 'subscription' | 'clash'
 
 export interface ProxyCheck {
   ok: boolean

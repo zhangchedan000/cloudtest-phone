@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	netcfg "github.com/zhangchedan000/prism-phone/agent/internal/network"
 	"github.com/zhangchedan000/prism-phone/agent/internal/phones"
 	"github.com/zhangchedan000/prism-phone/agent/internal/proxycheck"
 	"github.com/zhangchedan000/prism-phone/agent/internal/selfcheck"
@@ -54,6 +55,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("PUT /api/proxies/{id}", s.updateProxy)
 	mux.HandleFunc("DELETE /api/proxies/{id}", s.deleteProxy)
 	mux.HandleFunc("POST /api/proxies/{id}/check", s.checkProxy)
+	mux.HandleFunc("POST /api/proxies/import", s.importProxies)
 	mux.HandleFunc("GET /api/groups", s.listGroups)
 	mux.HandleFunc("POST /api/groups", s.createGroup)
 	if s.web != nil {
@@ -406,4 +408,45 @@ func (s *Server) logs(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	_, _ = w.Write([]byte(out))
+}
+
+// importProxies 导入订阅：给订阅地址（服务器去下载）或直接粘贴订阅内容 / 多行分享链接。
+func (s *Server) importProxies(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		URL  string `json:"url"`
+		Text string `json:"text"`
+		Note string `json:"note"`
+	}
+	if err := decode(r, &req); err != nil {
+		fail(w, err)
+		return
+	}
+	body := req.Text
+	note := strings.TrimSpace(req.Note)
+	if strings.TrimSpace(req.URL) != "" {
+		var err error
+		if body, err = netcfg.FetchSubscription(r.Context(), strings.TrimSpace(req.URL)); err != nil {
+			writeErr(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		if note == "" {
+			note = "订阅导入"
+		}
+	}
+	nodes, skipped, err := netcfg.ParseSubscription(body)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error(), "skipped": skipped})
+		return
+	}
+	stamp := time.Now().Format("060102150405")
+	var added []store.Proxy
+	err = s.store.Update(func(st *store.State) error {
+		added = netcfg.ImportNodes(st, nodes, note, func(i int) string { return fmt.Sprintf("p-%s-%03d", stamp, i) })
+		return nil
+	})
+	if err != nil {
+		fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"added": len(added), "duplicates": len(nodes) - len(added), "skipped": skipped})
 }

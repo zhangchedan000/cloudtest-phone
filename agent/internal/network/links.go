@@ -191,3 +191,5 @@ func urlStyle(name, scheme, link string) (map[string]any, error) {
 	}
 	return out, nil
 }
+
+func urlUnescape(s string) (string, error) { return url.PathUnescape(s) }

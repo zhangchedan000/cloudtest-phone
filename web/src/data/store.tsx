@@ -35,6 +35,7 @@ interface Workspace {
   addProxy: (proxy: Proxy) => Promise<void>
   checkProxies: (ids: string[]) => Promise<void>
   removeProxy: (id: string) => Promise<void>
+  importProxies: (req: { url?: string; text?: string; note?: string }) => Promise<{ added: number; duplicates: number; skipped?: string[] }>
   input: (id: string, req: InputRequest) => Promise<void>
   login: (token: string) => Promise<void>
   refresh: () => Promise<void>
@@ -152,6 +153,12 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       removeProxy: async (id) => {
         if (!live) { setProxies((list) => list.filter((p) => p.id !== id)); return }
         await each([id], '删除代理', () => api.deleteProxy(id))
+      },
+      importProxies: async (req) => {
+        if (!live) throw new Error('预览模式：接上管家程序后才能导入')
+        const result = await api.importProxies(req)
+        await load().catch(() => undefined)
+        return result
       },
       input: async (id, req) => {
         if (!live) return

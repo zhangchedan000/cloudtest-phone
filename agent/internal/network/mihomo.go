@@ -41,7 +41,16 @@ type Result struct {
 func outbound(px store.Proxy) (map[string]any, error) {
 	name := "px-" + px.ID
 	if px.Protocol == "subscription" {
-		return nil, fmt.Errorf("订阅链接还没接入，请先添加单个节点")
+		return nil, fmt.Errorf("这是订阅链接，请在代理库里「导入订阅」拆成单个节点后再分配")
+	}
+	if px.Protocol == "clash" {
+		// 从 Clash 订阅导入的节点：地址里存的是 mihomo 原样的节点配置（JSON）。
+		var out map[string]any
+		if err := json.Unmarshal([]byte(px.Address), &out); err != nil || out["server"] == nil {
+			return nil, fmt.Errorf("节点配置不对")
+		}
+		out["name"] = name
+		return out, nil
 	}
 	addr := strings.TrimSpace(px.Address)
 	if !strings.Contains(addr, "://") {

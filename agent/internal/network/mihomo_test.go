@@ -39,7 +39,7 @@ func TestEachPhoneGoesThroughItsOwnProxy(t *testing.T) {
 	if strings.HasSuffix(strings.TrimSpace(y), "DIRECT") || strings.Contains(y, "10.88.0.15/32,DIRECT") {
 		t.Fatal("正式机器不允许直连")
 	}
-	for id, reason := range map[string]string{"c": "订阅链接还没接入", "d": "没有分配代理", "e": "删除", "f": ""} {
+	for id, reason := range map[string]string{"c": "导入订阅", "d": "没有分配代理", "e": "删除", "f": ""} {
 		got, blocked := res.Blocked[id]
 		if reason == "" {
 			continue

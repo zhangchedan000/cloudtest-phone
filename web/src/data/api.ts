@@ -64,6 +64,7 @@ export const api = {
   createProxy: (proxy: Omit<Proxy, 'id'>) => call<Proxy>('POST', '/proxies', proxy),
   checkProxy: (id: string) => call<ProxyCheck>('POST', `/proxies/${id}/check`),
   deleteProxy: (id: string) => call('DELETE', `/proxies/${id}`),
+  importProxies: (req: { url?: string; text?: string; note?: string }) => call<{ added: number; duplicates: number; skipped?: string[] }>('POST', '/proxies/import', req),
   groups: () => call<Group[]>('GET', '/groups'),
   createGroup: (group: Omit<Group, 'id'>) => call<Group>('POST', '/groups', group)
 }
