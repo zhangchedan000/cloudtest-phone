@@ -80,5 +80,9 @@ echo "$u" | grep -q memMB && ok "资源占用：$u" || bad "资源占用没采�
 r=$(api POST "/phones/$ID/reset" '{"renew":false}'); echo "$r" | grep -q '"ok":true' && ok "一键重置" || bad "重置：$r"
 r=$(api POST "/phones/$ID/stop"); echo "$r" | grep -q '"ok":true' && ok "关机" || bad "关机：$r"
 r=$(api DELETE "/phones/$ID"); echo "$r" | grep -q '"ok":true' && ok "删除（数据进回收站）" || bad "删除：$r"
+tr=$(api GET /trash | jget "[t['name'] for t in d if t['phoneId']=='$ID']")
+echo "$tr" | grep -q "$ID" && ok "回收站里能看到这台的旧数据：$tr" || bad "回收站：$tr"
+for n in $(echo "$tr" | tr -d "[]',"); do api DELETE "/trash/$n" >/dev/null; done
+[ "$(api GET /trash | jget "len([t for t in d if t['phoneId']=='$ID'])")" = 0 ] && ok "回收站彻底删除" || bad "回收站没删干净"
 rm -rf "$TMP"
 echo "=== 通过 $pass 项，失败 $failn 项 ==="
