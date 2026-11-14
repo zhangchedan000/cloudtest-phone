@@ -21,7 +21,7 @@ TPROXY_PORT=${PP_TPROXY_PORT:-7893}
 DNS_PORT=${PP_DNS_PORT:-1053}
 MARK=0x1b5          # 只用于被透明代理的容器流量
 TABLE=233           # 策略路由表号（不和系统已有的冲突）
-MIHOMO_VERSION=${PP_MIHOMO_VERSION:-v1.19.17}
+MIHOMO_VERSION=${PP_MIHOMO_VERSION:-v1.19.34}
 DATA=${PP_DATA:-/opt/prism-phone/data}
 CONF="$DATA/mihomo/config.yaml"
 
@@ -80,9 +80,11 @@ apply_rules() {
   local br
   br=$(bridge)
   systemctl is-active --quiet prism-phone-mihomo || die "mihomo 没在运行，先 install"
-  # 先排好自动撤销：万一规则把机器弄失联，3 分钟后自己恢复。
-  systemd-run --unit=prism-phone-net-rollback --on-active=180 /bin/bash "$(readlink -f "$0")" rollback >/dev/null
-  log "已安排 3 分钟后自动撤销；确认没问题后执行：bash $0 confirm"
+  if [ "${1:-}" != boot ]; then
+    # 先排好自动撤销：万一规则把机器弄失联，3 分钟后自己恢复。
+    systemd-run --unit=prism-phone-net-rollback --on-active=180 /bin/bash "$(readlink -f "$0")" rollback >/dev/null
+    log "已安排 3 分钟后自动撤销；确认没问题后执行：bash $0 confirm"
+  fi
 
   ip rule add fwmark "$MARK" lookup "$TABLE" priority 9233 2>/dev/null || true
   ip route replace local 0.0.0.0/0 dev lo table "$TABLE"
@@ -126,12 +128,30 @@ rollback() {
   br=$(docker network inspect -f '{{.Id}}' "$DOCKER_NET" 2>/dev/null | cut -c1-12) || true
   [ -n "$br" ] && ip6tables -D FORWARD -i "br-$br" -j DROP 2>/dev/null || true
   systemctl stop prism-phone-net-rollback.timer 2>/dev/null || true
+  systemctl disable prism-phone-net.service >/dev/null 2>&1 || true
   log "已撤销：prism_phone 表和策略路由都删了（云手机此时没有网络出口；管家程序也会禁止开机）"
 }
 
 confirm() {
   systemctl stop prism-phone-net-rollback.timer 2>/dev/null || true
-  log "已确认，取消自动撤销"
+  # 确认没问题后才做开机自动加规则：否则重启后规则没了，容器会经 Docker 的 NAT 直接用服务器网络。
+  cat > /etc/systemd/system/prism-phone-net.service <<UNIT
+[Unit]
+Description=prism-phone 网络规则（云手机流量交给 mihomo）
+After=docker.service prism-phone-mihomo.service prism-phone-agent.service
+Requires=prism-phone-mihomo.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/bash $(readlink -f "$0") apply-boot
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+  systemctl daemon-reload
+  systemctl enable prism-phone-net.service >/dev/null 2>&1
+  log "已确认，取消自动撤销；以后开机自动加规则"
 }
 
 status() {
@@ -143,6 +163,7 @@ status() {
 case "${1:-}" in
   install) install_mihomo ;;
   apply) apply_rules ;;
+  apply-boot) apply_rules boot ;;
   confirm) confirm ;;
   rollback) rollback ;;
   status) status ;;

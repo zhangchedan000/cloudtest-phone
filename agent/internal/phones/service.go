@@ -184,6 +184,11 @@ func (s *Service) nextIP(st *store.State) (string, error) {
 	return "", errors.New("网段里的 IP 用完了")
 }
 
+// EnsureNetwork 建好容器网络（网络模块的 DNS 要监听容器网关，所以管家程序启动时就建，不等第一次开机）。
+func (s *Service) EnsureNetwork(ctx context.Context) error {
+	return s.docker.EnsureNetwork(ctx, s.cfg.Network, s.cfg.Subnet, s.gateway())
+}
+
 func (s *Service) gateway() string {
 	prefix, _ := netip.ParsePrefix(s.cfg.Subnet)
 	b := prefix.Masked().Addr().As4()

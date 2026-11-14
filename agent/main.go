@@ -81,6 +81,9 @@ func main() {
 	svc := phones.NewService(cfg, dc, st, cat, models)
 	var net *netcfg.Syncer
 	if *mihomoAPI != "" {
+		if err := svc.EnsureNetwork(context.Background()); err != nil {
+			log.Printf("网络模块：建容器网络失败：%v", err)
+		}
 		net = &netcfg.Syncer{
 			Path: filepath.Join(*dataDir, "mihomo", "config.yaml"),
 			Opt:  netcfg.Options{TProxyPort: *tproxyPort, DNSListen: *dnsListen, Subnet: *subnet, DevHost: *devHost, APIListen: *mihomoAPI, CheckPort: *checkPort},
