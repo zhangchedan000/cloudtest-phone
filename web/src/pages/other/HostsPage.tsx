@@ -1,3 +1,4 @@
+import { TrashCard } from './TrashCard'
 import { Alert, Card, Descriptions, Progress, Tag } from 'antd'
 import { useWorkspace } from '@/data/store'
 
@@ -25,6 +26,7 @@ export function HostsPage() {
           )
         })}
       </div>
+      <TrashCard />
     </div>
   )
 }

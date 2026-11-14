@@ -65,6 +65,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /api/proxies/{id}", s.deleteProxy)
 	mux.HandleFunc("POST /api/proxies/{id}/check", s.checkProxy)
 	mux.HandleFunc("POST /api/proxies/import", s.importProxies)
+	mux.HandleFunc("GET /api/trash", s.listTrash)
+	mux.HandleFunc("DELETE /api/trash/{name}", s.deleteTrash)
 	mux.HandleFunc("GET /api/groups", s.listGroups)
 	mux.HandleFunc("POST /api/groups", s.createGroup)
 	mux.HandleFunc("PUT /api/groups/{id}", s.updateGroup)
@@ -528,4 +530,21 @@ func (s *Server) deleteGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "ungrouped": moved})
+}
+
+func (s *Server) listTrash(w http.ResponseWriter, _ *http.Request) {
+	items, err := s.svc.ListTrash()
+	if err != nil {
+		fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, items)
+}
+
+func (s *Server) deleteTrash(w http.ResponseWriter, r *http.Request) {
+	if err := s.svc.DeleteTrash(r.PathValue("name")); err != nil {
+		fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }

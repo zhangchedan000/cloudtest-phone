@@ -49,6 +49,8 @@ export interface HostInfo {
   network?: boolean
 }
 
+export interface TrashItem { name: string; phoneId: string; kind: 'delete' | 'reset'; at: string; sizeMB: number }
+
 export interface InputRequest { kind: 'tap' | 'swipe' | 'text' | 'key'; x?: number; y?: number; x2?: number; y2?: number; durationMs?: number; text?: string; key?: string }
 
 export const api = {
@@ -66,6 +68,8 @@ export const api = {
   checkProxy: (id: string) => call<ProxyCheck>('POST', `/proxies/${id}/check`),
   deleteProxy: (id: string) => call('DELETE', `/proxies/${id}`),
   importProxies: (req: { url?: string; text?: string; note?: string }) => call<{ added: number; duplicates: number; skipped?: string[] }>('POST', '/proxies/import', req),
+  trash: () => call<TrashItem[]>('GET', '/trash'),
+  deleteTrash: (name: string) => call('DELETE', `/trash/${encodeURIComponent(name)}`),
   groups: () => call<Group[]>('GET', '/groups'),
   createGroup: (group: Omit<Group, 'id'>) => call<Group>('POST', '/groups', group),
   updateGroup: (group: Group) => call<Group>('PUT', `/groups/${group.id}`, group),

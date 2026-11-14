@@ -48,6 +48,7 @@ func main() {
 	tproxyPort := flag.Int("tproxy-port", 7893, "网络模块：mihomo 透明代理端口")
 	dnsListen := flag.String("dns-listen", "10.88.0.1:1053", "网络模块：mihomo DNS 监听地址（容器网关）")
 	checkPort := flag.Int("check-port", 7899, "网络模块：检测入口端口（只监听 127.0.0.1，用来检测 vless / trojan 等节点；0 = 不开）")
+	trashDays := flag.Int("trash-days", 30, "回收站里的旧数据保留几天，超过自动彻底删除（0 = 不自动删）")
 	showVersion := flag.Bool("version", false, "显示版本")
 	flag.Parse()
 	if *showVersion {
@@ -133,6 +134,18 @@ func main() {
 		log.Fatal(err)
 	}
 	go svc.RunUsageSampler(context.Background(), 10*time.Second)
+	if *trashDays > 0 {
+		go func() {
+			for {
+				if n, err := svc.PurgeTrash(time.Duration(*trashDays) * 24 * time.Hour); err != nil {
+					log.Printf("清理回收站：%v", err)
+				} else if n > 0 {
+					log.Printf("回收站：彻底删除了 %d 份超过 %d 天的旧数据", n, *trashDays)
+				}
+				time.Sleep(6 * time.Hour)
+			}
+		}()
+	}
 	apiServer := api.New(svc, st, webFS, token, check)
 	if net != nil && net.CanCheck() {
 		apiServer.SetNetworkCheck(net.Check)
