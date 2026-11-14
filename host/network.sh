@@ -30,10 +30,17 @@ die() { printf '[network] 错误：%s\n' "$*" >&2; exit 1; }
 [ "$(id -u)" = 0 ] || die "请用 root 运行"
 
 bridge() {
-  local id
-  id=$(docker network inspect -f '{{.Id}}' "$DOCKER_NET" 2>/dev/null | cut -c1-12) || true
-  [ -n "$id" ] || die "Docker 网络 $DOCKER_NET 不存在（先用管家程序开一次机，它会建网络）"
-  echo "br-$id"
+  # 管家程序建网络时指定了网桥名（com.docker.network.bridge.name，默认就叫 pp-net）；
+  # 没指定时 Docker 用 br-<网络 ID 前 12 位>（踩坑 #20：第一版写死了后者，规则一直没匹配上）
+  local name id
+  name=$(docker network inspect -f '{{index .Options "com.docker.network.bridge.name"}}' "$DOCKER_NET" 2>/dev/null) || true
+  if [ -z "$name" ]; then
+    id=$(docker network inspect -f '{{.Id}}' "$DOCKER_NET" 2>/dev/null | cut -c1-12) || true
+    [ -n "$id" ] || die "Docker 网络 $DOCKER_NET 不存在（先用管家程序开一次机，它会建网络）"
+    name="br-$id"
+  fi
+  ip link show "$name" >/dev/null 2>&1 || die "网桥 $name 不存在"
+  echo "$name"
 }
 
 install_mihomo() {
@@ -136,8 +143,8 @@ rollback() {
   ip rule del fwmark "$MARK" lookup "$TABLE" 2>/dev/null || true
   ip route flush table "$TABLE" 2>/dev/null || true
   local br
-  br=$(docker network inspect -f '{{.Id}}' "$DOCKER_NET" 2>/dev/null | cut -c1-12) || true
-  [ -n "$br" ] && ip6tables -D FORWARD -i "br-$br" -j DROP 2>/dev/null || true
+  br=$( (bridge) 2>/dev/null ) || true
+  [ -n "$br" ] && ip6tables -D FORWARD -i "$br" -j DROP 2>/dev/null || true
   systemctl stop prism-phone-net-rollback.timer 2>/dev/null || true
   systemctl disable prism-phone-net.service >/dev/null 2>&1 || true
   log "已撤销：prism_phone 表和策略路由都删了（云手机此时没有网络出口；管家程序也会禁止开机）"
