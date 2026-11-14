@@ -74,6 +74,9 @@ else
 fi
 r=$(api GET "/phones/$ID/logs?level=W&lines=50"); ! echo "$r" | grep -q '"error"' && ok "看日志（$(echo "$r" | grep -c .) 行）" || bad "日志：$r"
 
+sleep 12
+u=$(api GET /phones | jget "[p.get('usage') for p in d if p['id']=='$ID'][0]")
+echo "$u" | grep -q memMB && ok "资源占用：$u" || bad "资源占用没采到：$u"
 r=$(api POST "/phones/$ID/reset" '{"renew":false}'); echo "$r" | grep -q '"ok":true' && ok "一键重置" || bad "重置：$r"
 r=$(api POST "/phones/$ID/stop"); echo "$r" | grep -q '"ok":true' && ok "关机" || bad "关机：$r"
 r=$(api DELETE "/phones/$ID"); echo "$r" | grep -q '"ok":true' && ok "删除（数据进回收站）" || bad "删除：$r"

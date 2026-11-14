@@ -60,6 +60,7 @@ type Service struct {
 	raw      RawRunner
 	boots    bootTracker
 	streams  streamTracker
+	usage    tracker[docker.Usage]
 	settings settingsTracker
 	// netGuard 网络模块开着时检查这台设备有没有出口；返回错误就禁止开机（绝不走宿主机网络）。
 	netGuard func(id string) error
@@ -558,6 +559,8 @@ type PhoneView struct {
 	Settings *SettingsStatus `json:"settings,omitempty"`
 	// Network 网络模块开着时，这台设备为什么没有出口（空 = 正常或网络模块没开）。
 	Network string `json:"network,omitempty"`
+	// Usage 最近一次采到的 CPU、内存（运行中的设备才有）。
+	Usage *docker.Usage `json:"usage,omitempty"`
 }
 
 func (s *Service) List(ctx context.Context) []PhoneView {
@@ -570,6 +573,9 @@ func (s *Service) List(ctx context.Context) []PhoneView {
 			if err := s.netGuard(p.ID); err != nil {
 				view.Network = err.Error()
 			}
+		}
+		if u := s.usage.get(p.ID); u != nil && p.Status != "stopped" && u.MemLimitMB > 0 {
+			view.Usage = u
 		}
 		out = append(out, view)
 	}

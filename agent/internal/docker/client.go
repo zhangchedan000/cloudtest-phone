@@ -196,3 +196,60 @@ func (c *Client) ImageExists(ctx context.Context, image string) (bool, error) {
 	}
 	return err == nil, err
 }
+
+// Usage 一个容器的资源占用。
+type Usage struct {
+	CPUPercent float64 `json:"cpuPercent"` // 占整台机器的百分比（4 核满载 = 100）
+	MemMB      float64 `json:"memMB"`
+	MemLimitMB float64 `json:"memLimitMB"`
+}
+
+type statsResponse struct {
+	CPUStats struct {
+		CPUUsage struct {
+			TotalUsage uint64 `json:"total_usage"`
+		} `json:"cpu_usage"`
+		SystemCPUUsage uint64 `json:"system_cpu_usage"`
+	} `json:"cpu_stats"`
+	PreCPUStats struct {
+		CPUUsage struct {
+			TotalUsage uint64 `json:"total_usage"`
+		} `json:"cpu_usage"`
+		SystemCPUUsage uint64 `json:"system_cpu_usage"`
+	} `json:"precpu_stats"`
+	MemoryStats struct {
+		Usage uint64            `json:"usage"`
+		Limit uint64            `json:"limit"`
+		Stats map[string]uint64 `json:"stats"`
+	} `json:"memory_stats"`
+}
+
+// UsageFromStats 按 docker stats 的算法算 CPU 百分比和内存（内存扣掉文件缓存）。
+func UsageFromStats(raw []byte) (Usage, error) {
+	var s statsResponse
+	if err := json.Unmarshal(raw, &s); err != nil {
+		return Usage{}, err
+	}
+	var u Usage
+	cpuDelta := float64(s.CPUStats.CPUUsage.TotalUsage) - float64(s.PreCPUStats.CPUUsage.TotalUsage)
+	sysDelta := float64(s.CPUStats.SystemCPUUsage) - float64(s.PreCPUStats.SystemCPUUsage)
+	if cpuDelta > 0 && sysDelta > 0 {
+		u.CPUPercent = cpuDelta / sysDelta * 100
+	}
+	mem := s.MemoryStats.Usage
+	if cache, ok := s.MemoryStats.Stats["inactive_file"]; ok && cache < mem {
+		mem -= cache
+	}
+	u.MemMB = float64(mem) / (1 << 20)
+	u.MemLimitMB = float64(s.MemoryStats.Limit) / (1 << 20)
+	return u, nil
+}
+
+// ContainerUsage 读一次容器的资源占用（Docker 会采样约 1 秒）。
+func (c *Client) ContainerUsage(ctx context.Context, name string) (Usage, error) {
+	var raw json.RawMessage
+	if err := c.do(ctx, http.MethodGet, "/containers/"+name+"/stats", url.Values{"stream": {"false"}}, nil, &raw); err != nil {
+		return Usage{}, err
+	}
+	return UsageFromStats(raw)
+}

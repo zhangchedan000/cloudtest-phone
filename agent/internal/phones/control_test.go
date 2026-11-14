@@ -3,6 +3,7 @@ package phones
 import (
 	"context"
 	"errors"
+	"github.com/zhangchedan000/prism-phone/agent/internal/docker"
 	"strings"
 	"testing"
 )
@@ -158,5 +159,29 @@ func TestStreamArgs(t *testing.T) {
 	}
 	if got := strings.Join(streamArgs(StreamOptions{Width: 99999, BitRate: -1}), " "); got != "screenrecord --output-format=h264 --time-limit 180 --bit-rate 2000000 -" {
 		t.Fatalf("不合理的参数应用默认值：%s", got)
+	}
+}
+
+type usageDocker struct{ *fakeDocker }
+
+func (usageDocker) ContainerUsage(context.Context, string) (docker.Usage, error) {
+	return docker.Usage{CPUPercent: 12.5, MemMB: 900, MemLimitMB: 3072}, nil
+}
+
+func TestUsageShownForRunningPhones(t *testing.T) {
+	svc, fd, _ := newTestService(t, true, "software")
+	svc.docker = usageDocker{fd}
+	a, _ := svc.Create(CreateRequest{Name: "A", ModelID: "poco-x4-gt", AndroidVersion: 14, ProxyID: DirectDevProxyID})
+	b, _ := svc.Create(CreateRequest{Name: "B", ModelID: "poco-x4-gt", AndroidVersion: 14, ProxyID: DirectDevProxyID})
+	ctx := context.Background()
+	_ = svc.Start(ctx, a.ID)
+	svc.SampleUsage(ctx)
+	for _, v := range svc.List(ctx) {
+		if v.ID == a.ID && (v.Usage == nil || v.Usage.MemMB != 900) {
+			t.Fatalf("运行中的设备应有占用：%+v", v.Usage)
+		}
+		if v.ID == b.ID && v.Usage != nil {
+			t.Fatalf("关机的设备不应有占用：%+v", v.Usage)
+		}
 	}
 }

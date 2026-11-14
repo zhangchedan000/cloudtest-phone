@@ -97,6 +97,7 @@ export function PhonesPage() {
                   <div>{String(ws.modelOf(p)?.values.marketName ?? '未选机型')} · A{p.androidVersion}</div>
                   <div><ProxyCell proxy={ws.proxyOf(p)} /></div>
                   <div className="pp-card-row"><span className="pp-chip" style={{ borderColor: ws.groupOf(p)?.color }}>{ws.groupOf(p)?.name ?? '未分组'}</span><IssueBadge issues={issues} /></div>
+                  {p.usage && <div className="pp-card-row pp-small pp-muted">{usageText(p.usage)}</div>}
                 </div>
                 <div className="pp-card-actions">
                   {p.status === 'running'
@@ -122,6 +123,7 @@ export function PhonesPage() {
             { title: '安卓', render: (_, p) => `Android ${p.androidVersion}` },
             { title: '代理', render: (_, p) => <ProxyCell proxy={ws.proxyOf(p)} /> },
             { title: '分组', render: (_, p) => ws.groupOf(p)?.name ?? '未分组' },
+            { title: '占用', render: (_, p) => (p.usage ? usageText(p.usage) : '—') },
             { title: '机器', render: (_, p) => ws.hostOf(p)?.name },
             { title: '检查', render: (_, p) => <IssueBadge issues={ws.issuesOf(p)} /> }
           ]}
@@ -137,4 +139,10 @@ export function PhonesPage() {
 
 function Stat({ label, value, tone }: { label: string; value: number | string; tone?: 'success' | 'danger' }) {
   return <div className={`pp-stat ${tone ? `pp-stat-${tone}` : ''}`}><span>{label}</span><b>{value}</b></div>
+}
+
+/** 「CPU 12% · 内存 0.9 / 3 GB」 */
+function usageText(u: NonNullable<Phone['usage']>): string {
+  const gb = (mb: number) => (mb / 1024).toFixed(mb >= 10240 ? 0 : 1)
+  return `CPU ${Math.round(u.cpuPercent)}% · 内存 ${gb(u.memMB)} / ${gb(u.memLimitMB)} GB`
 }

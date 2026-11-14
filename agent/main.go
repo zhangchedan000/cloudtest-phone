@@ -129,6 +129,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	go svc.RunUsageSampler(context.Background(), 10*time.Second)
 	apiServer := api.New(svc, st, webFS, token, check)
 	if net != nil && net.CanCheck() {
 		apiServer.SetNetworkCheck(net.Check)

@@ -67,6 +67,8 @@ export interface Phone {
   settings?: { state: 'pending' | 'applied' | 'failed'; applied?: string[]; error?: string }
   /** 管家程序返回：网络模块开着时，这台设备为什么没有出口（没有就是正常）。 */
   network?: string
+  /** 管家程序返回：最近一次采到的 CPU（占整台机器的百分比）、内存（MB）。 */
+  usage?: { cpuPercent: number; memMB: number; memLimitMB: number }
 }
 
 export type ProxyProtocol = 'socks5' | 'http' | 'https' | 'ss' | 'vmess' | 'vless' | 'trojan' | 'hysteria2' | 'subscription' | 'clash'
