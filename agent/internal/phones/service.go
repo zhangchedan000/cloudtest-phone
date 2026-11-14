@@ -50,15 +50,17 @@ type Config struct {
 const DirectDevProxyID = "direct-dev"
 
 type Service struct {
-	cfg    Config
-	docker Docker
-	store  *store.Store
-	cat    *Catalog
-	models []Model
-	now    func() time.Time
-	run    Runner
-	raw    RawRunner
-	fakes  fakeTracker
+	cfg      Config
+	docker   Docker
+	store    *store.Store
+	cat      *Catalog
+	models   []Model
+	now      func() time.Time
+	run      Runner
+	raw      RawRunner
+	boots    bootTracker
+	settings settingsTracker
+	fakes    fakeTracker
 	// async 为 false 时伪造文件同步挂载（测试用）。
 	async bool
 }
@@ -238,9 +240,12 @@ func (s *Service) resolve(p store.Phone, st store.State) []ResolvedField {
 			if contains(f.Sink.Names, "uname()") {
 				rf.Reason = "文件已伪造；uname() 系统调用还没拦截（待做 seccomp）"
 			}
+		case f.Sink.Kind == "prop" && isLiveProp(f.Key):
+			// 实测：persist.* 属性用启动参数设不进去，开机完成后在容器里设置（settings.go）。
+			rf.Applied = true
+			rf.Reason = "开机后设置"
 		case f.Sink.Kind == "prop" && !allReadOnlyProps(f.Sink.Names):
-			// 实测：persist.* 属性用启动参数设不进去，要开机后设置。
-			rf.Reason = "开机后设置（待实现）"
+			rf.Reason = "开机后设置（这个字段还没实现）"
 		case f.Sink.Kind == "prop" && strings.ContainsAny(fmt.Sprint(value), " \t"):
 			// 实测：Redroid 启动参数里的值遇到空格会被截断（「POCO X4 GT」变成「POCO」），截断比不改更糟。
 			rf.Reason = "值里有空格，启动参数传不了（待改用 build.prop 写入）"
@@ -303,7 +308,7 @@ func (s *Service) BootArgs(p store.Phone, st store.State) []string {
 	var props []string
 	for _, r := range resolved {
 		f, _ := s.cat.Field(r.Key)
-		if !r.Applied || f.Sink.Kind != "prop" {
+		if !r.Applied || f.Sink.Kind != "prop" || isLiveProp(f.Key) {
 			continue
 		}
 		val := propValue(f, r.Value)
@@ -462,6 +467,11 @@ func (s *Service) Start(ctx context.Context, id string) error {
 	if err := s.docker.StartContainer(ctx, name); err != nil {
 		return fmt.Errorf("启动容器：%w", err)
 	}
+	if s.async {
+		go s.applySettings(context.Background(), p.ID)
+	} else {
+		s.applySettings(ctx, p.ID)
+	}
 	if hasFakes {
 		if s.async {
 			go s.applyFakes(context.Background(), p.ID)
@@ -529,18 +539,15 @@ type PhoneView struct {
 	Issues   []Issue         `json:"issues"`
 	Resolved []ResolvedField `json:"resolved"`
 	Fakes    *FakeStatus     `json:"fakes,omitempty"`
+	Settings *SettingsStatus `json:"settings,omitempty"`
 }
 
 func (s *Service) List(ctx context.Context) []PhoneView {
 	st := s.store.Snapshot()
 	out := make([]PhoneView, 0, len(st.Phones))
 	for _, p := range st.Phones {
-		if s.isRunning(ctx, p.ID) {
-			p.Status = "running"
-		} else {
-			p.Status = "stopped"
-		}
-		out = append(out, PhoneView{Phone: p, Issues: s.Check(p, st), Resolved: s.resolve(p, st), Fakes: s.fakes.get(p.ID)})
+		p.Status = s.State(ctx, p.ID)
+		out = append(out, PhoneView{Phone: p, Issues: s.Check(p, st), Resolved: s.resolve(p, st), Fakes: s.fakes.get(p.ID), Settings: s.settings.get(p.ID)})
 	}
 	return out
 }

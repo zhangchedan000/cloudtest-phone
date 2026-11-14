@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"sync"
 	"unicode"
 )
 
@@ -29,23 +30,70 @@ func (execRaw) Output(ctx context.Context, name string, args ...string) ([]byte,
 	return out, err
 }
 
-// ErrNotRunning 设备没开机时不能截屏或操作。
-var ErrNotRunning = errors.New("设备没有开机")
+// ErrNotRunning 设备没开机时不能截屏或操作；ErrNotReady 容器起来了但安卓还没开机完成。
+var (
+	ErrNotRunning = errors.New("设备没有开机")
+	ErrNotReady   = errors.New("还在开机，等开机完成再操作")
+)
 
-func (s *Service) requireRunning(ctx context.Context, id string) error {
+// bootTracker 记住哪次开机已经完成（按容器的启动时间区分），不用每次都进容器问。
+type bootTracker struct {
+	mu     sync.Mutex
+	booted map[string]string // 设备 ID → 已开机完成的那次容器启动时间
+}
+
+func (b *bootTracker) done(id, startedAt string) bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return startedAt != "" && b.booted[id] == startedAt
+}
+
+func (b *bootTracker) mark(id, startedAt string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.booted == nil {
+		b.booted = map[string]string{}
+	}
+	b.booted[id] = startedAt
+}
+
+// State 设备的真实状态：stopped（容器没在跑）/ starting（容器在跑，安卓还没开机完成）/ running。
+func (s *Service) State(ctx context.Context, id string) string {
+	info, err := s.docker.InspectContainer(ctx, containerName(id))
+	if err != nil || !info.State.Running {
+		return "stopped"
+	}
+	if s.boots.done(id, info.State.StartedAt) {
+		return "running"
+	}
+	out, _ := s.run.Run(ctx, "docker", "exec", containerName(id), "getprop", "sys.boot_completed")
+	if strings.TrimSpace(out) != "1" {
+		return "starting"
+	}
+	s.boots.mark(id, info.State.StartedAt)
+	return "running"
+}
+
+// requireRunning 截屏只要容器在跑（开机画面也能看）；操作要等安卓开机完成（ready）。
+func (s *Service) requireRunning(ctx context.Context, id string, ready bool) error {
 	st := s.store.Snapshot()
 	if _, err := st.Phone(id); err != nil {
 		return err
 	}
-	if !s.isRunning(ctx, id) {
+	switch s.State(ctx, id) {
+	case "stopped":
 		return ErrNotRunning
+	case "starting":
+		if ready {
+			return ErrNotReady
+		}
 	}
 	return nil
 }
 
 // Screenshot 返回设备当前画面（PNG）。
 func (s *Service) Screenshot(ctx context.Context, id string) ([]byte, error) {
-	if err := s.requireRunning(ctx, id); err != nil {
+	if err := s.requireRunning(ctx, id, false); err != nil {
 		return nil, err
 	}
 	png, err := s.raw.Output(ctx, "docker", "exec", containerName(id), "screencap", "-p")
@@ -133,7 +181,7 @@ func (s *Service) Input(ctx context.Context, id string, req InputRequest) error 
 	if err != nil {
 		return err
 	}
-	if err := s.requireRunning(ctx, id); err != nil {
+	if err := s.requireRunning(ctx, id, true); err != nil {
 		return err
 	}
 	cmd := "input " + strings.Join(args, " ")

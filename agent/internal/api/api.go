@@ -94,7 +94,7 @@ func fail(w http.ResponseWriter, err error) {
 		writeErr(w, http.StatusNotFound, err.Error())
 	case errors.Is(err, phones.ErrInvalid):
 		writeErr(w, http.StatusBadRequest, err.Error())
-	case errors.Is(err, phones.ErrBlocked), errors.Is(err, phones.ErrNotRunning), errors.Is(err, ErrInUse):
+	case errors.Is(err, phones.ErrBlocked), errors.Is(err, phones.ErrNotRunning), errors.Is(err, phones.ErrNotReady), errors.Is(err, ErrInUse):
 		writeErr(w, http.StatusConflict, err.Error())
 	default:
 		writeErr(w, http.StatusInternalServerError, err.Error())

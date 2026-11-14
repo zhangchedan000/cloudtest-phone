@@ -84,6 +84,7 @@ export function PhoneDrawer({ phone, onClose }: { phone?: Phone; onClose: () => 
                     { label: '出口 IP', children: ws.proxyOf(live)?.check?.exitIp ?? '—' },
                     { label: '所在机器', children: `${host?.name}（${host?.location}）` },
                     { label: '显卡', children: host?.gpu },
+                    { label: '时区 / 语言', children: !live.settings ? '—' : live.settings.state === 'pending' ? '等开机完成后设置…' : live.settings.state === 'applied' ? '已设置' : `设置失败：${live.settings.error ?? ''}` },
                     { label: '创建时间', children: live.createdAt.slice(0, 16).replace('T', ' ') },
                     { label: '备注', children: live.note ?? '—' }
                   ]} />

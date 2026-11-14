@@ -65,3 +65,40 @@ func TestScreenshotAndInputNeedARunningPhone(t *testing.T) {
 		t.Fatal("拿不到图片应该报错")
 	}
 }
+
+// notBooted 假装安卓还没开机完成。
+type notBooted struct{ fakeRunner }
+
+func (r *notBooted) Run(ctx context.Context, name string, args ...string) (string, error) {
+	if len(args) >= 3 && args[2] == "getprop" {
+		return "0", nil
+	}
+	return r.fakeRunner.Run(ctx, name, args...)
+}
+
+func TestStartingUntilAndroidBooted(t *testing.T) {
+	svc, _, _ := newTestService(t, true, "software")
+	p, err := svc.Create(CreateRequest{Name: "A", ModelID: "poco-x4-gt", AndroidVersion: 14, ProxyID: DirectDevProxyID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if err := svc.Start(ctx, p.ID); err != nil {
+		t.Fatal(err)
+	}
+	svc.run = &notBooted{}
+	if got := svc.State(ctx, p.ID); got != "starting" {
+		t.Fatalf("没开机完成应是 starting，得到 %s", got)
+	}
+	svc.raw = fakeRaw{out: []byte("\x89PNG\r\n\x1a\nxx")}
+	if _, err := svc.Screenshot(ctx, p.ID); err != nil {
+		t.Fatalf("开机中也能截屏（看开机画面）：%v", err)
+	}
+	if err := svc.Input(ctx, p.ID, InputRequest{Kind: "key", Key: "home"}); !errors.Is(err, ErrNotReady) {
+		t.Fatalf("开机中操作应提示等开机：%v", err)
+	}
+	svc.run = &fakeRunner{}
+	if got := svc.State(ctx, p.ID); got != "running" {
+		t.Fatalf("开机完成应是 running，得到 %s", got)
+	}
+}

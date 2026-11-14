@@ -63,6 +63,8 @@ export interface Phone {
   createdAt: string
   lastActiveAt?: string
   fields: Record<string, FieldSetting>
+  /** 管家程序返回：开机后设置（时区、语言）的结果。 */
+  settings?: { state: 'pending' | 'applied' | 'failed'; applied?: string[]; error?: string }
 }
 
 export type ProxyProtocol = 'socks5' | 'http' | 'https' | 'ss' | 'vmess' | 'vless' | 'trojan' | 'hysteria2' | 'subscription'
