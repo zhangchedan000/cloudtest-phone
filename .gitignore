@@ -3,3 +3,4 @@ dist/
 web/e2e/shots/
 agent/bin/
 *.log
+*.tsbuildinfo
