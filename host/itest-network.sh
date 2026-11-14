@@ -40,7 +40,11 @@ echo "== 5. 手机里检查"
 dns=$(docker exec "$C" ping -c 1 -W 3 ipinfo.io 2>&1 | head -1)
 echo "$dns" | grep -q "198\.18\." && ok "DNS 经 mihomo（fake-ip）：$dns" || bad "DNS 没走 mihomo：$dns"
 host_ip=$(curl -s -m 10 https://ipinfo.io/ip)
-body=$(docker exec "$C" sh -c 'printf "GET /ip HTTP/1.1\r\nHost: ipinfo.io\r\nConnection: close\r\n\r\n" | nc -w 10 ipinfo.io 80' 2>&1 | tail -1)
+# 第一次请求要等安卓的加密 DNS（DoT）建好连接，比较慢：给 30 秒、最多试 3 次
+for _ in 1 2 3; do
+  body=$(docker exec "$C" sh -c 'printf "GET /ip HTTP/1.1\r\nHost: ipinfo.io\r\nConnection: close\r\n\r\n" | nc -w 30 ipinfo.io 80' 2>&1 | tail -1)
+  [ "$body" = "$host_ip" ] && break
+done
 [ -n "$host_ip" ] && [ "$body" = "$host_ip" ] && ok "出口经 mihomo 直连，IP = 服务器 IP $host_ip" || bad "出口不对：手机 [$body] 服务器 [$host_ip]"
 # 出口 IP 和服务器一样（开发机直连），光看 IP 分不出走没走 mihomo；开一条慢连接，在 mihomo 的连接列表里找这台手机。
 docker exec "$C" sh -c '(sleep 8; printf "GET / HTTP/1.0\r\n\r\n") | nc -w 12 example.com 80' >/dev/null 2>&1 &
