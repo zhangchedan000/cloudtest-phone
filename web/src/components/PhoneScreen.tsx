@@ -1,16 +1,20 @@
 import { LoadingOutlined, PoweroffOutlined } from '@ant-design/icons'
 import type { PhoneStatus } from '@/data/types'
+import { useWorkspace } from '@/data/store'
+import { LiveScreen } from './LiveScreen'
 
 /**
- * 手机画面。现在是预览用的示意画面；接上管家程序后，运行中的设备在这里显示实时视频流。
+ * 手机画面。接上管家程序（live）时显示实时截屏并可操作；预览模式显示示意画面。
  * size：thumb（卡片小图）/ large（大屏操作）。
  */
-export function PhoneScreen({ status, name, size = 'thumb', seed = 0 }: { status: PhoneStatus; name: string; size?: 'thumb' | 'large'; seed?: number }) {
+export function PhoneScreen({ id, status, name, size = 'thumb', seed = 0 }: { id?: string; status: PhoneStatus; name: string; size?: 'thumb' | 'large'; seed?: number }) {
+  const ws = useWorkspace()
   const hue = (seed * 47) % 360
   return (
     <div className={`pp-phone pp-phone-${size}`}>
-      <div className="pp-phone-screen" style={status === 'running' ? { background: `linear-gradient(160deg, hsl(${hue} 70% 62%), hsl(${(hue + 60) % 360} 65% 38%))` } : undefined}>
-        {status === 'running' && (
+      <div className="pp-phone-screen" style={status === 'running' && ws.mode !== 'live' ? { background: `linear-gradient(160deg, hsl(${hue} 70% 62%), hsl(${(hue + 60) % 360} 65% 38%))` } : undefined}>
+        {status === 'running' && ws.mode === 'live' && id && <LiveScreen id={id} size={size} />}
+        {status === 'running' && ws.mode !== 'live' && (
           <>
             <div className="pp-phone-status"><span>9:41</span><span>WiFi ▮▮▮ 83%</span></div>
             <div className="pp-phone-apps">

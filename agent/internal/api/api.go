@@ -226,6 +226,7 @@ func (s *Server) createProxy(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "名称和地址不能为空")
 		return
 	}
+	protocolFromAddress(&px)
 	px.ID = "p-" + time.Now().Format("060102150405.000")
 	px.Check = nil
 	if err := s.store.Update(func(st *store.State) error { st.Proxies = append(st.Proxies, px); return nil }); err != nil {
@@ -294,6 +295,7 @@ func (s *Server) updateProxy(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "名称和地址不能为空")
 		return
 	}
+	protocolFromAddress(&in)
 	id := r.PathValue("id")
 	var out store.Proxy
 	err := s.store.Update(func(st *store.State) error {
@@ -369,4 +371,23 @@ func (s *Server) checkProxy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, res)
+}
+
+// protocolFromAddress 地址带了协议头（socks5:// http:// vless:// …）就以它为准，免得选的协议和地址对不上。
+func protocolFromAddress(px *store.Proxy) {
+	if i := strings.Index(px.Address, "://"); i > 0 {
+		scheme := strings.ToLower(px.Address[:i])
+		switch scheme {
+		case "socks5h", "socks":
+			scheme = "socks5"
+		case "hy2":
+			scheme = "hysteria2"
+		case "http", "https":
+			// 订阅链接也是 http(s)://，用户选了订阅就保持订阅
+			if px.Protocol == "subscription" {
+				return
+			}
+		}
+		px.Protocol = scheme
+	}
 }

@@ -84,7 +84,7 @@ export function PhonesPage() {
                   <StatusDot status={p.status} />
                 </div>
                 <div className="pp-card-screen" onClick={() => setOpen(p)} role="button" tabIndex={0}>
-                  <PhoneScreen status={p.status} name={p.name} seed={p.name.length + p.id.charCodeAt(5)} />
+                  <PhoneScreen id={p.id} status={p.status} name={p.name} seed={p.name.length + p.id.charCodeAt(5)} />
                 </div>
                 <div className="pp-card-meta">
                   <div>{String(ws.modelOf(p)?.values.marketName ?? '未选机型')} · A{p.androidVersion}</div>
