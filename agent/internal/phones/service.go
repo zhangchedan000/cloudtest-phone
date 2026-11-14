@@ -60,6 +60,8 @@ type Service struct {
 	raw      RawRunner
 	boots    bootTracker
 	settings settingsTracker
+	// netGuard 网络模块开着时检查这台设备有没有出口；返回错误就禁止开机（绝不走宿主机网络）。
+	netGuard func(id string) error
 	fakes    fakeTracker
 	// async 为 false 时伪造文件同步挂载（测试用）。
 	async bool
@@ -68,6 +70,9 @@ type Service struct {
 func NewService(cfg Config, d Docker, st *store.Store, cat *Catalog, models []Model) *Service {
 	return &Service{cfg: cfg, docker: d, store: st, cat: cat, models: models, now: time.Now, run: execRunner{}, raw: execRaw{}, async: true}
 }
+
+// SetNetworkGuard 接上网络模块（mihomo）的开机前检查。
+func (s *Service) SetNetworkGuard(fn func(id string) error) { s.netGuard = fn }
 
 func (s *Service) Models() []Model   { return s.models }
 func (s *Service) Catalog() *Catalog { return s.cat }
@@ -417,6 +422,11 @@ func (s *Service) Start(ctx context.Context, id string) error {
 	}
 	if err := blocks(s.Check(*p, st)); err != nil {
 		return err
+	}
+	if s.netGuard != nil {
+		if err := s.netGuard(id); err != nil {
+			return fmt.Errorf("%w：%v", ErrBlocked, err)
+		}
 	}
 	if s.cfg.MaxRunning > 0 {
 		running := 0

@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
@@ -20,6 +21,7 @@ import (
 	"github.com/zhangchedan000/prism-phone/agent/internal/api"
 	"github.com/zhangchedan000/prism-phone/agent/internal/assets"
 	"github.com/zhangchedan000/prism-phone/agent/internal/docker"
+	netcfg "github.com/zhangchedan000/prism-phone/agent/internal/network"
 	"github.com/zhangchedan000/prism-phone/agent/internal/phones"
 	"github.com/zhangchedan000/prism-phone/agent/internal/selfcheck"
 	"github.com/zhangchedan000/prism-phone/agent/internal/store"
@@ -42,6 +44,9 @@ func main() {
 	maxRunning := flag.Int("max-running", 4, "同时最多运行几台")
 	devHost := flag.Bool("dev-host", false, "开发机：允许「直连（仅开发）」代理")
 	dockerSock := flag.String("docker", "/var/run/docker.sock", "Docker socket")
+	mihomoAPI := flag.String("mihomo-api", "", "网络模块：mihomo 控制接口地址（例如 127.0.0.1:9090）；空 = 不开网络模块（只适合开发测试）")
+	tproxyPort := flag.Int("tproxy-port", 7893, "网络模块：mihomo 透明代理端口")
+	dnsListen := flag.String("dns-listen", "10.88.0.1:1053", "网络模块：mihomo DNS 监听地址（容器网关）")
 	showVersion := flag.Bool("version", false, "显示版本")
 	flag.Parse()
 	if *showVersion {
@@ -73,6 +78,36 @@ func main() {
 		MaxRunning: *maxRunning, DevHost: *devHost,
 	}
 	svc := phones.NewService(cfg, dc, st, cat, models)
+	var net *netcfg.Syncer
+	if *mihomoAPI != "" {
+		net = &netcfg.Syncer{
+			Path: filepath.Join(*dataDir, "mihomo", "config.yaml"),
+			Opt:  netcfg.Options{TProxyPort: *tproxyPort, DNSListen: *dnsListen, Subnet: *subnet, DevHost: *devHost, APIListen: *mihomoAPI},
+		}
+		syncNet := func() {
+			if err := net.Sync(context.Background(), st.Snapshot()); err != nil {
+				log.Printf("网络模块：%v", err)
+			}
+		}
+		syncNet()
+		go func() {
+			for range time.Tick(3 * time.Second) {
+				syncNet()
+			}
+		}()
+		svc.SetNetworkGuard(func(id string) error {
+			syncNet()
+			if err := net.LastError(); err != nil {
+				return err
+			}
+			if why, ok := net.Blocked()[id]; ok {
+				return fmt.Errorf("没有网络出口：%s", why)
+			}
+			return nil
+		})
+	} else {
+		log.Printf("网络模块没开（-mihomo-api 为空）：云手机直接用宿主机网络，只能用来开发测试")
+	}
 	check := func() selfcheck.Report { return selfcheck.Run(*dataDir, dc.Ping) }
 	rep := check()
 	for _, it := range rep.Items {

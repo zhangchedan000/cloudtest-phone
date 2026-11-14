@@ -1,0 +1,150 @@
+#!/usr/bin/env bash
+# 网络模块：让每台云手机的流量走它自己的代理（mihomo 透明代理），没有出口的一律拦截。
+#
+# 只动容器网段（默认 10.88.0.0/16、Docker 网络 pp-net 的网桥）：宿主机自己的 SSH、Desktop Commander、
+# keepalive 都不经过这里（防失联规矩）。规则放在单独的 nftables 表 prism_phone 里，删掉这张表就完全恢复。
+#
+# 用法（root）：
+#   bash host/network.sh install    # 下载并安装 mihomo（固定版本），建 systemd 服务（不改任何网络规则）
+#   bash host/network.sh apply      # 加透明代理规则；3 分钟内不 confirm 就自动撤销
+#   bash host/network.sh confirm    # 确认规则没问题，取消自动撤销
+#   bash host/network.sh rollback   # 撤销规则（删除 prism_phone 表和策略路由）
+#   bash host/network.sh status     # 看现状
+#
+# 状态：2026-11-15 写好，还没在阿什本实机跑过。第一次跑必须按「防失联规矩」：先确认甲骨文串口控制台能用。
+set -euo pipefail
+
+SUBNET=${PP_SUBNET:-10.88.0.0/16}
+GATEWAY=${PP_GATEWAY:-10.88.0.1}
+DOCKER_NET=${PP_DOCKER_NET:-pp-net}
+TPROXY_PORT=${PP_TPROXY_PORT:-7893}
+DNS_PORT=${PP_DNS_PORT:-1053}
+MARK=0x1b5          # 只用于被透明代理的容器流量
+TABLE=233           # 策略路由表号（不和系统已有的冲突）
+MIHOMO_VERSION=${PP_MIHOMO_VERSION:-v1.19.17}
+DATA=${PP_DATA:-/opt/prism-phone/data}
+CONF="$DATA/mihomo/config.yaml"
+
+log() { printf '[network] %s\n' "$*"; }
+die() { printf '[network] 错误：%s\n' "$*" >&2; exit 1; }
+[ "$(id -u)" = 0 ] || die "请用 root 运行"
+
+bridge() {
+  local id
+  id=$(docker network inspect -f '{{.Id}}' "$DOCKER_NET" 2>/dev/null | cut -c1-12) || true
+  [ -n "$id" ] || die "Docker 网络 $DOCKER_NET 不存在（先用管家程序开一次机，它会建网络）"
+  echo "br-$id"
+}
+
+install_mihomo() {
+  command -v nft >/dev/null || { apt-get install -y nftables >/dev/null; }
+  if [ ! -x /usr/local/bin/mihomo ] || ! /usr/local/bin/mihomo -v 2>/dev/null | grep -q "$MIHOMO_VERSION"; then
+    local tmp url
+    tmp=$(mktemp -d)
+    url="https://github.com/MetaCubeX/mihomo/releases/download/$MIHOMO_VERSION/mihomo-linux-arm64-$MIHOMO_VERSION.gz"
+    log "下载 $url"
+    curl -fsSL --retry 3 -o "$tmp/mihomo.gz" "$url"
+    log "sha256：$(sha256sum "$tmp/mihomo.gz" | cut -d' ' -f1)（第一次装时记进 docs/踩坑记录.md，以后核对）"
+    gunzip "$tmp/mihomo.gz"
+    install -m 0755 "$tmp/mihomo" /usr/local/bin/mihomo
+    rm -rf "$tmp"
+  fi
+  mkdir -p "$DATA/mihomo"
+  chmod 700 "$DATA/mihomo"
+  # 管家程序会生成真正的配置；这里先放一个「全部拒绝」的，保证 mihomo 起得来又不放行任何流量。
+  [ -f "$CONF" ] || printf 'tproxy-port: %s\nallow-lan: true\nmode: rule\nexternal-controller: 127.0.0.1:9090\nproxies: []\nrules:\n  - MATCH,REJECT\n' "$TPROXY_PORT" > "$CONF"
+  cat > /etc/systemd/system/prism-phone-mihomo.service <<EOF
+[Unit]
+Description=prism-phone 网络模块（mihomo，只给云手机容器用）
+After=network-online.target docker.service
+
+[Service]
+ExecStart=/usr/local/bin/mihomo -d $DATA/mihomo -f $CONF
+Restart=always
+RestartSec=3
+# 只需要绑定端口和透明代理
+AmbientCapabilities=CAP_NET_ADMIN CAP_NET_BIND_SERVICE
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target
+EOF
+  systemctl daemon-reload
+  systemctl enable --now prism-phone-mihomo
+  sleep 2
+  systemctl is-active --quiet prism-phone-mihomo || die "mihomo 没起来：journalctl -u prism-phone-mihomo -n 50"
+  log "mihomo 已安装并运行。管家程序加参数 -mihomo-api 127.0.0.1:9090 -dns-listen $GATEWAY:$DNS_PORT 后会自动生成配置"
+}
+
+apply_rules() {
+  local br
+  br=$(bridge)
+  systemctl is-active --quiet prism-phone-mihomo || die "mihomo 没在运行，先 install"
+  # 先排好自动撤销：万一规则把机器弄失联，3 分钟后自己恢复。
+  systemd-run --unit=prism-phone-net-rollback --on-active=180 /bin/bash "$(readlink -f "$0")" rollback >/dev/null
+  log "已安排 3 分钟后自动撤销；确认没问题后执行：bash $0 confirm"
+
+  ip rule add fwmark "$MARK" lookup "$TABLE" priority 9233 2>/dev/null || true
+  ip route replace local 0.0.0.0/0 dev lo table "$TABLE"
+  nft -f - <<EOF
+table ip prism_phone
+delete table ip prism_phone
+table ip prism_phone {
+  chain dns {
+    type nat hook prerouting priority dstnat; policy accept;
+    # 云手机的 DNS（不管它写的是哪个服务器）都交给 mihomo，不用宿主机的 DNS
+    iifname "$br" ip saddr $SUBNET udp dport 53 dnat to $GATEWAY:$DNS_PORT
+    iifname "$br" ip saddr $SUBNET tcp dport 53 dnat to $GATEWAY:$DNS_PORT
+  }
+  chain tproxy {
+    type filter hook prerouting priority mangle; policy accept;
+    iifname != "$br" return
+    ip saddr != $SUBNET return
+    # 发给网关本身的（DNS、管家程序）不代理
+    ip daddr $GATEWAY return
+    meta l4proto { tcp, udp } tproxy to 127.0.0.1:$TPROXY_PORT meta mark set $MARK accept
+  }
+  chain forward {
+    type filter hook forward priority filter; policy accept;
+    # 兜底：容器流量不允许被直接转发出去（只能经 mihomo）。透明代理的流量走 input，不经过这里。
+    iifname "$br" ip saddr $SUBNET oifname != "$br" drop
+  }
+}
+EOF
+  # IPv6：云手机一律不给（代理大多只有 IPv4，留着 IPv6 会绕过代理）
+  if command -v ip6tables >/dev/null; then
+    ip6tables -C FORWARD -i "$br" -j DROP 2>/dev/null || ip6tables -I FORWARD -i "$br" -j DROP
+  fi
+  log "规则已加到 $br（容器网段 $SUBNET）。宿主机自己的网络没变。"
+}
+
+rollback() {
+  nft delete table ip prism_phone 2>/dev/null || true
+  ip rule del fwmark "$MARK" lookup "$TABLE" 2>/dev/null || true
+  ip route flush table "$TABLE" 2>/dev/null || true
+  local br
+  br=$(docker network inspect -f '{{.Id}}' "$DOCKER_NET" 2>/dev/null | cut -c1-12) || true
+  [ -n "$br" ] && ip6tables -D FORWARD -i "br-$br" -j DROP 2>/dev/null || true
+  systemctl stop prism-phone-net-rollback.timer 2>/dev/null || true
+  log "已撤销：prism_phone 表和策略路由都删了（云手机此时没有网络出口；管家程序也会禁止开机）"
+}
+
+confirm() {
+  systemctl stop prism-phone-net-rollback.timer 2>/dev/null || true
+  log "已确认，取消自动撤销"
+}
+
+status() {
+  systemctl is-active prism-phone-mihomo 2>/dev/null | sed 's/^/mihomo：/'
+  nft list table ip prism_phone >/dev/null 2>&1 && echo "规则：已加" || echo "规则：没加"
+  systemctl list-timers --all 2>/dev/null | grep -q prism-phone-net-rollback && echo "自动撤销：等待中" || echo "自动撤销：无"
+}
+
+case "${1:-}" in
+  install) install_mihomo ;;
+  apply) apply_rules ;;
+  confirm) confirm ;;
+  rollback) rollback ;;
+  status) status ;;
+  *) sed -n '2,15p' "$0"; exit 1 ;;
+esac
