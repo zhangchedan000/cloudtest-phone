@@ -1,0 +1,169 @@
+// Package store 保存管家程序的数据：云手机、代理库、分组库。
+//
+// 规矩（同 Prism）：代理、分组各存一份，云手机只存引用（ProxyID、GroupID、ModelID）和改过的字段。
+// 数据写在一个 JSON 文件里，先写临时文件再改名，断电也不会写坏。
+package store
+
+import (
+	"encoding/json"
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"sync"
+	"time"
+)
+
+// FieldSetting 一个参数在某台云手机上的设置：用什么模式、手动/随机出来的值。
+type FieldSetting struct {
+	Mode   string `json:"mode"`
+	Value  any    `json:"value,omitempty"`
+	Locked bool   `json:"locked,omitempty"`
+}
+
+type Phone struct {
+	ID             string                  `json:"id"`
+	Name           string                  `json:"name"`
+	HostID         string                  `json:"hostId"`
+	Status         string                  `json:"status"` // running / stopped / starting / error（由运行状态覆盖）
+	AndroidVersion int                     `json:"androidVersion"`
+	ModelID        string                  `json:"modelId"`
+	ProxyID        string                  `json:"proxyId"`
+	GroupID        string                  `json:"groupId"`
+	Note           string                  `json:"note,omitempty"`
+	CreatedAt      time.Time               `json:"createdAt"`
+	LastActiveAt   *time.Time              `json:"lastActiveAt,omitempty"`
+	Fields         map[string]FieldSetting `json:"fields"`
+	// IP 在容器网段里的固定地址（代理分流按它来），创建时分配，永不改变。
+	IP string `json:"ip"`
+}
+
+type ProxyCheck struct {
+	OK        bool      `json:"ok"`
+	ExitIP    string    `json:"exitIp,omitempty"`
+	Country   string    `json:"country,omitempty"`
+	Region    string    `json:"region,omitempty"`
+	City      string    `json:"city,omitempty"`
+	Timezone  string    `json:"timezone,omitempty"`
+	LatencyMs int       `json:"latencyMs,omitempty"`
+	UDP       *bool     `json:"udp,omitempty"`
+	CheckedAt time.Time `json:"checkedAt"`
+	Error     string    `json:"error,omitempty"`
+}
+
+type Proxy struct {
+	ID       string      `json:"id"`
+	Name     string      `json:"name"`
+	Protocol string      `json:"protocol"`
+	Address  string      `json:"address"`
+	Note     string      `json:"note,omitempty"`
+	Check    *ProxyCheck `json:"check,omitempty"`
+}
+
+type Group struct {
+	ID    string `json:"id"`
+	Name  string `json:"name"`
+	Color string `json:"color"`
+}
+
+type State struct {
+	Schema  int     `json:"schema"`
+	Phones  []Phone `json:"phones"`
+	Proxies []Proxy `json:"proxies"`
+	Groups  []Group `json:"groups"`
+}
+
+const currentSchema = 1
+
+var ErrNotFound = errors.New("不存在")
+
+type Store struct {
+	mu    sync.RWMutex
+	path  string
+	state State
+}
+
+// Open 读取数据文件；文件不存在就从空数据开始。
+func Open(dir string) (*Store, error) {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return nil, err
+	}
+	s := &Store{path: filepath.Join(dir, "state.json"), state: State{Schema: currentSchema}}
+	raw, err := os.ReadFile(s.path)
+	if errors.Is(err, os.ErrNotExist) {
+		return s, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if err := json.Unmarshal(raw, &s.state); err != nil {
+		return nil, fmt.Errorf("数据文件 %s 读不了：%w", s.path, err)
+	}
+	if s.state.Schema > currentSchema {
+		return nil, fmt.Errorf("数据文件是新版本（schema %d），请升级管家程序", s.state.Schema)
+	}
+	return s, nil
+}
+
+// Snapshot 返回当前数据的副本，调用方随便改不影响存储。
+func (s *Store) Snapshot() State {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	raw, _ := json.Marshal(s.state)
+	var out State
+	_ = json.Unmarshal(raw, &out)
+	return out
+}
+
+// Update 在锁里修改数据并保存；fn 返回错误就不保存。
+func (s *Store) Update(fn func(*State) error) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	next := s.copyLocked()
+	if err := fn(&next); err != nil {
+		return err
+	}
+	if err := s.writeLocked(next); err != nil {
+		return err
+	}
+	s.state = next
+	return nil
+}
+
+func (s *Store) copyLocked() State {
+	raw, _ := json.Marshal(s.state)
+	var out State
+	_ = json.Unmarshal(raw, &out)
+	return out
+}
+
+func (s *Store) writeLocked(st State) error {
+	st.Schema = currentSchema
+	raw, err := json.MarshalIndent(st, "", "  ")
+	if err != nil {
+		return err
+	}
+	tmp := s.path + ".tmp"
+	if err := os.WriteFile(tmp, raw, 0o600); err != nil {
+		return err
+	}
+	return os.Rename(tmp, s.path)
+}
+
+func (st *State) Phone(id string) (*Phone, error) {
+	for i := range st.Phones {
+		if st.Phones[i].ID == id {
+			return &st.Phones[i], nil
+		}
+	}
+	return nil, fmt.Errorf("云手机 %s %w", id, ErrNotFound)
+}
+
+func (st *State) Proxy(id string) *Proxy {
+	for i := range st.Proxies {
+		if st.Proxies[i].ID == id {
+			return &st.Proxies[i]
+		}
+	}
+	return nil
+}
