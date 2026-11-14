@@ -32,6 +32,7 @@ interface Workspace {
   assign: (ids: string[], patch: { proxyId?: string; groupId?: string }) => Promise<void>
   addPhone: (phone: Phone) => Promise<void>
   removePhones: (ids: string[]) => Promise<void>
+  resetPhones: (ids: string[]) => Promise<void>
   addProxy: (proxy: Proxy) => Promise<void>
   checkProxies: (ids: string[]) => Promise<void>
   removeProxy: (id: string) => Promise<void>
@@ -112,8 +113,14 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const value = useMemo<Workspace>(() => {
     const live = mode === 'live'
     /** 对每台设备做一次操作；失败的报出来，其余照常，最后刷新。 */
-    const each = async (ids: string[], what: string, fn: (id: string) => Promise<unknown>) => {
-      const results = await Promise.allSettled(ids.map(fn))
+    const each = async (ids: string[], what: string, fn: (id: string) => Promise<unknown>, oneByOne = false) => {
+      // 开机、重置一台一台来，不让服务器同时启动一堆安卓
+      const results: PromiseSettledResult<unknown>[] = []
+      if (oneByOne) {
+        for (const id of ids) results.push(await fn(id).then((value) => ({ status: 'fulfilled' as const, value }), (reason: unknown) => ({ status: 'rejected' as const, reason })))
+      } else {
+        results.push(...await Promise.allSettled(ids.map(fn)))
+      }
       const failed = results.flatMap((r, i) => (r.status === 'rejected' ? [`${phones.find((p) => p.id === ids[i])?.name ?? ''}${(r.reason as Error).message}`] : []))
       if (failed.length) message.error(`${what}失败：${failed.join('；')}`)
       await load().catch(() => undefined)
@@ -123,7 +130,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       setStatus: async (ids, status) => {
         if (!live) { setPhones((list) => list.map((p) => (ids.includes(p.id) ? { ...p, status } : p))); return }
         if (status === 'running') setPhones((list) => list.map((p) => (ids.includes(p.id) ? { ...p, status: 'starting' } : p)))
-        await each(ids, status === 'running' ? '开机' : '关机', (id) => (status === 'running' ? api.start(id) : api.stop(id)))
+        await each(ids, status === 'running' ? '开机' : '关机', (id) => (status === 'running' ? api.start(id) : api.stop(id)), status === 'running')
       },
       saveFields: async (id, fields, patch) => {
         if (!live) { setPhones((list) => list.map((p) => (p.id === id ? { ...p, ...patch, fields } : p))); return }
@@ -137,6 +144,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         if (!live) { setPhones((list) => [...list, phone]); return }
         // 字段由管家程序按机型生成，页面只传基本信息。
         await each([phone.id], '创建', () => api.createPhone({ name: phone.name, modelId: phone.modelId, androidVersion: phone.androidVersion, proxyId: phone.proxyId, groupId: phone.groupId, note: phone.note }))
+      },
+      resetPhones: async (ids) => {
+        if (!live) { message.info('预览模式：接上管家程序后可用'); return }
+        await each(ids, '重置', (id) => api.reset(id), true)
       },
       removePhones: async (ids) => {
         if (!live) { setPhones((list) => list.filter((p) => !ids.includes(p.id))); return }

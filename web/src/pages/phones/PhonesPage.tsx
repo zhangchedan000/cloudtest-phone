@@ -32,19 +32,20 @@ export function PhonesPage() {
     const ok = ids.filter((id) => !blocksStart(ws.issuesOf(ws.phones.find((p) => p.id === id)!)))
     const skipped = ids.length - ok.length
     ws.setStatus(ok, 'running')
-    message[skipped ? 'warning' : 'success'](skipped ? `开机 ${ok.length} 台，${skipped} 台有错误被跳过` : `开机 ${ok.length} 台（批量会自动错开时间）`)
+    message[skipped ? 'warning' : 'success'](skipped ? `开机 ${ok.length} 台，${skipped} 台有错误被跳过` : `开机 ${ok.length} 台（一台一台开，不会同时启动）`)
   }
 
   const batch = [
     { key: 'start', label: '开机', icon: <PoweroffOutlined />, onClick: () => start(selected) },
     { key: 'stop', label: '关机', icon: <PoweroffOutlined />, onClick: () => ws.setStatus(selected, 'stopped') },
-    { key: 'renew', label: '一键新机（重新随机，保留机型）', icon: <ReloadOutlined />, onClick: () => message.info('预览版：接上管家程序后可用') },
+    { key: 'renew', label: '一键新机（重新随机，保留机型）', icon: <ReloadOutlined />, onClick: () => message.info('这个功能还没开放') },
+    { key: 'reset', label: '一键重置（清空数据，恢复出厂）', icon: <ReloadOutlined />, onClick: () => Modal.confirm({ title: `重置 ${selected.length} 台云手机？`, content: '手机里的 App、账号登录、相册全部清空，恢复成刚创建的样子。旧数据挪到服务器的回收站，误操作还能找回。参数和代理不变。', okButtonProps: { danger: true }, onOk: () => ws.resetPhones(selected) }) },
     { type: 'divider' as const },
     ...ws.groups.map((g) => ({ key: `group-${g.id}`, label: `移到分组：${g.name}`, onClick: () => ws.assign(selected, { groupId: g.id }) })),
     { type: 'divider' as const },
     ...ws.proxies.map((p) => ({ key: `proxy-${p.id}`, label: `换代理：${p.name}`, onClick: () => ws.assign(selected, { proxyId: p.id }) })),
     { type: 'divider' as const },
-    { key: 'delete', label: '删除', danger: true, icon: <DeleteOutlined />, onClick: () => Modal.confirm({ title: `删除 ${selected.length} 台云手机？`, content: '数据（账号登录状态、App、相册）会一起删除，不能恢复。', okButtonProps: { danger: true }, onOk: () => { ws.removePhones(selected); setSelected([]) } }) }
+    { key: 'delete', label: '删除', danger: true, icon: <DeleteOutlined />, onClick: () => Modal.confirm({ title: `删除 ${selected.length} 台云手机？`, content: '数据（账号登录状态、App、相册）会一起删除；服务器上会先挪到回收站，误删还能找回。', okButtonProps: { danger: true }, onOk: () => { ws.removePhones(selected); setSelected([]) } }) }
   ]
 
   const toggle = (id: string, on: boolean) => setSelected((s) => (on ? [...s, id] : s.filter((x) => x !== id)))

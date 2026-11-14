@@ -59,6 +59,7 @@ export const api = {
   deletePhone: (id: string) => call('DELETE', `/phones/${id}`),
   start: (id: string) => call('POST', `/phones/${id}/start`),
   stop: (id: string) => call('POST', `/phones/${id}/stop`),
+  reset: (id: string) => call('POST', `/phones/${id}/reset`, { renew: false }),
   input: (id: string, req: InputRequest) => call('POST', `/phones/${id}/input`, req),
   proxies: () => call<Proxy[]>('GET', '/proxies'),
   createProxy: (proxy: Omit<Proxy, 'id'>) => call<Proxy>('POST', '/proxies', proxy),
