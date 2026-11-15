@@ -203,18 +203,26 @@ func TestBatteryReseedsAfterStateLost(t *testing.T) {
 	}
 }
 
-func TestDeviceFidelityProps(t *testing.T) {
+func TestNoBootBreakingHardwareProps(t *testing.T) {
 	svc, _, _ := newTestService(t, true, "software")
 	p, _ := svc.Create(CreateRequest{Name: "A", ModelID: "poco-x4-gt", AndroidVersion: 14, ProxyID: DirectDevProxyID})
 	args := strings.Join(svc.BootArgs(*mustPhone(t, svc, p.ID), svc.store.Snapshot()), " ")
-	for _, want := range []string{"ro.product.name=xaga"} {
-		if !strings.Contains(args, want) {
-			t.Fatalf("缺少设备保真属性 %q：\n%s", want, args)
-		}
-	}
 	// 绝不能用启动参数设 ro.hardware / ro.board.platform（会开不了机）
 	if strings.Contains(args, "ro.hardware=") || strings.Contains(args, "ro.board.platform=") {
-		t.Fatalf("不该用启动参数设 ro.hardware：\n%s", args)
+		t.Fatalf("不该用启动参数设 ro.hardware / ro.board.platform：\n%s", args)
+	}
+}
+
+func TestParseFingerprint(t *testing.T) {
+	product, id, inc, ok := parseFingerprint("POCO/xaga_global/xaga:14/UP1A.231005.007/OS2.0.3.0.ULOMIXM:user/release-keys")
+	if !ok || product != "xaga_global" || id != "UP1A.231005.007" || inc != "OS2.0.3.0.ULOMIXM" {
+		t.Fatalf("解析不对：%q %q %q %v", product, id, inc, ok)
+	}
+	if _, _, _, ok := parseFingerprint(""); ok {
+		t.Fatal("空字符串应 ok=false")
+	}
+	if _, _, _, ok := parseFingerprint("garbage"); ok {
+		t.Fatal("格式不对应 ok=false")
 	}
 }
 
@@ -223,13 +231,15 @@ func TestFingerprintPropsConsistent(t *testing.T) {
 	p, _ := svc.Create(CreateRequest{Name: "A", ModelID: "poco-x4-gt", AndroidVersion: 14, ProxyID: DirectDevProxyID})
 	args := svc.BootArgs(*mustPhone(t, svc, p.ID), svc.store.Snapshot())
 	joined := strings.Join(args, " ")
-	wantFP := "POCO/xaga/xaga:14/UD2A.240505.001.W1/eng.frank.20240527.152423:user/release-keys"
+	// poco-x4-gt 档案填了真实 stock 指纹，应直接用它、各分区一致。
+	wantFP := "POCO/xaga_global/xaga:14/UP1A.231005.007/OS2.0.3.0.ULOMIXM:user/release-keys"
 	for _, part := range []string{"ro.build.fingerprint", "ro.system.build.fingerprint", "ro.vendor.build.fingerprint", "ro.product.build.fingerprint", "ro.odm.build.fingerprint", "ro.bootimage.build.fingerprint"} {
 		if !strings.Contains(joined, part+"="+wantFP) {
-			t.Fatalf("%s 没覆盖成一致指纹：\n%s", part, joined)
+			t.Fatalf("%s 没覆盖成真实一致指纹：\n%s", part, joined)
 		}
 	}
-	for _, want := range []string{"ro.build.flavor=xaga-user", "ro.build.host=android-build", "ro.build.user=android"} {
+	// 从指纹派生：真实产品名、buildId、incremental、flavor。
+	for _, want := range []string{"ro.product.name=xaga_global", "ro.build.id=UP1A.231005.007", "ro.build.version.incremental=OS2.0.3.0.ULOMIXM", "ro.build.flavor=xaga_global-user", "ro.build.host=android-build", "ro.build.user=android"} {
 		if !strings.Contains(joined, want) {
 			t.Fatalf("缺少 %q", want)
 		}
@@ -253,5 +263,16 @@ func TestFingerprintPropsConsistent(t *testing.T) {
 		if strings.Contains(a, " ") {
 			t.Fatalf("启动参数含空格会被截断：%q", a)
 		}
+	}
+}
+
+func TestFingerprintFallbackWhenNoProfileValue(t *testing.T) {
+	// xiaomi-12t 档案没填真实指纹 → 用 Redroid 镜像真实 buildId/incremental 兜底拼一致指纹。
+	svc, _, _ := newTestService(t, true, "software")
+	p, _ := svc.Create(CreateRequest{Name: "A", ModelID: "xiaomi-12t", AndroidVersion: 14, ProxyID: DirectDevProxyID})
+	joined := strings.Join(svc.BootArgs(*mustPhone(t, svc, p.ID), svc.store.Snapshot()), " ")
+	wantFP := "Xiaomi/plato/plato:14/UD2A.240505.001.W1/eng.frank.20240527.152423:user/release-keys"
+	if !strings.Contains(joined, "ro.build.fingerprint="+wantFP) || !strings.Contains(joined, "ro.vendor.build.fingerprint="+wantFP) {
+		t.Fatalf("兜底指纹不对：\n%s", joined)
 	}
 }

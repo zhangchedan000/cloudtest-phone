@@ -338,6 +338,10 @@ func (s *Service) BootArgs(p store.Phone, st store.State) []string {
 		if !r.Applied || f.Sink.Kind != "prop" || isLiveProp(f.Key) {
 			continue
 		}
+		// 指纹相关字段由 fingerprintProps 统一处理（保证各分区一致），这里不重复设。
+		if r.Key == "fingerprint" || r.Key == "buildId" || r.Key == "incremental" {
+			continue
+		}
 		val := propValue(f, r.Value)
 		if val == "" {
 			continue
@@ -349,7 +353,6 @@ func (s *Service) BootArgs(p store.Phone, st store.State) []string {
 	sort.Strings(props)
 	args = append(args, props...)
 	args = append(args, disguiseProps()...)
-	args = append(args, deviceFidelityProps(byKey)...)
 	return append(args, fingerprintProps(byKey, p.AndroidVersion)...)
 }
 
@@ -362,54 +365,62 @@ var redroidBuildID = map[int]struct{ buildID, incremental string }{
 	15: {"BP1A.250505.005.D1", "eng.root"},
 }
 
-// fingerprintProps 把各分区指纹和相关 build 字段统一覆盖成一致的值，
-// 擦掉 Redroid 默认里的 redroid / redroid_arm64_only / userdebug / test-keys。
+// fingerprintProps 把各分区指纹和相关 build 字段（含 ro.product.name）统一覆盖成一致的值，
+// 擦掉 Redroid 默认里的 redroid / redroid_arm64_only / userdebug / test-keys / eng.* / frank / build1。
 // 指纹格式：brand/product/device:release/id/incremental:type/tags。
-// product 用机型代号（和 ro.product.name 一致），type/tags 用正式版（user/release-keys）。
-// buildId/incremental 用镜像真实值——incremental 仍是 eng.*，要真机真实 build 号才能彻底换掉。
+//   - 机型档案填了真实 stock 指纹（fingerprint 字段，从设备树/固件抠）就用真的，各字段从里面拆；
+//   - 没填就用 Redroid 镜像的真实 buildId/incremental 兜底拼一个一致的（incremental 仍是 eng.*）。
+// 注意：不设带空格的值（启动参数遇空格会截断）——ro.build.description 带空格，留作残留（很少被读）。
 func fingerprintProps(byKey map[string]any, androidVer int) []string {
-	bi, ok := redroidBuildID[androidVer]
+	fp := str(byKey["fingerprint"])
+	product, buildID, incremental, ok := parseFingerprint(fp)
 	if !ok {
-		return nil // 未知镜像版本：不覆盖，免得拼出错的指纹
+		bi, ridOK := redroidBuildID[androidVer]
+		brand, device := str(byKey["brand"]), str(byKey["device"])
+		if !ridOK || brand == "" || device == "" {
+			return nil // 既没真指纹、也没兜底数据：不覆盖，免得拼出错的
+		}
+		product, buildID, incremental = device, bi.buildID, bi.incremental
+		fp = fmt.Sprintf("%s/%s/%s:%d/%s/%s:user/release-keys", brand, product, device, androidVer, buildID, incremental)
 	}
-	brand, device := str(byKey["brand"]), str(byKey["device"])
-	if brand == "" || device == "" {
-		return nil
-	}
-	rel := fmt.Sprintf("%d", androidVer)
-	fp := fmt.Sprintf("%s/%s/%s:%s/%s/%s:user/release-keys", brand, device, device, rel, bi.buildID, bi.incremental)
 	var out []string
-	for _, p := range []string{
+	for _, name := range []string{
 		"ro.build.fingerprint",
 		"ro.system.build.fingerprint", "ro.vendor.build.fingerprint",
 		"ro.product.build.fingerprint", "ro.odm.build.fingerprint",
 		"ro.bootimage.build.fingerprint",
 	} {
-		out = append(out, p+"="+fp)
+		out = append(out, name+"="+fp)
 	}
-	// 相关 build 字段：去掉 redroid_arm64_only / userdebug / test-keys / frank / build1。
-	// 注意：不设带空格的值（启动参数遇空格会截断，截断比不改更糟）——
-	// ro.build.description 带空格，没法这样设，留作残留（它不是常被读的字段）。
 	out = append(out,
-		"ro.build.flavor="+device+"-user",
-		"ro.build.display.id="+bi.buildID,
+		"ro.product.name="+product, // 真实产品名，如 xaga_global（默认是 redroid_arm64_only）
+		"ro.build.id="+buildID,
+		"ro.build.display.id="+buildID,
+		"ro.build.version.incremental="+incremental,
+		"ro.build.flavor="+product+"-user",
 		"ro.build.host=android-build",
 		"ro.build.user=android",
 	)
 	return out
 }
 
-// deviceFidelityProps 把默认值还露着 Redroid 痕迹、但能填对的属性补上。
-// 只设不影响开机的属性：ro.hardware / ro.board.platform 不能在这里设
-//（安卓按它们加载硬件驱动，启动参数改了会开不了机——实测，见 boardPlatform 字段和单测）。
-func deviceFidelityProps(byKey map[string]any) []string {
-	var out []string
-	// ro.product.name 默认是 redroid_arm64_only（明显痕迹）；真机是产品名，用机型代号。
-	// 这个只是产品名、不参与驱动加载，设了不影响开机。
-	if dev := str(byKey["device"]); dev != "" {
-		out = append(out, "ro.product.name="+dev)
+// parseFingerprint 拆 brand/product/device:release/id/incremental:type/tags，
+// 返回 product、buildId、incremental。格式不对或为空返回 ok=false。
+func parseFingerprint(fp string) (product, buildID, incremental string, ok bool) {
+	colon := strings.SplitN(fp, ":", 3) // [brand/product/device, release/id/incremental, type/tags]
+	if len(colon) != 3 {
+		return "", "", "", false
 	}
-	return out
+	left := strings.Split(colon[0], "/") // brand, product, device
+	mid := strings.Split(colon[1], "/")  // release, id, incremental
+	if len(left) != 3 || len(mid) != 3 {
+		return "", "", "", false
+	}
+	product, buildID, incremental = left[1], mid[1], mid[2]
+	if product == "" || buildID == "" || incremental == "" {
+		return "", "", "", false
+	}
+	return product, buildID, incremental, true
 }
 
 // disguiseProps 所有云手机都加的固定属性：让容器看起来像一台「锁了 bootloader 的正式版」手机，
