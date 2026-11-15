@@ -1,5 +1,5 @@
 import {
-  AppstoreAddOutlined, ArrowLeftOutlined, BorderOutlined, CameraOutlined, CopyOutlined, HomeOutlined,
+  AppstoreAddOutlined, ArrowLeftOutlined, BorderOutlined, CameraOutlined, CodeOutlined, CopyOutlined, HomeOutlined,
   PoweroffOutlined, RedoOutlined, RotateRightOutlined, SoundOutlined, UploadOutlined
 } from '@ant-design/icons'
 import { App, Button, Descriptions, Drawer, Dropdown, Input, Modal, Space, Tabs, Tooltip } from 'antd'
@@ -10,6 +10,7 @@ import { ProxyCell, StatusDot } from '@/components/bits'
 import { blocksStart } from '@/data/consistency'
 import { useWorkspace } from '@/data/store'
 import type { Phone } from '@/data/types'
+import { AdbDialog } from './AdbDialog'
 import { LogsPanel } from './LogsPanel'
 import { ParamPanel } from './ParamPanel'
 
@@ -22,6 +23,7 @@ export function PhoneDrawer({ phone, onClose }: { phone?: Phone; onClose: () => 
   const fileInput = useRef<HTMLInputElement>(null)
   const [uploading, setUploading] = useState<string>('')
   const [clipOpen, setClipOpen] = useState(false)
+  const [adbOpen, setAdbOpen] = useState(false)
   if (!phone) return null
   const live = ws.phones.find((p) => p.id === phone.id) ?? phone
   const issues = ws.issuesOf(live)
@@ -55,7 +57,8 @@ export function PhoneDrawer({ phone, onClose }: { phone?: Phone; onClose: () => 
     { icon: <CameraOutlined />, tip: '截图（新窗口打开原图）', onClick: () => (liveMode ? void window.open(screenUrl(live.id, Date.now()), '_blank') : message.info('预览模式：接上管家程序后可用')) },
     { icon: <UploadOutlined />, tip: '上传文件（图片、视频进相册，其他进下载目录）', onClick: () => (liveMode ? fileInput.current?.click() : message.info('预览模式：接上管家程序后可用')) },
     { icon: <AppstoreAddOutlined />, tip: '安装 APK', onClick: () => (liveMode ? apkInput.current?.click() : message.info('预览模式：接上管家程序后可用')) },
-    { icon: <CopyOutlined />, tip: '剪贴板（电脑 ↔ 手机互相复制，支持中文）', onClick: () => (liveMode ? setClipOpen(true) : message.info('预览模式：接上管家程序后可用')) }
+    { icon: <CopyOutlined />, tip: '剪贴板（电脑 ↔ 手机互相复制，支持中文）', onClick: () => (liveMode ? setClipOpen(true) : message.info('预览模式：接上管家程序后可用')) },
+    { icon: <CodeOutlined />, tip: 'ADB 连接命令（复制到自己电脑上用）', onClick: () => (liveMode ? setAdbOpen(true) : message.info('预览模式：接上管家程序后可用')) }
   ]
 
   return (
@@ -119,6 +122,7 @@ export function PhoneDrawer({ phone, onClose }: { phone?: Phone; onClose: () => 
           />
           <p className="pp-muted pp-small pp-center">在画面上点一下 = 点击，按住拖动 = 滑动</p>
           <ClipboardDialog open={clipOpen} phoneId={live.id} onClose={() => setClipOpen(false)} />
+          <AdbDialog open={adbOpen} ip={live.ip} name={live.name} onClose={() => setAdbOpen(false)} />
         </div>
         <div className="pp-detail-side">
           <Tabs
@@ -132,6 +136,7 @@ export function PhoneDrawer({ phone, onClose }: { phone?: Phone; onClose: () => 
                     { label: '代理', children: <ProxyCell proxy={ws.proxyOf(live)} /> },
                     { label: '出口 IP', children: ws.proxyOf(live)?.check?.exitIp ?? '—' },
                     { label: '所在机器', children: `${host?.name}（${host?.location}）` },
+                    { label: '内部 IP（ADB 用）', children: live.ip ? <Space>{live.ip}<Button size="small" onClick={() => setAdbOpen(true)}>ADB 连接命令</Button></Space> : '—' },
                     { label: '显卡', children: host?.gpu },
                     { label: '时区 / 语言', children: !live.settings ? '—' : live.settings.state === 'pending' ? '等开机完成后设置…' : live.settings.state === 'applied' ? '已设置' : `设置失败：${live.settings.error ?? ''}` },
                     { label: '创建时间', children: live.createdAt.slice(0, 16).replace('T', ' ') },
