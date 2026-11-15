@@ -170,7 +170,10 @@ func urlStyle(name, scheme, link string) (map[string]any, error) {
 		if sni != "" {
 			out["sni"] = sni
 		}
-		if q.Get("insecure") == "1" {
+	}
+	// 自签证书的节点：hysteria2 习惯写 insecure=1，vless / trojan（v2rayN 等）习惯写 allowInsecure=1
+	for _, k := range []string{"insecure", "allowInsecure", "allowinsecure"} {
+		if v := strings.ToLower(q.Get(k)); v == "1" || v == "true" {
 			out["skip-cert-verify"] = true
 		}
 	}

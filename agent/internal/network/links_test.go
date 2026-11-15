@@ -22,6 +22,9 @@ func TestShareLinks(t *testing.T) {
 		{"vless://uuid-2@vl.example.com:443?security=reality&pbk=PK&sid=ab&sni=www.example.com&fp=chrome&flow=xtls-rprx-vision&type=tcp#x", map[string]any{"type": "vless", "uuid": "uuid-2", "servername": "www.example.com", "flow": "xtls-rprx-vision", "tls": true}},
 		{"trojan://secret@tj.example.com:443?sni=tj.example.com&type=ws&path=%2Ft", map[string]any{"type": "trojan", "password": "secret", "sni": "tj.example.com", "network": "ws"}},
 		{"hy2://pw@hy.example.com:8443?sni=hy.example.com&insecure=1", map[string]any{"type": "hysteria2", "password": "pw", "skip-cert-verify": true}},
+		{"trojan://pw@tj.example.com:443?allowInsecure=1", map[string]any{"type": "trojan", "skip-cert-verify": true}},
+		{"vless://u@vl.example.com:443?security=tls&sni=a.example.com&allowInsecure=true", map[string]any{"type": "vless", "tls": true, "servername": "a.example.com", "skip-cert-verify": true}},
+		{"trojan://pw@tj.example.com:443?allowInsecure=0", map[string]any{"type": "trojan", "skip-cert-verify": nil}},
 	}
 	for _, c := range cases {
 		got, err := outbound(store.Proxy{ID: "x", Address: c.link})
