@@ -154,3 +154,37 @@ func TestBatterySinkAppliesViaDumpsys(t *testing.T) {
 		}
 	}
 }
+
+func TestBatteryDriftMovesAndClamps(t *testing.T) {
+	svc, _, _ := newTestService(t, true, "software")
+	p, _ := svc.Create(CreateRequest{Name: "A", ModelID: "poco-x4-gt", AndroidVersion: 14, ProxyID: DirectDevProxyID})
+	if err := svc.Start(context.Background(), p.ID); err != nil {
+		t.Fatal(err)
+	}
+	// Start 后应已播种电池状态（poco 档案电池是 random 模式，必有值）。
+	if svc.batt.get(p.ID) == nil {
+		t.Fatal("开机后应播种电池状态")
+	}
+	// 充电场景：电量只升不超 100
+	svc.batt.put(p.ID, batteryState{Level: 99, TempDeci: 300, Charging: "ac"})
+	for i := 0; i < 30; i++ {
+		svc.driftBattery(context.Background(), p.ID)
+	}
+	st := svc.batt.get(p.ID)
+	if st == nil || st.Level > 100 || st.Level < 99 {
+		t.Fatalf("充电漂移越界：%+v", st)
+	}
+	// 用电场景：电量只降不低于 5
+	svc.batt.put(p.ID, batteryState{Level: 6, TempDeci: 300, Charging: "none"})
+	for i := 0; i < 50; i++ {
+		svc.driftBattery(context.Background(), p.ID)
+	}
+	st = svc.batt.get(p.ID)
+	if st == nil || st.Level < 5 || st.Level > 6 {
+		t.Fatalf("用电漂移越界：%+v", st)
+	}
+	// 温度始终在合理范围
+	if st.TempDeci < 230 || st.TempDeci > 430 {
+		t.Fatalf("温度越界：%+v", st)
+	}
+}

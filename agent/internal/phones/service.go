@@ -62,6 +62,7 @@ type Service struct {
 	streams  streamTracker
 	usage    tracker[docker.Usage]
 	netStat  tracker[NetStatus] // 上网健康检查（netcheck.go）
+	batt     tracker[batteryState] // 电池漂移状态（battery.go）
 	settings settingsTracker
 	// netGuard 网络模块开着时检查这台设备有没有出口；返回错误就禁止开机（绝不走宿主机网络）。
 	netGuard func(id string) error

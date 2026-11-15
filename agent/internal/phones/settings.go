@@ -42,7 +42,7 @@ var batteryHealthCode = map[string]int{"good": 2, "overheat": 3, "cold": 7}
 // applyBattery 开机后用 dumpsys battery 覆盖电池状态。dumpsys battery set 会让电池进入
 // 「人工覆盖」模式，值固定到下次重启或 reset；applySettings 每次开机都跑，所以每次开机重新覆盖。
 // 返回非空表示有失败项。
-func (s *Service) applyBattery(ctx context.Context, name string, v map[string]any) []string {
+func (s *Service) applyBattery(ctx context.Context, id, name string, v map[string]any) []string {
 	var probs []string
 	run := func(args ...string) {
 		full := append([]string{"exec", name, "dumpsys", "battery"}, args...)
@@ -50,6 +50,15 @@ func (s *Service) applyBattery(ctx context.Context, name string, v map[string]an
 			probs = append(probs, fmt.Sprintf("dumpsys battery %s 失败：%v %s", strings.Join(args, " "), err, out))
 		}
 	}
+	// 记下起始状态，后台漂移循环（battery.go）从这里接着慢慢变。
+	seedLevel, seedTemp := 50, 350
+	if lv, ok := toInt(v["batteryLevel"]); ok && lv >= 0 && lv <= 100 {
+		seedLevel = lv
+	}
+	if t, ok := toFloat(v["batteryTemp"]); ok && t > -50 && t < 150 {
+		seedTemp = int(t * 10)
+	}
+	s.seedBattery(id, seedLevel, seedTemp, fmt.Sprint(v["batteryCharging"]))
 	if lv, ok := toInt(v["batteryLevel"]); ok && lv >= 0 && lv <= 100 {
 		run("set", "level", strconv.Itoa(lv))
 	}
@@ -216,7 +225,7 @@ func (s *Service) applySettings(ctx context.Context, id string) {
 		}
 	}
 	if len(batteryVals) > 0 {
-		if probs := s.applyBattery(ctx, name, batteryVals); len(probs) > 0 {
+		if probs := s.applyBattery(ctx, id, name, batteryVals); len(probs) > 0 {
 			problems = append(problems, probs...)
 		} else {
 			applied = append(applied, "电池")

@@ -136,6 +136,8 @@ func main() {
 	go svc.RunUsageSampler(context.Background(), 10*time.Second)
 	// 上网健康检查：每 2 分钟从每台运行中的手机试连外网（踩坑 #34 断网一个小时才被发现）
 	go svc.RunInternetChecker(context.Background(), 2*time.Minute)
+	// 电池漂移：每 3 分钟把每台手机的电量/温度推一小步，别让电池冻在一个固定值（battery.go）
+	go svc.RunBatteryDrift(context.Background(), 3*time.Minute)
 	var health *netcfg.HealthChecker
 	if net != nil {
 		// 网络模块的宿主机检查：策略路由被删了 30 秒内自动补回
