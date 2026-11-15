@@ -134,6 +134,14 @@ func main() {
 		log.Fatal(err)
 	}
 	go svc.RunUsageSampler(context.Background(), 10*time.Second)
+	// 上网健康检查：每 2 分钟从每台运行中的手机试连外网（踩坑 #34 断网一个小时才被发现）
+	go svc.RunInternetChecker(context.Background(), 2*time.Minute)
+	var health *netcfg.HealthChecker
+	if net != nil {
+		// 网络模块的宿主机检查：策略路由被删了 30 秒内自动补回
+		health = &netcfg.HealthChecker{Syncer: net}
+		go health.Loop(context.Background(), 30*time.Second)
+	}
 	if *trashDays > 0 {
 		go func() {
 			for {
@@ -149,6 +157,14 @@ func main() {
 	apiServer := api.New(svc, st, webFS, token, check)
 	if net != nil && net.CanCheck() {
 		apiServer.SetNetworkCheck(net.Check)
+	}
+	if health != nil {
+		apiServer.SetNetworkHealth(func() any {
+			if l := health.Last(); l != nil {
+				return l
+			}
+			return nil
+		})
 	}
 	srv := &http.Server{Addr: *listen, Handler: apiServer.Handler(), ReadHeaderTimeout: 10 * time.Second}
 	go func() {

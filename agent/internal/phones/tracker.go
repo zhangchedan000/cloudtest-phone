@@ -17,6 +17,12 @@ func (t *tracker[T]) put(id string, v T) {
 	t.status[id] = v
 }
 
+func (t *tracker[T]) drop(id string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	delete(t.status, id)
+}
+
 func (t *tracker[T]) get(id string) *T {
 	t.mu.Lock()
 	defer t.mu.Unlock()

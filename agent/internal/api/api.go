@@ -28,7 +28,12 @@ type Server struct {
 	check func() selfcheck.Report
 	// netCheck 网络模块开着时，经 mihomo 检测 HTTP / SOCKS5 以外的协议（vless、trojan、Clash 节点……）。
 	netCheck func(ctx context.Context, st store.State, px store.Proxy) store.ProxyCheck
+	// netHealth 网络模块的宿主机健康检查结果（策略路由、mihomo），管理页顶部告警用。
+	netHealth func() any
 }
+
+// SetNetworkHealth 接上网络模块的健康检查。
+func (s *Server) SetNetworkHealth(fn func() any) { s.netHealth = fn }
 
 // SetNetworkCheck 接上网络模块的节点检测。
 func (s *Server) SetNetworkCheck(fn func(ctx context.Context, st store.State, px store.Proxy) store.ProxyCheck) {
@@ -142,11 +147,17 @@ func (s *Server) health(w http.ResponseWriter, _ *http.Request) {
 func (s *Server) host(w http.ResponseWriter, _ *http.Request) {
 	cfg := s.svc.Config()
 	rep := s.check()
-	writeJSON(w, http.StatusOK, map[string]any{
+	out := map[string]any{
 		"id": cfg.HostID, "name": cfg.HostName, "gpuFamily": cfg.GPUFamily, "devHost": cfg.DevHost,
 		"maxRunning": cfg.MaxRunning, "androidVersions": versions(cfg.Images), "system": rep.System,
 		"network": s.svc.NetworkEnabled(),
-	})
+	}
+	if s.netHealth != nil {
+		if h := s.netHealth(); h != nil {
+			out["netHealth"] = h
+		}
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 func versions(images map[int]string) []int {

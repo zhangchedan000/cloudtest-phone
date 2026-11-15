@@ -1,5 +1,5 @@
 import { AppstoreOutlined, DeleteOutlined, DownOutlined, PlusOutlined, PoweroffOutlined, ReloadOutlined, SearchOutlined, UnorderedListOutlined } from '@ant-design/icons'
-import { Alert, App, Button, Card, Checkbox, Dropdown, Empty, Input, Modal, Segmented, Select, Space, Table, Tooltip } from 'antd'
+import { Alert, App, Button, Card, Checkbox, Dropdown, Empty, Input, Modal, Segmented, Select, Space, Table, Tag, Tooltip } from 'antd'
 import { useMemo, useState } from 'react'
 import { PhoneScreen } from '@/components/PhoneScreen'
 import { IssueBadge, ProxyCell, StatusDot } from '@/components/bits'
@@ -29,6 +29,8 @@ export function PhonesPage() {
 
   const running = ws.phones.filter((p) => p.status === 'running').length
   const withErrors = ws.phones.filter((p) => blocksStart(ws.issuesOf(p))).length
+  // 上网健康检查：运行中但连不上外网的手机（管家程序每 2 分钟查一次）
+  const offline = ws.phones.filter((p) => p.status === 'running' && p.net && !p.net.ok)
 
   const start = (ids: string[]) => {
     const ok = ids.filter((id) => !blocksStart(ws.issuesOf(ws.phones.find((p) => p.id === id)!)))
@@ -61,6 +63,12 @@ export function PhonesPage() {
         <Stat label="机器在线" value={`${ws.hosts.filter((h) => h.online).length} / ${ws.hosts.length}`} />
       </div>
 
+      {ws.mode === 'live' && ws.hosts[0]?.netHealth && !ws.hosts[0].netHealth.ok && (
+        <Alert type="error" showIcon className="pp-alert" title="网络模块有问题，云手机可能都上不了网" description={(ws.hosts[0].netHealth.problems ?? []).join('；')} />
+      )}
+      {ws.mode === 'live' && offline.length > 0 && (
+        <Alert type="error" showIcon className="pp-alert" title={`${offline.length} 台运行中的手机上不了外网：${offline.map((p) => p.name).join('、')}`} description="每 2 分钟从手机里试连一次外网。先在「代理 IP」里检测这几台用的代理；所有手机都连不上的话，多半是网络模块的问题。" />
+      )}
       {ws.mode === 'live' && ws.hosts[0] && !ws.hosts[0].networkEnabled && (
         <Alert type="warning" showIcon className="pp-alert" title="网络模块没开：云手机直接用服务器自己的网络，只适合开发测试。正式使用前在服务器上运行 host/network.sh，并给管家程序加 -mihomo-api 参数。" />
       )}
@@ -98,6 +106,7 @@ export function PhonesPage() {
                   <div><ProxyCell proxy={ws.proxyOf(p)} /></div>
                   <div className="pp-card-row"><span className="pp-chip" style={{ borderColor: ws.groupOf(p)?.color }}>{ws.groupOf(p)?.name ?? '未分组'}</span><IssueBadge issues={issues} /></div>
                   {p.usage && <div className="pp-card-row pp-small pp-muted">{usageText(p.usage)}</div>}
+                  {p.status === 'running' && p.net && !p.net.ok && <Tooltip title={p.net.error}><Tag color="error" className="pp-small">上不了网</Tag></Tooltip>}
                 </div>
                 <div className="pp-card-actions">
                   {p.status === 'running' || p.status === 'starting' // 开机中也只能关机，不能再点一次开机

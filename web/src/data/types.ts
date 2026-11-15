@@ -71,6 +71,8 @@ export interface Phone {
   network?: string
   /** 管家程序返回：最近一次采到的 CPU（占整台机器的百分比）、内存（MB）。 */
   usage?: { cpuPercent: number; memMB: number; memLimitMB: number }
+  /** 管家程序返回：最近一次上网检查（每 2 分钟从手机里试连外网）。 */
+  net?: { ok: boolean; error?: string; at: string }
 }
 
 export type ProxyProtocol = 'socks5' | 'http' | 'https' | 'ss' | 'vmess' | 'vless' | 'trojan' | 'hysteria2' | 'subscription' | 'clash'
@@ -116,6 +118,8 @@ export interface Host {
   maxRunning: number
   /** 网络模块（mihomo）开没开；没开时云手机直接用服务器网络，只适合开发测试。 */
   networkEnabled?: boolean
+  /** 网络模块的宿主机健康检查（策略路由、mihomo）；ok=false 时云手机可能都上不了网。 */
+  netHealth?: { ok: boolean; problems?: string[]; healedAt?: string; checkedAt: string }
   /** 这台机器装了哪些安卓版本的镜像。 */
   androidVersions?: number[]
 }

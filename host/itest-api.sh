@@ -85,6 +85,19 @@ if [ -n "$APK" ] && [ -f "$APK" ]; then
 else
   echo "（没给 APK，跳过安装测试）"
 fi
+# 上网：从手机里连外网（踩坑 #34：以前不测这个，断网一个小时才发现）
+web=""
+for _ in 1 2 3; do
+  web=$(docker exec "$C" sh -c 'printf "GET /generate_204 HTTP/1.1
+Host: connectivitycheck.gstatic.com
+Connection: close
+
+" | nc -w 15 connectivitycheck.gstatic.com 80 | head -1' 2>&1)
+  echo "$web" | grep -q " 204" && break; sleep 5
+done
+echo "$web" | grep -q " 204" && ok "手机能上外网" || bad "手机上不了外网：[$web]（查网络模块：ip rule list | grep 0x1b5）"
+nh=$(api GET /host | jget 'd.get("netHealth")')
+case "$nh" in None|*"'ok': True"*) ok "网络模块健康检查：${nh:0:80}";; *) bad "网络模块健康检查：$nh";; esac
 r=$(api GET "/phones/$ID/logs?level=W&lines=50"); ! echo "$r" | grep -q '"error"' && ok "看日志（$(echo "$r" | grep -c .) 行）" || bad "日志：$r"
 
 sleep 12

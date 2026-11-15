@@ -61,6 +61,7 @@ type Service struct {
 	boots    bootTracker
 	streams  streamTracker
 	usage    tracker[docker.Usage]
+	netStat  tracker[NetStatus] // 上网健康检查（netcheck.go）
 	settings settingsTracker
 	// netGuard 网络模块开着时检查这台设备有没有出口；返回错误就禁止开机（绝不走宿主机网络）。
 	netGuard func(id string) error
@@ -566,6 +567,8 @@ type PhoneView struct {
 	Network string `json:"network,omitempty"`
 	// Usage 最近一次采到的 CPU、内存（运行中的设备才有）。
 	Usage *docker.Usage `json:"usage,omitempty"`
+	// Net 最近一次上网检查（运行中的设备才有）。
+	Net *NetStatus `json:"net,omitempty"`
 }
 
 func (s *Service) List(ctx context.Context) []PhoneView {
@@ -581,6 +584,9 @@ func (s *Service) List(ctx context.Context) []PhoneView {
 		}
 		if u := s.usage.get(p.ID); u != nil && p.Status != "stopped" && u.MemLimitMB > 0 {
 			view.Usage = u
+		}
+		if n := s.netStat.get(p.ID); n != nil && p.Status == "running" {
+			view.Net = n
 		}
 		out = append(out, view)
 	}

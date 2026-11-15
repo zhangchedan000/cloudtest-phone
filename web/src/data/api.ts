@@ -47,6 +47,7 @@ export interface HostInfo {
   androidVersions: number[]
   system?: Record<string, unknown>
   network?: boolean
+  netHealth?: { ok: boolean; problems?: string[]; healedAt?: string; checkedAt: string }
 }
 
 export interface TrashItem { name: string; phoneId: string; kind: 'delete' | 'reset'; at: string; sizeMB: number }
