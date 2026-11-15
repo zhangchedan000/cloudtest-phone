@@ -83,5 +83,26 @@ func (s *Service) preinstall(ctx context.Context, id string) (installed, problem
 		_, _ = s.run.Run(ctx, "docker", "exec", name, "sh", "-c", "echo "+shellQuote(key)+" >> "+preinstallMarker)
 		installed = append(installed, f)
 	}
+	if len(installed) > 0 && strings.TrimSpace(done) == "" {
+		s.relayoutLauncher(ctx, name)
+	}
 	return installed, problems
+}
+
+// relayoutLauncher 让安卓自带桌面重新按默认布局摆一次图标。
+// 原因（2026-11-15 实测）：命令行装的 App 不会自动放到桌面上，只在应用列表里（加 --install-reason 也没用）；
+// 而默认布局底栏留了一格给浏览器，第一次开机时还没有浏览器所以空着。装完 Chrome 后清一下桌面的数据，
+// 它重新布局，Chrome 就自动填进那一格。只在全新的手机（第一次预装）上做，不会弄乱用户自己整理过的桌面。
+func (s *Service) relayoutLauncher(ctx context.Context, name string) {
+	out, _ := s.run.Run(ctx, "docker", "exec", name, "cmd", "package", "resolve-activity", "--brief",
+		"-c", "android.intent.category.HOME", "-a", "android.intent.action.MAIN")
+	lines := strings.Split(strings.TrimSpace(out), "\n")
+	home := strings.TrimSpace(lines[len(lines)-1])
+	const aosp = "com.android.launcher3/"
+	if !strings.HasPrefix(home, aosp) {
+		return // 不是安卓自带桌面，不动
+	}
+	if _, err := s.run.Run(ctx, "docker", "exec", name, "pm", "clear", "com.android.launcher3"); err == nil {
+		_, _ = s.run.Run(ctx, "docker", "exec", name, "input", "keyevent", "KEYCODE_HOME")
+	}
 }
