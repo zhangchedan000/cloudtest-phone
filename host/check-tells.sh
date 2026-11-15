@@ -69,6 +69,20 @@ info "brand/model/device = ${brand}/${model}/${dev}"
 echo "$fp" | grep -q "$dev" 2>/dev/null || now "fingerprint 里不含 device=$dev，机型属性之间可能不自洽，核对一遍"
 bootimg=$(gp ro.bootimage.build.fingerprint); vendfp=$(gp ro.vendor.build.fingerprint)
 [ -n "$bootimg$vendfp" ] && { [ "$bootimg" = "$fp" ] && [ "$vendfp" = "$fp" ] || now "boot/vendor 的 fingerprint 和主 fingerprint 不一致，App 会比对（system/vendor/boot 应一致）"; }
+# 全分区扫描：各分区的 fingerprint / build.id / product.name 不能残留 redroid / test-keys / userdebug / eng.frank
+# （system_ext / vendor_dlkm / odm_dlkm / system_dlkm 这些分区容易漏，魔云腾改机 SDK 也处理，2026-11-15 已覆盖）
+partleak=0
+for part in system vendor odm product system_ext vendor_dlkm odm_dlkm system_dlkm bootimage; do
+  for attr in build.fingerprint build.id build.tags build.type; do
+    v=$(gp "ro.${part}.${attr}")
+    echo "$v" | grep -qiE 'redroid|test-keys|userdebug|eng\.frank|UD2A' && { now "分区属性 ro.${part}.${attr}=$v 残留默认镜像痕迹，fingerprintProps 应覆盖"; partleak=$((partleak+1)); }
+  done
+  n=$(gp "ro.product.${part}.name")
+  echo "$n" | grep -qiE 'redroid' && { now "ro.product.${part}.name=$n 还是 redroid_arm64_only，应盖成真实产品名"; partleak=$((partleak+1)); }
+done
+[ "$partleak" = 0 ] && hid "全部 9 个分区的 fingerprint/build/product.name 都已盖干净（无 redroid/test-keys/userdebug/eng.frank 残留）"
+# ro.build.description 含空格，启动参数传不了，是已知的镜像阶段残留
+desc=$(gp ro.build.description); echo "$desc" | grep -qiE 'redroid|userdebug|test-keys' && brd "ro.build.description=$desc 残留（含空格，启动参数传不了，要镜像阶段改 build.prop；魔云腾 build.prop 剥离层一并处理）"
 
 # 内核：App 直接调 uname() 拿到的是宿主机内核（fakefs 只改文件视图，改不了系统调用）
 unamer=$(ax 'uname -r'); info "uname -r（系统调用）：$unamer"
