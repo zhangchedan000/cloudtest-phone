@@ -337,7 +337,31 @@ func (s *Service) BootArgs(p store.Phone, st store.State) []string {
 		}
 	}
 	sort.Strings(props)
-	return append(args, props...)
+	args = append(args, props...)
+	return append(args, disguiseProps()...)
+}
+
+// disguiseProps 所有云手机都加的固定属性：让容器看起来像一台「锁了 bootloader 的正式版」手机，
+// 而不是 Redroid 默认的 userdebug / test-keys / 未验证启动。
+//
+// 只放不影响开机的属性。ro.hardware / ro.board.platform 不在这里——安卓按它俩加载硬件驱动，
+// 用启动参数改会开不了机（见 profiles/fields.json 的 boardPlatform 字段，要编译镜像时一起改）。
+// SELinux 状态由宿主机内核决定（这台 Ubuntu 没开 SELinux），容器里改不动，也不在这里。
+//
+// 这些是通用伪装、不区分机型，所以写在代码里而不是机型档案里。改完重启生效。
+func disguiseProps() []string {
+	return []string{
+		// 调试 / 签名：Redroid 镜像是 userdebug + test-keys，真机出厂是 user + release-keys。
+		"ro.debuggable=0",
+		"ro.build.type=user",
+		"ro.build.tags=release-keys",
+		// 启动校验：真机锁了 bootloader、开了 verity，这几项是 Play Integrity / root 检测会看的。
+		"ro.boot.verifiedbootstate=green",
+		"ro.boot.flash.locked=1",
+		"ro.boot.veritymode=enforcing",
+		"ro.boot.vbmeta.device_state=locked",
+		"ro.secure=1",
+	}
 }
 
 func propValue(f Field, v any) string {

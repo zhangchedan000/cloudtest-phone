@@ -82,3 +82,23 @@ func TestStartingUntilSettingsDone(t *testing.T) {
 		t.Fatalf("设置做完应算运行中：%s", got)
 	}
 }
+
+func TestBootArgsHaveDisguiseProps(t *testing.T) {
+	svc, _, _ := newTestService(t, true, "software")
+	p, _ := svc.Create(CreateRequest{Name: "A", ModelID: "poco-x4-gt", AndroidVersion: 14, ProxyID: DirectDevProxyID})
+	args := strings.Join(svc.BootArgs(*mustPhone(t, svc, p.ID), svc.store.Snapshot()), " ")
+	want := []string{
+		"ro.debuggable=0", "ro.build.type=user", "ro.build.tags=release-keys",
+		"ro.boot.verifiedbootstate=green", "ro.boot.flash.locked=1",
+		"ro.boot.veritymode=enforcing", "ro.boot.vbmeta.device_state=locked", "ro.secure=1",
+	}
+	for _, w := range want {
+		if !strings.Contains(args, w) {
+			t.Fatalf("启动参数缺少伪装属性 %q：\n%s", w, args)
+		}
+	}
+	// 不能传空值属性
+	if strings.Contains(args, "security_patch= ") || strings.HasSuffix(args, "=") {
+		t.Fatalf("不该出现空值属性：\n%s", args)
+	}
+}

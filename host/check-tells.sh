@@ -52,7 +52,7 @@ sect "2. 系统 / 容器特征（现在可做）"
 
 # ro.hardware：Redroid 容器经常直接写着 redroid，等于明牌
 rohw=$(gp ro.hardware); info "ro.hardware = ${rohw:-空}"
-echo "$rohw" | grep -qiE 'redroid|ranchu|goldfish|qemu' && now "ro.hardware=$rohw 暴露是模拟器/容器，应按机型改成真实 SoC（如 mt6895）" || info "ro.hardware 看起来已按机型设置"
+echo "$rohw" | grep -qiE 'redroid|ranchu|goldfish|qemu' && brd "ro.hardware=$rohw 暴露是容器。启动参数改它会开不了机（实测），要编译镜像时连驱动文件名一起改——归到板子/镜像阶段" || info "ro.hardware 看起来已按机型设置"
 
 # qemu / 模拟器属性
 for p in ro.kernel.qemu ro.boot.qemu init.svc.qemu-props ro.kernel.android.qemud; do
@@ -82,7 +82,7 @@ cg=$(ax 'cat /proc/1/cgroup'); echo "$cg" | grep -qiE 'docker|containerd|/pp-' &
 
 # SELinux：容器里常是 Permissive，真机是 Enforcing
 se=$(ax 'getenforce'); info "SELinux：${se:-读不到}"
-[ "$se" = Enforcing ] || now "SELinux=$se（真机是 Enforcing），App 可据此判断"
+[ "$se" = Enforcing ] || brd "SELinux=$se（真机是 Enforcing）。状态由宿主机内核决定，这台 Ubuntu 没开 SELinux，容器里改不动——要在有 SELinux 的板子上处理"
 
 # root / 调试开关
 dbg=$(gp ro.debuggable); sec=$(gp ro.secure); info "ro.debuggable=$dbg  ro.secure=$sec"
