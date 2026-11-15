@@ -249,6 +249,12 @@ func TestFingerprintPropsConsistent(t *testing.T) {
 			t.Fatalf("缺少 %q", want)
 		}
 	}
+	// 主分区的 ro.product.*.name 也要盖（默认是 redroid_arm64_only，机型字段只设了 .device）。
+	for _, p := range []string{"system", "vendor", "odm", "product"} {
+		if !strings.Contains(joined, "ro.product."+p+".name=xaga_global") {
+			t.Fatalf("主分区 ro.product.%s.name 没盖成 xaga_global：\n%s", p, joined)
+		}
+	}
 	// 容易漏的分区（system_ext / vendor_dlkm / odm_dlkm / system_dlkm）也要覆盖：
 	// 指纹、各分区 build.id/tags/type/incremental、以及 ro.product.*.{brand,model,device,name}。
 	for _, p := range []string{"system_ext", "vendor_dlkm", "odm_dlkm", "system_dlkm"} {

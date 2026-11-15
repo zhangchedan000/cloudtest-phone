@@ -424,6 +424,10 @@ func fingerprintProps(byKey map[string]any, realFP string, androidVer int) []str
 			"ro."+p+".build.version.incremental="+incremental,
 		)
 	}
+	// 主分区的 ro.product.*.name：机型字段设了 .device 但没设 .name，默认还是 redroid_arm64_only，要补。
+	for _, p := range []string{"system", "vendor", "odm", "product"} {
+		out = append(out, "ro.product."+p+".name="+product)
+	}
 	// 各分区的 ro.product.* 身份：system/vendor/odm/product 由机型字段已设，
 	// 这里补 system_ext/vendor_dlkm/odm_dlkm/system_dlkm 这几个漏掉的分区（默认全是 redroid）。
 	for _, p := range []string{"system_ext", "vendor_dlkm", "odm_dlkm", "system_dlkm"} {
