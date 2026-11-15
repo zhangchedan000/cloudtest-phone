@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -60,9 +59,9 @@ func TestCheckThroughHTTPProxy(t *testing.T) {
 }
 
 func TestCheckExplainsFailures(t *testing.T) {
-	ln, _ := net.Listen("tcp", "127.0.0.1:0")
-	addr := ln.Addr().String()
-	ln.Close() // 端口没人听：拒绝连接
+	// 端口 1 没人听：拒绝连接。（以前是先占一个空闲端口再关掉，关掉后可能被同时跑的别的测试占用，
+	// 2026-11-15 实际碰到一次：那边正好是个 SOCKS5，报成了「认证失败」。）
+	addr := "127.0.0.1:1"
 	if got := Check(context.Background(), store.Proxy{Protocol: "socks5", Address: "socks5://" + addr}); got.OK || !strings.Contains(got.Error, "拒绝连接") {
 		t.Fatalf("应提示拒绝连接：%+v", got)
 	}

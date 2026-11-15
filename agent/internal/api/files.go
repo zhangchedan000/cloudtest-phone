@@ -5,6 +5,7 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
+	"strings"
 
 	"github.com/zhangchedan000/prism-phone/agent/internal/phones"
 )
@@ -62,4 +63,53 @@ func (s *Server) uploadFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "path": remote})
+}
+
+// batchIDs 从 ?ids=a,b,c 取手机 ID。
+func batchIDs(r *http.Request) []string {
+	var ids []string
+	for _, id := range strings.Split(r.URL.Query().Get("ids"), ",") {
+		if id = strings.TrimSpace(id); id != "" {
+			ids = append(ids, id)
+		}
+	}
+	return ids
+}
+
+// batchAPK 批量装 App：POST /api/batch/apk?ids=a,b,c（文件只传一次）。
+func (s *Server) batchAPK(w http.ResponseWriter, r *http.Request) {
+	ids := batchIDs(r)
+	part, err := firstFile(w, r)
+	if err != nil {
+		fail(w, err)
+		return
+	}
+	defer part.Close()
+	results, err := s.svc.InstallAPKMany(r.Context(), ids, part.FileName(), part)
+	if err != nil {
+		fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"results": results})
+}
+
+// batchFiles 批量传文件：POST /api/batch/files?ids=a,b,c&dir=DCIM。
+func (s *Server) batchFiles(w http.ResponseWriter, r *http.Request) {
+	ids := batchIDs(r)
+	dir := r.URL.Query().Get("dir")
+	if dir == "" {
+		dir = "Download"
+	}
+	part, err := firstFile(w, r)
+	if err != nil {
+		fail(w, err)
+		return
+	}
+	defer part.Close()
+	results, err := s.svc.UploadFileMany(r.Context(), ids, dir, part.FileName(), part)
+	if err != nil {
+		fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"results": results})
 }

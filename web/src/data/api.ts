@@ -98,6 +98,20 @@ export function upload(path: string, file: File, onProgress?: (percent: number) 
   })
 }
 
+/** 批量结果：每台一条。 */
+export interface BatchResult { id: string; ok: boolean; error?: string; path?: string }
+
+/**
+ * 批量装 App / 批量传文件：文件只从电脑上传一次，服务器再分发到每台。
+ * 图片、视频放进相册（DCIM），其他文件放下载目录。
+ */
+export async function batchUpload(kind: 'apk' | 'file', ids: string[], file: File, onProgress?: (percent: number) => void): Promise<BatchResult[]> {
+  const dir = /^(image|video)\//.test(file.type) ? 'DCIM' : 'Download'
+  const path = kind === 'apk' ? `/batch/apk?ids=${ids.join(',')}` : `/batch/files?ids=${ids.join(',')}&dir=${dir}`
+  const data = (await upload(path, file, onProgress)) as unknown as { results?: BatchResult[] }
+  return data.results ?? []
+}
+
 /** 安卓日志（纯文本）。 */
 export async function logs(id: string, level: string, lines: number): Promise<string> {
   const token = savedToken()

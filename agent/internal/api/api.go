@@ -66,6 +66,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/phones/{id}/apk", s.installAPK)
 	mux.HandleFunc("GET /api/phones/{id}/logs", s.logs)
 	mux.HandleFunc("POST /api/phones/{id}/files", s.uploadFile)
+	mux.HandleFunc("POST /api/batch/apk", s.batchAPK)
+	mux.HandleFunc("POST /api/batch/files", s.batchFiles)
 	mux.HandleFunc("GET /api/proxies", s.listProxies)
 	mux.HandleFunc("POST /api/proxies", s.createProxy)
 	mux.HandleFunc("PUT /api/proxies/{id}", s.updateProxy)

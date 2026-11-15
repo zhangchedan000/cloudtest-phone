@@ -1,6 +1,7 @@
-import { AppstoreOutlined, DeleteOutlined, DownOutlined, PlusOutlined, PoweroffOutlined, ReloadOutlined, SearchOutlined, UnorderedListOutlined } from '@ant-design/icons'
+import { AppstoreAddOutlined, AppstoreOutlined, DeleteOutlined, DownOutlined, PlusOutlined, PoweroffOutlined, ReloadOutlined, SearchOutlined, UnorderedListOutlined, UploadOutlined } from '@ant-design/icons'
 import { Alert, App, Button, Card, Checkbox, Dropdown, Empty, Input, Modal, Segmented, Select, Space, Table, Tag, Tooltip } from 'antd'
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
+import { batchUpload, type BatchResult } from '@/data/api'
 import { PhoneScreen } from '@/components/PhoneScreen'
 import { IssueBadge, ProxyCell, StatusDot } from '@/components/bits'
 import { blocksStart } from '@/data/consistency'
@@ -21,6 +22,11 @@ export function PhonesPage() {
   const [managingGroups, setManagingGroups] = useState(false)
   const [open, setOpen] = useState<Phone>()
   const [creating, setCreating] = useState(false)
+  // 批量装 App / 传文件：文件只上传一次，服务器分发到选中的每台
+  const apkInput = useRef<HTMLInputElement>(null)
+  const fileInput = useRef<HTMLInputElement>(null)
+  const [batchBusy, setBatchBusy] = useState('')
+  const [batchDone, setBatchDone] = useState<{ title: string; results: BatchResult[] }>()
 
   const list = useMemo(() => ws.phones.filter((p) =>
     (groupId === 'all' || p.groupId === groupId) && (hostId === 'all' || p.hostId === hostId) &&
@@ -39,11 +45,31 @@ export function PhonesPage() {
     message[skipped ? 'warning' : 'success'](skipped ? `开机 ${ok.length} 台，${skipped} 台有错误被跳过` : `开机 ${ok.length} 台（一台一台开，不会同时启动）`)
   }
 
+  const runBatch = async (kind: 'apk' | 'file', file: File | undefined) => {
+    if (!file) return
+    const ids = selected.filter((id) => ws.phones.find((p) => p.id === id)?.status === 'running')
+    const skipped = selected.length - ids.length
+    if (!ids.length) { message.warning('选中的手机都没在运行，先开机'); return }
+    const what = kind === 'apk' ? '安装' : '上传'
+    try {
+      setBatchBusy(`${file.name} 上传中 0%`)
+      const results = await batchUpload(kind, ids, file, (pct) => setBatchBusy(pct < 100 ? `${file.name} 上传中 ${pct}%` : `上传完了，正在${what}到 ${ids.length} 台手机…`))
+      setBatchDone({ title: `${what} ${file.name}：成功 ${results.filter((r) => r.ok).length} / ${results.length} 台${skipped ? `（另有 ${skipped} 台没开机，跳过）` : ''}`, results })
+    } catch (error) {
+      message.error((error as Error).message)
+    } finally {
+      setBatchBusy('')
+    }
+  }
+
   const batch = [
     { key: 'start', label: '开机', icon: <PoweroffOutlined />, onClick: () => start(selected) },
     { key: 'stop', label: '关机', icon: <PoweroffOutlined />, onClick: () => ws.setStatus(selected, 'stopped') },
     { key: 'renew', label: '一键新机（重新随机，保留机型）', icon: <ReloadOutlined />, onClick: () => message.info('这个功能还没开放') },
     { key: 'reset', label: '一键重置（清空数据，恢复出厂）', icon: <ReloadOutlined />, onClick: () => Modal.confirm({ title: `重置 ${selected.length} 台云手机？`, content: '手机里的 App、账号登录、相册全部清空，恢复成刚创建的样子。旧数据挪到服务器的回收站，误操作还能找回。参数和代理不变。', okButtonProps: { danger: true }, onOk: () => ws.resetPhones(selected) }) },
+    { type: 'divider' as const },
+    { key: 'apk', label: '安装 APK（选中的每台，只上传一次）', icon: <AppstoreAddOutlined />, onClick: () => apkInput.current?.click() },
+    { key: 'files', label: '上传文件（图片视频进相册，其他进下载目录）', icon: <UploadOutlined />, onClick: () => fileInput.current?.click() },
     { type: 'divider' as const },
     ...ws.groups.map((g) => ({ key: `group-${g.id}`, label: `移到分组：${g.name}`, onClick: () => ws.assign(selected, { groupId: g.id }) })),
     { type: 'divider' as const },
@@ -82,7 +108,10 @@ export function PhonesPage() {
         </Space>
         <Space wrap>
           {selected.length > 0 && <span className="pp-muted">已选 {selected.length} 台</span>}
-          <Dropdown disabled={!selected.length} menu={{ items: batch }}><Button>批量操作 <DownOutlined /></Button></Dropdown>
+          <Dropdown disabled={!selected.length || !!batchBusy} menu={{ items: batch }}><Button loading={!!batchBusy}>批量操作 <DownOutlined /></Button></Dropdown>
+          {batchBusy && <span className="pp-muted">{batchBusy}</span>}
+          <input ref={apkInput} type="file" accept=".apk" hidden onChange={(e) => { void runBatch('apk', e.target.files?.[0]); e.target.value = '' }} />
+          <input ref={fileInput} type="file" hidden onChange={(e) => { void runBatch('file', e.target.files?.[0]); e.target.value = '' }} />
           <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreating(true)}>新建云手机</Button>
         </Space>
       </div>
@@ -139,6 +168,13 @@ export function PhonesPage() {
         />
       )}
 
+      <Modal open={!!batchDone} title={batchDone?.title} footer={null} onCancel={() => setBatchDone(undefined)}>
+        <Table size="small" pagination={false} rowKey="id" dataSource={batchDone?.results ?? []} columns={[
+          { title: '手机', render: (_, r: BatchResult) => ws.phones.find((p) => p.id === r.id)?.name ?? r.id },
+          { title: '结果', render: (_, r: BatchResult) => (r.ok ? <Tag color="success">成功</Tag> : <Tag color="error">失败</Tag>) },
+          { title: '说明', render: (_, r: BatchResult) => r.error ?? r.path ?? '' }
+        ]} />
+      </Modal>
       <PhoneDrawer phone={open} onClose={() => setOpen(undefined)} />
       <GroupsModal open={managingGroups} onClose={() => setManagingGroups(false)} />
       <NewPhoneModal open={creating} onClose={() => setCreating(false)} />

@@ -85,6 +85,14 @@ func (s *Service) InstallAPK(ctx context.Context, id, fileName string, r io.Read
 		return "", err
 	}
 	defer cleanup()
+	return s.installStaged(ctx, id, local)
+}
+
+// installStaged 把已经存在宿主机上的 APK 装进一台手机（单台、批量都用它）。
+func (s *Service) installStaged(ctx context.Context, id, local string) (string, error) {
+	if err := s.requireRunning(ctx, id, true); err != nil {
+		return "", err
+	}
 	name := containerName(id)
 	remote := "/data/local/tmp/pp-install.apk"
 	if out, err := s.run.Run(ctx, "docker", "cp", local, name+":"+remote); err != nil {
@@ -116,6 +124,14 @@ func (s *Service) UploadFile(ctx context.Context, id, dirKey, fileName string, r
 		return "", err
 	}
 	defer cleanup()
+	return s.uploadStaged(ctx, id, dir, safe, local)
+}
+
+// uploadStaged 把已经存在宿主机上的文件放进一台手机的目录（单台、批量都用它）。
+func (s *Service) uploadStaged(ctx context.Context, id, dir, safe, local string) (string, error) {
+	if err := s.requireRunning(ctx, id, true); err != nil {
+		return "", err
+	}
 	name := containerName(id)
 	remote := dir + "/" + safe
 	// 实测（踩坑 #16）：/sdcard 是安卓自己挂的虚拟目录，docker cp 看不到；真正的文件在 /data/media/0 下。
