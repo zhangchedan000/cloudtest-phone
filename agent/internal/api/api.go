@@ -56,6 +56,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/phones/{id}/screen", s.screen)
 	mux.HandleFunc("GET /api/phones/{id}/stream", s.stream)
 	mux.HandleFunc("POST /api/phones/{id}/input", s.input)
+	mux.HandleFunc("GET /api/phones/{id}/clipboard", s.getClipboard)
+	mux.HandleFunc("POST /api/phones/{id}/clipboard", s.setClipboard)
 	mux.HandleFunc("POST /api/phones/{id}/apk", s.installAPK)
 	mux.HandleFunc("GET /api/phones/{id}/logs", s.logs)
 	mux.HandleFunc("POST /api/phones/{id}/files", s.uploadFile)
@@ -284,14 +286,31 @@ func (s *Server) createGroup(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, g)
 }
 
+// screen 截图。不带参数 = 原图 PNG；带 ?w=540 = 缩到这个宽度以内的 JPEG（小很多，页面预览用）。
+// 都会在响应头 X-Screen-Width / X-Screen-Height 给出手机真实分辨率（页面换算点击坐标要用）。
 func (s *Server) screen(w http.ResponseWriter, r *http.Request) {
 	png, err := s.svc.Screenshot(r.Context(), r.PathValue("id"))
 	if err != nil {
 		fail(w, err)
 		return
 	}
-	w.Header().Set("Content-Type", "image/png")
 	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Access-Control-Expose-Headers", "X-Screen-Width, X-Screen-Height")
+	if maxW, _ := strconv.Atoi(r.URL.Query().Get("w")); maxW >= 64 {
+		if jpg, sw, sh, err := shrinkToJPEG(png, maxW, 75); err == nil {
+			w.Header().Set("X-Screen-Width", strconv.Itoa(sw))
+			w.Header().Set("X-Screen-Height", strconv.Itoa(sh))
+			w.Header().Set("Content-Type", "image/jpeg")
+			_, _ = w.Write(jpg)
+			return
+		}
+		// 解不开就退回原图
+	}
+	if cfg, err := pngConfig(png); err == nil {
+		w.Header().Set("X-Screen-Width", strconv.Itoa(cfg.Width))
+		w.Header().Set("X-Screen-Height", strconv.Itoa(cfg.Height))
+	}
+	w.Header().Set("Content-Type", "image/png")
 	_, _ = w.Write(png)
 }
 
@@ -302,6 +321,33 @@ func (s *Server) input(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.svc.Input(r.Context(), r.PathValue("id"), req); err != nil {
+		fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+// getClipboard 读手机剪贴板（管理页「取回手机剪贴板」）。
+func (s *Server) getClipboard(w http.ResponseWriter, r *http.Request) {
+	text, err := s.svc.GetClipboard(r.Context(), r.PathValue("id"))
+	if err != nil {
+		fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"text": text})
+}
+
+// setClipboard 把文字放进手机剪贴板；paste=true 时顺便粘贴到当前输入框。
+func (s *Server) setClipboard(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Text  string `json:"text"`
+		Paste bool   `json:"paste"`
+	}
+	if err := decode(r, &req); err != nil {
+		fail(w, err)
+		return
+	}
+	if err := s.svc.SetClipboard(r.Context(), r.PathValue("id"), req.Text, req.Paste); err != nil {
 		fail(w, err)
 		return
 	}

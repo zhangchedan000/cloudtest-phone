@@ -181,10 +181,9 @@ func inputArgs(req InputRequest) ([]string, error) {
 		if req.Text == "" || len(req.Text) > 500 {
 			return nil, fmt.Errorf("%w：文字为空或太长", ErrInvalid)
 		}
-		for _, r := range req.Text {
-			if r > unicode.MaxASCII || !unicode.IsPrint(r) {
-				return nil, fmt.Errorf("%w：安卓 input 命令只能输入英文、数字和常用符号", ErrInvalid)
-			}
+		if !isPlainASCII(req.Text) {
+			// Input 会先把这种文字改走剪贴板；走到这里说明调用方式不对
+			return nil, fmt.Errorf("%w：安卓 input 命令只能输入英文、数字和常用符号", ErrInvalid)
 		}
 		// input text 把空格写成 %s；其余特殊字符交给 shell 前要整体加引号。
 		return []string{"text", shellQuote(strings.ReplaceAll(req.Text, " ", "%s"))}, nil
@@ -203,8 +202,25 @@ func shellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
+// isPlainASCII 安卓 input text 能直接打的文字（英文、数字、常用符号）。
+func isPlainASCII(text string) bool {
+	for _, r := range text {
+		if r > unicode.MaxASCII || !unicode.IsPrint(r) {
+			return false
+		}
+	}
+	return true
+}
+
 // Input 在设备上执行一次操作。
+// 中文等 input text 打不了的文字：放进手机剪贴板再按「粘贴」（见 clipboard.go）。
 func (s *Service) Input(ctx context.Context, id string, req InputRequest) error {
+	if req.Kind == "text" && req.Text != "" && !isPlainASCII(req.Text) {
+		if len(req.Text) > 5000 {
+			return fmt.Errorf("%w：文字太长（发送文字最多 5000 字节，长文请用「放进手机剪贴板」）", ErrInvalid)
+		}
+		return s.SetClipboard(ctx, id, req.Text, true)
+	}
 	args, err := inputArgs(req)
 	if err != nil {
 		return err

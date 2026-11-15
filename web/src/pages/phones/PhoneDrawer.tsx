@@ -3,7 +3,7 @@ import {
   PoweroffOutlined, RedoOutlined, RotateRightOutlined, SoundOutlined, UploadOutlined
 } from '@ant-design/icons'
 import { App, Button, Descriptions, Drawer, Dropdown, Input, Modal, Space, Tabs, Tooltip } from 'antd'
-import { screenUrl, upload, type InputRequest } from '@/data/api'
+import { getClipboard, screenUrl, setClipboard, upload, type InputRequest } from '@/data/api'
 import { useRef, useState } from 'react'
 import { PhoneScreen } from '@/components/PhoneScreen'
 import { ProxyCell, StatusDot } from '@/components/bits'
@@ -21,6 +21,7 @@ export function PhoneDrawer({ phone, onClose }: { phone?: Phone; onClose: () => 
   const apkInput = useRef<HTMLInputElement>(null)
   const fileInput = useRef<HTMLInputElement>(null)
   const [uploading, setUploading] = useState<string>('')
+  const [clipOpen, setClipOpen] = useState(false)
   if (!phone) return null
   const live = ws.phones.find((p) => p.id === phone.id) ?? phone
   const issues = ws.issuesOf(live)
@@ -54,7 +55,7 @@ export function PhoneDrawer({ phone, onClose }: { phone?: Phone; onClose: () => 
     { icon: <CameraOutlined />, tip: '截图（新窗口打开原图）', onClick: () => (liveMode ? void window.open(screenUrl(live.id, Date.now()), '_blank') : message.info('预览模式：接上管家程序后可用')) },
     { icon: <UploadOutlined />, tip: '上传文件（图片、视频进相册，其他进下载目录）', onClick: () => (liveMode ? fileInput.current?.click() : message.info('预览模式：接上管家程序后可用')) },
     { icon: <AppstoreAddOutlined />, tip: '安装 APK', onClick: () => (liveMode ? apkInput.current?.click() : message.info('预览模式：接上管家程序后可用')) },
-    { icon: <CopyOutlined />, tip: '剪贴板', onClick: todo('剪贴板') }
+    { icon: <CopyOutlined />, tip: '剪贴板（电脑 ↔ 手机互相复制，支持中文）', onClick: () => (liveMode ? setClipOpen(true) : message.info('预览模式：接上管家程序后可用')) }
   ]
 
   return (
@@ -112,11 +113,12 @@ export function PhoneDrawer({ phone, onClose }: { phone?: Phone; onClose: () => 
           <Input.Search
             className="pp-send-text"
             disabled={!running || !liveMode}
-            placeholder="发送文字（英文、数字、符号）"
+            placeholder="发送文字到手机输入框（中文、英文都可以）"
             enterButton="发送"
             onSearch={(text, _event, info) => { if (text && info?.source !== 'clear') void ws.input(live.id, { kind: 'text', text }) }}
           />
           <p className="pp-muted pp-small pp-center">在画面上点一下 = 点击，按住拖动 = 滑动</p>
+          <ClipboardDialog open={clipOpen} phoneId={live.id} onClose={() => setClipOpen(false)} />
         </div>
         <div className="pp-detail-side">
           <Tabs
@@ -142,5 +144,58 @@ export function PhoneDrawer({ phone, onClose }: { phone?: Phone; onClose: () => 
         </div>
       </div>
     </Drawer>
+  )
+}
+
+/**
+ * 剪贴板互通：电脑 ↔ 手机互相复制，支持中文。
+ * - 电脑 → 手机：文字放进手机剪贴板（在手机上长按输入框粘贴），或直接粘贴到手机当前输入框。
+ * - 手机 → 电脑：取回手机剪贴板，同时复制到电脑剪贴板。
+ * 读写电脑剪贴板要浏览器允许（https 或本机地址才行）；不允许时就在框里手动复制粘贴。
+ */
+function ClipboardDialog({ open, phoneId, onClose }: { open: boolean; phoneId: string; onClose: () => void }) {
+  const { message } = App.useApp()
+  const [text, setText] = useState('')
+  const [busy, setBusy] = useState('')
+  const run = async (what: string, fn: () => Promise<void>) => {
+    setBusy(what)
+    try { await fn() } catch (error) { message.error((error as Error).message) } finally { setBusy('') }
+  }
+  const fromPC = () => run('read', async () => {
+    try {
+      setText(await navigator.clipboard.readText())
+    } catch {
+      message.warning('浏览器不允许读电脑剪贴板：请在下面的框里按 Ctrl+V 粘贴')
+    }
+  })
+  const toPhone = (paste: boolean) => run(paste ? 'paste' : 'set', async () => {
+    if (!text) { message.warning('先填要发送的文字'); return }
+    await setClipboard(phoneId, text, paste)
+    message.success(paste ? '已粘贴到手机当前的输入框' : '已放进手机剪贴板：在手机上长按输入框 →「粘贴」')
+  })
+  const fromPhone = () => run('get', async () => {
+    const { text: got } = await getClipboard(phoneId)
+    if (!got) { message.info('手机剪贴板是空的'); return }
+    setText(got)
+    try {
+      await navigator.clipboard.writeText(got)
+      message.success('已取回，并复制到电脑剪贴板')
+    } catch {
+      message.success('已取回（浏览器不允许写电脑剪贴板，请在框里手动复制）')
+    }
+  })
+  return (
+    <Modal open={open} title="剪贴板（电脑 ↔ 手机）" onCancel={onClose} footer={null} destroyOnHidden>
+      <Input.TextArea value={text} onChange={(e) => setText(e.target.value)} rows={6} maxLength={100_000} placeholder="要发给手机的文字，或者从手机取回的文字（中文、换行都可以）" />
+      <Space wrap style={{ marginTop: 12 }}>
+        <Button loading={busy === 'read'} onClick={() => void fromPC()}>读电脑剪贴板</Button>
+        <Button type="primary" loading={busy === 'set'} onClick={() => void toPhone(false)}>放进手机剪贴板</Button>
+        <Button loading={busy === 'paste'} onClick={() => void toPhone(true)}>直接粘贴到手机输入框</Button>
+        <Button loading={busy === 'get'} onClick={() => void fromPhone()}>取回手机剪贴板</Button>
+      </Space>
+      <p className="pp-muted pp-small" style={{ marginTop: 12 }}>
+        「直接粘贴」会打进手机上当前光标所在的输入框（先在画面上点一下输入框）。手机复制的东西点「取回」拿到电脑。
+      </p>
+    </Modal>
   )
 }

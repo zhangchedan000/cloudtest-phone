@@ -107,6 +107,12 @@ func (s *Service) applySettings(ctx context.Context, id string) {
 			}
 		}
 	}
+	// 预装应用（Chrome 等）：放在语言重启之后，免得装到一半框架被重启。
+	inst, probs := s.preinstall(ctx, id)
+	for _, f := range inst {
+		applied = append(applied, "预装 "+f)
+	}
+	problems = append(problems, probs...)
 	status := SettingsStatus{State: "applied", Applied: applied}
 	if len(problems) > 0 {
 		status.State, status.Error = "failed", strings.Join(problems, "；")

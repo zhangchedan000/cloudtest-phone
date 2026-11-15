@@ -1,6 +1,6 @@
 import { LoadingOutlined } from '@ant-design/icons'
 import { useEffect, useRef, useState, type PointerEvent } from 'react'
-import { savedToken, screenUrl } from '@/data/api'
+import { savedToken, screenshot } from '@/data/api'
 import { useWorkspace } from '@/data/store'
 import { playStream, videoSupported } from './h264'
 
@@ -40,12 +40,29 @@ export function LiveScreen({ id, size }: { id: string; size: 'thumb' | 'large' }
   const canvas = useRef<HTMLCanvasElement>(null)
   const wantVideo = video === 'connecting' || video === 'playing'
 
-  // 截屏：视频画面出来以后不再截；否则大屏 1 秒、小图 5 秒一张，图片加载完才请求下一张。
+  // 截屏：视频画面出来以后不再截；否则大屏 1 秒、小图 5 秒一张，上一张取回来才请求下一张。
+  // 要的是缩小的 JPEG（大屏 540 宽、小图 270 宽），比原图 PNG 小十倍左右，国内直连也能很快出来；
+  // 手机真实分辨率从响应头拿（点击坐标、视频尺寸都按它算）。
+  const [shot, setShot] = useState<string>()
+  const shotRef = useRef<string | undefined>(undefined)
   useEffect(() => {
     if (video === 'playing' && gotFrame) return
-    const timer = setTimeout(() => setTick((t) => t + 1), size === 'large' ? 1000 : 5000)
-    return () => clearTimeout(timer)
-  }, [tick, size, video, gotFrame])
+    const abort = new AbortController()
+    let timer: ReturnType<typeof setTimeout> | undefined
+    void screenshot(id, tick, size === 'large' ? 540 : 270, abort.signal)
+      .then(({ url, device: d }) => {
+        if (shotRef.current) URL.revokeObjectURL(shotRef.current)
+        shotRef.current = url
+        setShot(url)
+        setLoaded(true)
+        setFailed(false)
+        if (d) setDevice((prev) => prev ?? d)
+      })
+      .catch(() => { if (!abort.signal.aborted) setFailed(true) })
+      .finally(() => { if (!abort.signal.aborted) timer = setTimeout(() => setTick((t) => t + 1), size === 'large' ? 1000 : 5000) })
+    return () => { abort.abort(); if (timer) clearTimeout(timer) }
+  }, [id, tick, size, video, gotFrame])
+  useEffect(() => () => { if (shotRef.current) URL.revokeObjectURL(shotRef.current) }, [])
 
   // 视频流：先靠一张截图知道手机分辨率，再按画质档位要视频；180 秒到时间自动重连，换档位立即重连。
   useEffect(() => {
@@ -100,15 +117,15 @@ export function LiveScreen({ id, size }: { id: string; size: 'thumb' | 'large' }
   const showVideo = video === 'playing' && gotFrame
   return (
     <div className="pp-live">
-      {!showVideo && (
+      {!showVideo && shot && (
         <img
           className="pp-live-img"
-          src={screenUrl(id, tick)}
+          src={shot}
           alt=""
           draggable={false}
           style={{ visibility: loaded ? 'visible' : 'hidden', cursor: interactive ? 'pointer' : 'default' }}
-          onLoad={(e) => { setLoaded(true); setFailed(false); const el = e.currentTarget; if (el.naturalWidth) setDevice((d) => d ?? { w: el.naturalWidth, h: el.naturalHeight }) }}
-          onError={() => setFailed(true)}
+          // 旧版管家程序不给真实分辨率的响应头，但那时返回的是原图，图片尺寸就是手机分辨率
+          onLoad={(e) => { const el = e.currentTarget; if (el.naturalWidth) setDevice((d) => d ?? { w: el.naturalWidth, h: el.naturalHeight }) }}
           {...pointer}
         />
       )}

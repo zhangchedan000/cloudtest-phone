@@ -110,9 +110,33 @@ export async function logs(id: string, level: string, lines: number): Promise<st
   return text
 }
 
-/** 截屏地址（img 标签用；token 走 cookie，所以登录时也写一份 cookie）。 */
-export function screenUrl(id: string, tick: number): string {
-  return `/api/phones/${id}/screen?t=${tick}`
+/** 截屏地址（img 标签用；token 走 cookie，所以登录时也写一份 cookie）。不带 maxWidth = 原图 PNG。 */
+export function screenUrl(id: string, tick: number, maxWidth?: number): string {
+  return `/api/phones/${id}/screen?t=${tick}${maxWidth ? `&w=${maxWidth}` : ''}`
+}
+
+/**
+ * 取一张缩小的截图（JPEG，比原图 PNG 小十倍左右，国内直连也能很快出来）。
+ * 返回图片的 blob 地址和手机真实分辨率（响应头 X-Screen-Width/Height；旧版管家程序没有这两个头，返回 undefined）。
+ */
+export async function screenshot(id: string, tick: number, maxWidth: number, signal?: AbortSignal): Promise<{ url: string; device?: { w: number; h: number } }> {
+  const token = savedToken()
+  const response = await fetch(screenUrl(id, tick, maxWidth), { headers: token ? { Authorization: `Bearer ${token}` } : {}, signal })
+  if (!response.ok) throw new ApiError(`截屏失败（${response.status}）`, response.status)
+  const w = Number(response.headers.get('X-Screen-Width'))
+  const h = Number(response.headers.get('X-Screen-Height'))
+  const url = URL.createObjectURL(await response.blob())
+  return { url, device: w > 0 && h > 0 ? { w, h } : undefined }
+}
+
+/** 读手机剪贴板。 */
+export function getClipboard(id: string): Promise<{ text: string }> {
+  return call('GET', `/phones/${id}/clipboard`)
+}
+
+/** 把文字放进手机剪贴板；paste=true 时顺便粘贴到手机当前输入框。 */
+export function setClipboard(id: string, text: string, paste = false): Promise<{ ok: boolean }> {
+  return call('POST', `/phones/${id}/clipboard`, { text, paste })
 }
 
 export function writeTokenCookie(token: string): void {

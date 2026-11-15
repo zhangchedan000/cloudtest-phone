@@ -50,7 +50,19 @@ docker exec "$C" pgrep -x screenrecord >/dev/null && bad "页面断开后 screen
 for body in '{"kind":"key","key":"home"}' '{"kind":"tap","x":540,"y":1200}' '{"kind":"swipe","x":540,"y":2000,"x2":540,"y2":600,"durationMs":300}' '{"kind":"key","key":"back"}' '{"kind":"text","text":"hello world"}'; do
   r=$(api POST "/phones/$ID/input" "$body"); echo "$r" | grep -q '"ok":true' && ok "操作 $body" || bad "操作 $body：$r"
 done
-r=$(api POST "/phones/$ID/input" '{"kind":"text","text":"你好"}'); echo "$r" | grep -q "只能输入英文" && ok "中文输入会拒绝" || bad "中文输入：$r"
+r=$(api POST "/phones/$ID/input" '{"kind":"text","text":"你好"}'); echo "$r" | grep -q '"ok":true' && ok "发送中文（走剪贴板 + 粘贴键）" || bad "发送中文：$r"
+# 剪贴板互通：中文、换行、引号原样往返
+CLIP_PY='t="剪贴板测试 中文\n第二行 \"引号\""'
+r=$(api POST "/phones/$ID/clipboard" "$(python3 -c "import json;$CLIP_PY;print(json.dumps({'text':t}))")"); echo "$r" | grep -q '"ok":true' && ok "放进手机剪贴板" || bad "放进剪贴板：$r"
+same=$(api GET "/phones/$ID/clipboard" | python3 -c "import json,sys;$CLIP_PY;print(json.load(sys.stdin).get('text')==t)")
+[ "$same" = True ] && ok "取回手机剪贴板（中文、换行、引号一致）" || bad "取回剪贴板不一致：$(api GET "/phones/$ID/clipboard")"
+# 缩小的截图（JPEG）+ 真实分辨率响应头
+hdr=$(curl -s -m 60 -D - -o "$TMP/s.jpg" "$BASE/api/phones/$ID/screen?w=540" ${PP_TOKEN:+-H "Authorization: Bearer $PP_TOKEN"})
+file -b "$TMP/s.jpg" | grep -q JPEG && echo "$hdr" | grep -qi "X-Screen-Width: 1080" && ok "缩小截图：$(stat -c %s "$TMP/s.jpg") 字节 JPEG（原图 $(stat -c %s "$TMP/s1.png") 字节），真实宽度 1080" || bad "缩小截图：$(file -b "$TMP/s.jpg") $(echo "$hdr" | grep -i x-screen)"
+# 预装应用：预装目录里有 APK 时，开机后应已装好
+if ls /opt/prism-phone/data/preinstall/*.apk >/dev/null 2>&1; then
+  docker exec "$C" pm list packages 2>/dev/null | grep -q "package:com.android.chrome" && ok "预装 Chrome 已装好" || bad "预装没装上：$(api GET /phones | jget "[p.get('settings') for p in d if p['id']=='$ID'][0]")"
+fi
 
 # 开机后设置：语言变了会重启一次安卓框架，等它回来
 for _ in $(seq 1 24); do
