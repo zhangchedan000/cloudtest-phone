@@ -1,6 +1,6 @@
 import { LoadingOutlined } from '@ant-design/icons'
 import { useEffect, useRef, useState, type PointerEvent } from 'react'
-import { savedToken, screenshot } from '@/data/api'
+import { apiUrl, authHeaders, screenshot } from '@/data/api'
 import { useWorkspace } from '@/data/store'
 import { playStream, videoSupported } from './h264'
 
@@ -69,7 +69,6 @@ export function LiveScreen({ id, size }: { id: string; size: 'thumb' | 'large' }
     if (!wantVideo || !device || !canvas.current) return
     const abort = new AbortController()
     const el = canvas.current
-    const token = savedToken()
     const q = QUALITIES[quality]
     const w = Math.round(device.w * q.scale)
     const h = Math.round(device.h * q.scale)
@@ -77,7 +76,9 @@ export function LiveScreen({ id, size }: { id: string; size: 'thumb' | 'large' }
       while (!abort.signal.aborted) {
         try {
           setVideo('playing')
-          await playStream(`/api/phones/${id}/stream?w=${w}&h=${h}&br=${q.bitRate}`, token ? { Authorization: `Bearer ${token}` } : {}, el, abort.signal, () => setGotFrame(true))
+          // 手机可能在别的服务器上：地址和口令按手机所在的服务器
+          const path = `/phones/${id}/stream?w=${w}&h=${h}&br=${q.bitRate}`
+          await playStream(apiUrl(path), authHeaders(path), el, abort.signal, () => setGotFrame(true))
         } catch (error) {
           if (abort.signal.aborted) return
           setVideoError((error as Error).message)

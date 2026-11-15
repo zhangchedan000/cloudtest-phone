@@ -28,9 +28,10 @@ export function adbCommands(ip: string, hostname: string): { tunnel: string; con
   }
 }
 
-export function AdbDialog({ open, ip, name, onClose }: { open: boolean; ip?: string; name: string; onClose: () => void }) {
+export function AdbDialog({ open, ip, name, host, onClose }: { open: boolean; ip?: string; name: string; host?: string; onClose: () => void }) {
   const { message } = App.useApp()
-  const cmds = ip ? adbCommands(ip, window.location.hostname) : undefined
+  // 手机在哪台服务器上，SSH 就连哪台（别的服务器用它的域名）
+  const cmds = ip ? adbCommands(ip, host ?? window.location.hostname) : undefined
   const copy = async (text: string) => {
     try {
       await navigator.clipboard.writeText(text)

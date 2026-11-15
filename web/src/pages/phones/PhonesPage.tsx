@@ -47,7 +47,7 @@ export function PhonesPage() {
   const [batchDone, setBatchDone] = useState<{ title: string; results: BatchResult[] }>()
 
   const list = useMemo(() => ws.phones.filter((p) =>
-    (groupId === 'all' || p.groupId === groupId) && (hostId === 'all' || p.hostId === hostId) &&
+    (groupId === 'all' || `${p.serverId ?? 'local'}|${p.groupId}` === groupId) && (hostId === 'all' || p.hostId === hostId) &&
     (!query || `${p.name} ${String(ws.modelOf(p)?.values.marketName ?? '')}`.toLowerCase().includes(query.toLowerCase()))
   ), [ws, groupId, hostId, query])
 
@@ -80,6 +80,10 @@ export function PhonesPage() {
     }
   }
 
+  // 选中的手机在不在同一台服务器上（代理、分组每台服务器各一份，跨服务器不能一起换）
+  const selServers = [...new Set(selected.map((id) => ws.phones.find((p) => p.id === id)?.serverId ?? 'local'))]
+  const selSid = selServers.length === 1 ? selServers[0] : undefined
+  const sameSel = <T extends { serverId?: string }>(x: T) => selSid !== undefined && (x.serverId ?? 'local') === selSid
   const batch = [
     { key: 'start', label: '开机', icon: <PoweroffOutlined />, onClick: () => start(selected) },
     { key: 'stop', label: '关机', icon: <PoweroffOutlined />, onClick: () => ws.setStatus(selected, 'stopped') },
@@ -89,9 +93,10 @@ export function PhonesPage() {
     { key: 'apk', label: '安装 APK（选中的每台，只上传一次）', icon: <AppstoreAddOutlined />, onClick: () => apkInput.current?.click() },
     { key: 'files', label: '上传文件（图片视频进相册，其他进下载目录）', icon: <UploadOutlined />, onClick: () => fileInput.current?.click() },
     { type: 'divider' as const },
-    ...ws.groups.map((g) => ({ key: `group-${g.id}`, label: `移到分组：${g.name}`, onClick: () => ws.assign(selected, { groupId: g.id }) })),
+    ...(selSid === undefined && selected.length ? [{ key: 'mixed', label: '选中的手机在不同服务器上：换分组、换代理要分开选', disabled: true }] : []),
+    ...ws.groups.filter(sameSel).map((g) => ({ key: `group-${g.id}`, label: `移到分组：${g.name}`, onClick: () => ws.assign(selected, { groupId: g.id }) })),
     { type: 'divider' as const },
-    ...ws.proxies.map((p) => ({ key: `proxy-${p.id}`, label: `换代理：${p.name}`, onClick: () => ws.assign(selected, { proxyId: p.id }) })),
+    ...ws.proxies.filter(sameSel).map((p) => ({ key: `proxy-${p.id}`, label: `换代理：${p.name}`, onClick: () => ws.assign(selected, { proxyId: p.id }) })),
     { type: 'divider' as const },
     { key: 'delete', label: '删除', danger: true, icon: <DeleteOutlined />, onClick: () => Modal.confirm({ title: `删除 ${selected.length} 台云手机？`, content: '数据（账号登录状态、App、相册）会一起删除；服务器上会先挪到回收站，误删还能找回。', okButtonProps: { danger: true }, onOk: () => { ws.removePhones(selected); setSelected([]) } }) }
   ]
@@ -107,9 +112,12 @@ export function PhonesPage() {
         <Stat label="机器在线" value={`${ws.hosts.filter((h) => h.online).length} / ${ws.hosts.length}`} />
       </div>
 
-      {ws.mode === 'live' && ws.hosts[0]?.netHealth && !ws.hosts[0].netHealth.ok && (
-        <Alert type="error" showIcon className="pp-alert" title="网络模块有问题，云手机可能都上不了网" description={(ws.hosts[0].netHealth.problems ?? []).join('；')} />
-      )}
+      {ws.mode === 'live' && ws.hosts.filter((h) => h.netHealth && !h.netHealth.ok).map((h) => (
+        <Alert key={`net-${h.id}`} type="error" showIcon className="pp-alert" title={`${h.name}：网络模块有问题，这台服务器上的云手机可能都上不了网`} description={(h.netHealth?.problems ?? []).join('；')} />
+      ))}
+      {ws.mode === 'live' && ws.hosts.filter((h) => !h.online).map((h) => (
+        <Alert key={`off-${h.id}`} type="warning" showIcon className="pp-alert" title={`服务器「${h.name}」连不上，它的手机暂时不显示`} description={h.error} />
+      ))}
       {ws.mode === 'live' && offline.length > 0 && (
         <Alert type="error" showIcon className="pp-alert" title={`${offline.length} 台运行中的手机上不了外网：${offline.map((p) => p.name).join('、')}`} description="每 2 分钟从手机里试连一次外网。先在「代理 IP」里检测这几台用的代理；所有手机都连不上的话，多半是网络模块的问题。" />
       )}
@@ -119,9 +127,9 @@ export function PhonesPage() {
       <div className="pp-toolbar">
         <Space wrap>
           <Segmented value={view} onChange={(v) => setView(v as 'cards' | 'list')} options={[{ value: 'cards', icon: <AppstoreOutlined />, label: '画面' }, { value: 'list', icon: <UnorderedListOutlined />, label: '列表' }]} />
-          <Select style={{ width: 150 }} value={groupId} onChange={setGroupId} options={[{ value: 'all', label: '全部分组' }, ...ws.groups.map((g) => ({ value: g.id, label: g.name }))]} />
+          <Select style={{ width: 150 }} value={groupId} onChange={setGroupId} options={[{ value: 'all', label: '全部分组' }, ...ws.groups.map((g) => ({ value: `${g.serverId ?? 'local'}|${g.id}`, label: ws.servers.length ? `${g.name}（${ws.serverName(g.serverId)}）` : g.name }))]} />
           <Button onClick={() => setManagingGroups(true)}>分组管理</Button>
-          <Select style={{ width: 150 }} value={hostId} onChange={setHostId} options={[{ value: 'all', label: '全部机器' }, ...ws.hosts.map((h) => ({ value: h.id, label: h.name }))]} />
+          <Select style={{ width: 150 }} value={hostId} onChange={setHostId} options={[{ value: 'all', label: '全部机器' }, ...ws.hosts.map((h) => ({ value: h.id, label: h.online ? h.name : `${h.name}（离线）` }))]} />
           <Input allowClear prefix={<SearchOutlined />} placeholder="名称 / 机型" value={query} onChange={(e) => setQuery(e.target.value)} style={{ width: 200 }} />
         </Space>
         <Space wrap>

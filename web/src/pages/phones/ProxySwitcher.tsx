@@ -19,6 +19,11 @@ function proxyLabel(px: Proxy | undefined, id: string): string {
   return place ? `${px.name} · ${place}` : px.name
 }
 
+/** 和这台手机在同一台服务器上的代理（每台服务器有自己的代理库）。 */
+export function serverProxies(all: Proxy[], phone: Phone): Proxy[] {
+  return all.filter((p) => (p.serverId ?? 'local') === (phone.serverId ?? 'local'))
+}
+
 export function phoneProxyIds(phone: Phone): string[] {
   const list = phone.proxyIds?.length ? phone.proxyIds : phone.proxyId ? [phone.proxyId] : []
   return list.includes(phone.proxyId) || !phone.proxyId ? list : [phone.proxyId, ...list]
@@ -51,7 +56,7 @@ export function ProxySwitcher({ phone }: { phone: Phone }) {
       loading={busy}
       disabled={ws.mode !== 'live' || busy}
       onChange={(v) => void switchTo(v)}
-      options={ids.map((id) => ({ value: id, label: proxyLabel(ws.proxies.find((p) => p.id === id), id) }))}
+      options={ids.map((id) => ({ value: id, label: proxyLabel(serverProxies(ws.proxies, phone).find((p) => p.id === id), id) }))}
       popupMatchSelectWidth={false}
       prefix={<Tag color="blue" bordered={false}>IP</Tag>}
       title={ids.length > 1 ? '这台挂了多个代理，选一个就切换' : '只挂了一个代理：在「编辑 → 信息」里可以再加'}
@@ -83,7 +88,7 @@ export function ProxyListEditor({ phone }: { phone: Phone }) {
       loading={busy}
       disabled={ws.mode !== 'live' || busy}
       onChange={(v) => void save(v)}
-      options={ws.proxies.map((p) => ({ value: p.id, label: `${proxyLabel(p, p.id)}${p.id === phone.proxyId ? '（在用）' : ''}` }))}
+      options={serverProxies(ws.proxies, phone).map((p) => ({ value: p.id, label: `${proxyLabel(p, p.id)}${p.id === phone.proxyId ? '（在用）' : ''}` }))}
       placeholder="选这台可以用的代理（可以多选）"
     />
   )

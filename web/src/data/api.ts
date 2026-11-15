@@ -18,11 +18,46 @@ export class ApiError extends Error {
   constructor(message: string, readonly status: number) { super(message) }
 }
 
-async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
-  const token = savedToken()
-  const response = await fetch(`/api${path}`, {
+/**
+ * 多台服务器（2026-11-15）：打开管理页的这台叫「本机」（LOCAL），别的服务器的地址和口令由本机记着（/api/servers）。
+ * 页面直接连每一台（画面、操作不经本机中转）。每台手机记住自己在哪台服务器上，
+ * 所以 /phones/<id>/… 的请求自动发到那台、带那台的口令；代理、分组等按调用时给的服务器 ID 发。
+ */
+export const LOCAL = 'local'
+export interface ServerRef { id: string; name: string; url: string; token: string }
+const remotes = new Map<string, ServerRef>()
+const phoneServer = new Map<string, string>()
+
+export function setRemoteServers(list: ServerRef[]): void {
+  remotes.clear()
+  for (const s of list) remotes.set(s.id, s)
+}
+export function rememberPhoneServer(phoneId: string, serverId: string): void { phoneServer.set(phoneId, serverId) }
+export function serverOfPhone(phoneId: string): string { return phoneServer.get(phoneId) ?? LOCAL }
+/** 服务器的网页地址（本机返回当前网页的地址）。 */
+export function serverUrl(serverId: string | undefined): string {
+  const r = serverId && serverId !== LOCAL ? remotes.get(serverId) : undefined
+  return r ? r.url : location.origin
+}
+
+function endpoint(path: string, serverId?: string): { base: string; token: string } {
+  const m = serverId ? null : /^\/phones\/([^/?]+)/.exec(path)
+  const sid = serverId ?? (m ? serverOfPhone(m[1]) : LOCAL)
+  const r = sid !== LOCAL ? remotes.get(sid) : undefined
+  return r ? { base: r.url, token: r.token } : { base: '', token: savedToken() }
+}
+/** 接口的完整地址（按手机或给定的服务器选机器）。 */
+export function apiUrl(path: string, serverId?: string): string { return `${endpoint(path, serverId).base}/api${path}` }
+/** 带上那台服务器的口令。 */
+export function authHeaders(path: string, serverId?: string): Record<string, string> {
+  const t = endpoint(path, serverId).token
+  return t ? { Authorization: `Bearer ${t}` } : {}
+}
+
+async function call<T>(method: string, path: string, body?: unknown, serverId?: string): Promise<T> {
+  const response = await fetch(apiUrl(path, serverId), {
     method,
-    headers: { ...(body === undefined ? {} : { 'Content-Type': 'application/json' }), ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    headers: { ...(body === undefined ? {} : { 'Content-Type': 'application/json' }), ...authHeaders(path, serverId) },
     body: body === undefined ? undefined : JSON.stringify(body)
   })
   const text = await response.text()
@@ -55,9 +90,9 @@ export interface TrashItem { name: string; phoneId: string; kind: 'delete' | 're
 export interface InputRequest { kind: 'tap' | 'swipe' | 'text' | 'key'; x?: number; y?: number; x2?: number; y2?: number; durationMs?: number; text?: string; key?: string }
 
 export const api = {
-  host: () => call<HostInfo>('GET', '/host'),
-  phones: () => call<PhoneView[]>('GET', '/phones'),
-  createPhone: (req: { name: string; modelId: string; androidVersion: number; proxyId: string; groupId: string; note?: string }) => call<Phone>('POST', '/phones', req),
+  host: (sid?: string) => call<HostInfo>('GET', '/host', undefined, sid),
+  phones: (sid?: string) => call<PhoneView[]>('GET', '/phones', undefined, sid),
+  createPhone: (req: { name: string; modelId: string; androidVersion: number; proxyId: string; groupId: string; note?: string }, sid?: string) => call<Phone>('POST', '/phones', req, sid),
   savePhone: (id: string, req: { fields?: Record<string, FieldSetting>; modelId?: string; proxyId?: string; proxyIds?: string[]; groupId?: string; name?: string; note?: string }) => call('PUT', `/phones/${id}`, req),
   /** 切换这台当前用的代理（开着的手机时区马上跟着换）。 */
   switchProxy: (id: string, proxyId: string) => call<{ proxyId: string; timezone?: string; warning?: string }>('POST', `/phones/${id}/proxy`, { proxyId }),
@@ -66,26 +101,30 @@ export const api = {
   stop: (id: string) => call('POST', `/phones/${id}/stop`),
   reset: (id: string, androidVersion?: number) => call('POST', `/phones/${id}/reset`, { renew: false, androidVersion: androidVersion ?? 0 }),
   input: (id: string, req: InputRequest) => call('POST', `/phones/${id}/input`, req),
-  proxies: () => call<Proxy[]>('GET', '/proxies'),
-  createProxy: (proxy: Omit<Proxy, 'id'>) => call<Proxy>('POST', '/proxies', proxy),
-  checkProxy: (id: string) => call<ProxyCheck>('POST', `/proxies/${id}/check`),
-  deleteProxy: (id: string) => call('DELETE', `/proxies/${id}`),
-  importProxies: (req: { url?: string; text?: string; note?: string }) => call<{ added: number; duplicates: number; skipped?: string[] }>('POST', '/proxies/import', req),
-  trash: () => call<TrashItem[]>('GET', '/trash'),
-  deleteTrash: (name: string) => call('DELETE', `/trash/${encodeURIComponent(name)}`),
-  groups: () => call<Group[]>('GET', '/groups'),
-  createGroup: (group: Omit<Group, 'id'>) => call<Group>('POST', '/groups', group),
-  updateGroup: (group: Group) => call<Group>('PUT', `/groups/${group.id}`, group),
-  deleteGroup: (id: string) => call('DELETE', `/groups/${id}`)
+  proxies: (sid?: string) => call<Proxy[]>('GET', '/proxies', undefined, sid),
+  createProxy: (proxy: Omit<Proxy, 'id'>, sid?: string) => call<Proxy>('POST', '/proxies', proxy, sid),
+  checkProxy: (id: string, sid?: string) => call<ProxyCheck>('POST', `/proxies/${id}/check`, undefined, sid),
+  deleteProxy: (id: string, sid?: string) => call('DELETE', `/proxies/${id}`, undefined, sid),
+  importProxies: (req: { url?: string; text?: string; note?: string }, sid?: string) => call<{ added: number; duplicates: number; skipped?: string[] }>('POST', '/proxies/import', req, sid),
+  trash: (sid?: string) => call<TrashItem[]>('GET', '/trash', undefined, sid),
+  deleteTrash: (name: string, sid?: string) => call('DELETE', `/trash/${encodeURIComponent(name)}`, undefined, sid),
+  groups: (sid?: string) => call<Group[]>('GET', '/groups', undefined, sid),
+  createGroup: (group: Omit<Group, 'id'>, sid?: string) => call<Group>('POST', '/groups', group, sid),
+  updateGroup: (group: Group, sid?: string) => call<Group>('PUT', `/groups/${group.id}`, group, sid),
+  deleteGroup: (id: string, sid?: string) => call('DELETE', `/groups/${id}`, undefined, sid),
+  /** 别的服务器（只在本机上管）。 */
+  servers: () => call<ServerRef[]>('GET', '/servers', undefined, LOCAL),
+  addServer: (req: { name?: string; url: string; token: string }) => call<ServerRef>('POST', '/servers', req, LOCAL),
+  updateServer: (id: string, req: { name?: string; token?: string }) => call<ServerRef>('PUT', `/servers/${id}`, req, LOCAL),
+  deleteServer: (id: string) => call('DELETE', `/servers/${id}`, undefined, LOCAL)
 }
 
 /** 上传文件（安装 APK / 传到手机目录），带进度回调。 */
-export function upload(path: string, file: File, onProgress?: (percent: number) => void): Promise<{ ok: boolean; path?: string; output?: string }> {
+export function upload(path: string, file: File, onProgress?: (percent: number) => void, serverId?: string): Promise<{ ok: boolean; path?: string; output?: string }> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest()
-    xhr.open('POST', `/api${path}`)
-    const token = savedToken()
-    if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`)
+    xhr.open('POST', apiUrl(path, serverId))
+    for (const [k, v] of Object.entries(authHeaders(path, serverId))) xhr.setRequestHeader(k, v)
     xhr.upload.onprogress = (event) => { if (event.lengthComputable) onProgress?.(Math.round((event.loaded / event.total) * 100)) }
     xhr.onload = () => {
       let data: { error?: string } & Record<string, unknown> = {}
@@ -109,15 +148,24 @@ export interface BatchResult { id: string; ok: boolean; error?: string; path?: s
  */
 export async function batchUpload(kind: 'apk' | 'file', ids: string[], file: File, onProgress?: (percent: number) => void): Promise<BatchResult[]> {
   const dir = /^(image|video)\//.test(file.type) ? 'DCIM' : 'Download'
-  const path = kind === 'apk' ? `/batch/apk?ids=${ids.join(',')}` : `/batch/files?ids=${ids.join(',')}&dir=${dir}`
-  const data = (await upload(path, file, onProgress)) as unknown as { results?: BatchResult[] }
-  return data.results ?? []
+  // 每台服务器传一次（选中的手机分在几台服务器上就传几次）
+  const bySid = new Map<string, string[]>()
+  for (const id of ids) bySid.set(serverOfPhone(id), [...(bySid.get(serverOfPhone(id)) ?? []), id])
+  const out: BatchResult[] = []
+  let done = 0
+  for (const [sid, group] of bySid) {
+    const path = kind === 'apk' ? `/batch/apk?ids=${group.join(',')}` : `/batch/files?ids=${group.join(',')}&dir=${dir}`
+    const data = (await upload(path, file, (pct) => onProgress?.(Math.round((done * 100 + pct) / bySid.size)), sid)) as unknown as { results?: BatchResult[] }
+    out.push(...(data.results ?? []))
+    done++
+  }
+  return out
 }
 
 /** 安卓日志（纯文本）。 */
 export async function logs(id: string, level: string, lines: number): Promise<string> {
-  const token = savedToken()
-  const response = await fetch(`/api/phones/${id}/logs?level=${level}&lines=${lines}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
+  const path = `/phones/${id}/logs?level=${level}&lines=${lines}`
+  const response = await fetch(apiUrl(path), { headers: authHeaders(path) })
   const text = await response.text()
   if (!response.ok) {
     let message = `读日志失败（${response.status}）`
@@ -137,13 +185,23 @@ export function screenUrl(id: string, tick: number, maxWidth?: number): string {
  * 返回图片的 blob 地址和手机真实分辨率（响应头 X-Screen-Width/Height；旧版管家程序没有这两个头，返回 undefined）。
  */
 export async function screenshot(id: string, tick: number, maxWidth: number, signal?: AbortSignal): Promise<{ url: string; device?: { w: number; h: number } }> {
-  const token = savedToken()
-  const response = await fetch(screenUrl(id, tick, maxWidth), { headers: token ? { Authorization: `Bearer ${token}` } : {}, signal })
+  const path = `/phones/${id}/screen?t=${tick}&w=${maxWidth}`
+  const response = await fetch(apiUrl(path), { headers: authHeaders(path), signal })
   if (!response.ok) throw new ApiError(`截屏失败（${response.status}）`, response.status)
   const w = Number(response.headers.get('X-Screen-Width'))
   const h = Number(response.headers.get('X-Screen-Height'))
   const url = URL.createObjectURL(await response.blob())
   return { url, device: w > 0 && h > 0 ? { w, h } : undefined }
+}
+
+/** 新窗口打开原图截图（别的服务器要带口令，所以先取回来再打开）。 */
+export async function openRawScreenshot(id: string): Promise<void> {
+  const win = window.open('', '_blank')
+  const path = `/phones/${id}/screen?t=${Date.now()}`
+  const response = await fetch(apiUrl(path), { headers: authHeaders(path) })
+  if (!response.ok) { win?.close(); throw new ApiError(`截屏失败（${response.status}）`, response.status) }
+  const url = URL.createObjectURL(await response.blob())
+  if (win) win.location.href = url
 }
 
 /** 读手机剪贴板。 */

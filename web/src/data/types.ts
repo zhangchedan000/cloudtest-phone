@@ -51,6 +51,8 @@ export interface FieldSetting { mode: FieldMode; value?: unknown; locked?: boole
 
 /** 一台云手机。只存引用（代理、分组、机型、机器）+ 改过的字段。 */
 export interface Phone {
+  /** 在哪台服务器上（多台服务器时；本机 = 'local' 或没有）。 */
+  serverId?: string
   id: string
   name: string
   hostId: string
@@ -93,6 +95,8 @@ export interface ProxyCheck {
 }
 
 export interface Proxy {
+  /** 在哪台服务器上（多台服务器时；本机 = 'local' 或没有）。 */
+  serverId?: string
   id: string
   name: string
   protocol: ProxyProtocol
@@ -101,9 +105,11 @@ export interface Proxy {
   check?: ProxyCheck
 }
 
-export interface Group { id: string; name: string; color: string }
+export interface Group { id: string; name: string; color: string; serverId?: string }
 
 export interface Host {
+  /** 在哪台服务器上（多台服务器时；本机 = 'local' 或没有）。 */
+  serverId?: string
   id: string
   name: string
   location: string
@@ -122,6 +128,9 @@ export interface Host {
   networkEnabled?: boolean
   /** 网络模块的宿主机健康检查（策略路由、mihomo）；ok=false 时云手机可能都上不了网。 */
   netHealth?: { ok: boolean; problems?: string[]; healedAt?: string; checkedAt: string }
+  /** 别的服务器：网页地址；连不上时的原因。 */
+  url?: string
+  error?: string
   /** 这台机器装了哪些安卓版本的镜像。 */
   androidVersions?: number[]
 }

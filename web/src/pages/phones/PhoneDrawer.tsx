@@ -3,7 +3,7 @@ import {
   PoweroffOutlined, RedoOutlined, RotateRightOutlined, SoundOutlined, UploadOutlined
 } from '@ant-design/icons'
 import { App, Button, Descriptions, Drawer, Dropdown, Input, Modal, Space, Tabs, Tooltip } from 'antd'
-import { getClipboard, screenUrl, setClipboard, upload, type InputRequest } from '@/data/api'
+import { getClipboard, openRawScreenshot, serverUrl, setClipboard, upload, type InputRequest } from '@/data/api'
 import { useRef, useState } from 'react'
 import { PhoneScreen } from '@/components/PhoneScreen'
 import { ProxyCell, StatusDot } from '@/components/bits'
@@ -59,7 +59,7 @@ export function PhoneDrawer({ phone, mode = 'view', onClose, onEdit, bare = fals
     { icon: <ArrowLeftOutlined />, tip: '返回', onClick: key('back') }, { icon: <HomeOutlined />, tip: '主页', onClick: key('home') },
     { icon: <BorderOutlined />, tip: '多任务', onClick: key('recents') }, { icon: <SoundOutlined />, tip: '音量 +', onClick: key('volume_up') },
     { icon: <RotateRightOutlined />, tip: '旋转', onClick: todo('旋转') },
-    { icon: <CameraOutlined />, tip: '截图（新窗口打开原图）', onClick: () => (liveMode ? void window.open(screenUrl(live.id, Date.now()), '_blank') : message.info('预览模式：接上管家程序后可用')) },
+    { icon: <CameraOutlined />, tip: '截图（新窗口打开原图）', onClick: () => (liveMode ? void openRawScreenshot(live.id).catch((e: Error) => message.error(e.message)) : message.info('预览模式：接上管家程序后可用')) },
     { icon: <UploadOutlined />, tip: '上传文件（图片、视频进相册，其他进下载目录）', onClick: () => (liveMode ? fileInput.current?.click() : message.info('预览模式：接上管家程序后可用')) },
     { icon: <AppstoreAddOutlined />, tip: '安装 APK', onClick: () => (liveMode ? apkInput.current?.click() : message.info('预览模式：接上管家程序后可用')) },
     { icon: <CopyOutlined />, tip: '剪贴板（电脑 ↔ 手机互相复制，支持中文）', onClick: () => (liveMode ? setClipOpen(true) : message.info('预览模式：接上管家程序后可用')) },
@@ -116,7 +116,7 @@ export function PhoneDrawer({ phone, mode = 'view', onClose, onEdit, bare = fals
           <p className="pp-muted pp-small pp-center">在画面上点一下 = 点击，按住拖动 = 滑动</p>
           <ClipboardDialog open={clipOpen} phoneId={live.id} onClose={() => setClipOpen(false)} />
         </div>}
-        <AdbDialog open={adbOpen} ip={live.ip} name={live.name} onClose={() => setAdbOpen(false)} />
+        <AdbDialog open={adbOpen} ip={live.ip} name={live.name} host={new URL(serverUrl(live.serverId)).hostname} onClose={() => setAdbOpen(false)} />
         {mode === 'edit' && <div className="pp-detail-side">
           <Tabs
             items={[

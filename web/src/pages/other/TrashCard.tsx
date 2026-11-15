@@ -5,7 +5,7 @@ import { api, type TrashItem } from '@/data/api'
 import { useWorkspace } from '@/data/store'
 
 /** 回收站：删除、重置、刷机留下的旧数据。超过 30 天自动彻底删除（管家程序参数 -trash-days）。 */
-export function TrashCard() {
+export function TrashCard({ serverId, title }: { serverId?: string; title?: string } = {}) {
   const ws = useWorkspace()
   const { message } = App.useApp()
   const [items, setItems] = useState<TrashItem[]>([])
@@ -13,8 +13,8 @@ export function TrashCard() {
   const load = useCallback(async () => {
     if (ws.mode !== 'live') return
     setLoading(true)
-    try { setItems(await api.trash()) } catch (e) { message.error((e as Error).message) } finally { setLoading(false) }
-  }, [ws.mode, message])
+    try { setItems(await api.trash(serverId)) } catch (e) { message.error((e as Error).message) } finally { setLoading(false) }
+  }, [ws.mode, message, serverId])
   useEffect(() => { void load() }, [load])
 
   const total = items.reduce((n, it) => n + it.sizeMB, 0)
@@ -24,14 +24,14 @@ export function TrashCard() {
     content: '删除后不能找回。',
     okButtonProps: { danger: true },
     onOk: async () => {
-      for (const name of names) await api.deleteTrash(name).catch((e: Error) => message.error(e.message))
+      for (const name of names) await api.deleteTrash(name, serverId).catch((e: Error) => message.error(e.message))
       await load()
     }
   })
 
   return (
     <Card
-      title={`回收站（${items.length} 份，${total >= 1024 ? `${(total / 1024).toFixed(1)} GB` : `${Math.round(total)} MB`}）`}
+      title={`${title ? `${title} · ` : ''}回收站（${items.length} 份，${total >= 1024 ? `${(total / 1024).toFixed(1)} GB` : `${Math.round(total)} MB`}）`}
       extra={<Space><Button size="small" icon={<ReloadOutlined />} loading={loading} onClick={() => void load()} />{items.length > 0 && <Button size="small" danger onClick={() => remove(items.map((i) => i.name))}>全部清空</Button>}</Space>}
     >
       <p className="pp-muted pp-small">删除、重置、刷机时手机的旧数据先放这里，误操作还能找回；超过 30 天自动彻底删除。</p>

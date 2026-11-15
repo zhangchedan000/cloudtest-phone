@@ -1,6 +1,6 @@
 import { App } from 'antd'
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
-import { api, ApiError, saveToken, savedToken, writeTokenCookie, type HostInfo, type InputRequest } from './api'
+import { api, ApiError, LOCAL, rememberPhoneServer, saveToken, savedToken, setRemoteServers, writeTokenCookie, type HostInfo, type InputRequest, type ServerRef } from './api'
 import { models } from './catalog'
 import { checkPhone, type Issue } from './consistency'
 import * as mock from './mock'
@@ -21,6 +21,10 @@ interface Workspace {
   proxies: Proxy[]
   groups: Group[]
   hosts: Host[]
+  /** 别的服务器（本机之外）。 */
+  servers: ServerRef[]
+  /** 服务器显示名（本机叫这台机器的名字）。 */
+  serverName: (serverId?: string) => string
   models: DeviceModel[]
   modelOf: (phone: Phone) => DeviceModel | undefined
   proxyOf: (phone: Phone) => Proxy | undefined
@@ -34,11 +38,11 @@ interface Workspace {
   removePhones: (ids: string[]) => Promise<void>
   resetPhones: (ids: string[], androidVersion?: number) => Promise<void>
   addProxy: (proxy: Proxy) => Promise<void>
-  checkProxies: (ids: string[]) => Promise<void>
-  removeProxy: (id: string) => Promise<void>
+  checkProxies: (ids: string[], serverId?: string) => Promise<void>
+  removeProxy: (id: string, serverId?: string) => Promise<void>
   saveGroup: (group: Omit<Group, 'id'> & { id?: string }) => Promise<void>
-  removeGroup: (id: string) => Promise<void>
-  importProxies: (req: { url?: string; text?: string; note?: string }) => Promise<{ added: number; duplicates: number; skipped?: string[] }>
+  removeGroup: (id: string, serverId?: string) => Promise<void>
+  importProxies: (req: { url?: string; text?: string; note?: string }, serverId?: string) => Promise<{ added: number; duplicates: number; skipped?: string[] }>
   input: (id: string, req: InputRequest) => Promise<void>
   login: (token: string) => Promise<void>
   refresh: () => Promise<void>
@@ -49,11 +53,11 @@ const WorkspaceContext = createContext<Workspace | null>(null)
 const DEV_DIRECT: Proxy = { id: 'direct-dev', name: '直连（仅开发机）', protocol: 'http', address: '不经代理，仅用于开发测试', check: { ok: true, checkedAt: '' } }
 
 /** 管家程序的机器信息 → 页面用的机器卡片（硬件数字来自自检，没有就显示 0）。 */
-function hostFromInfo(info: HostInfo): Host {
+function hostFromInfo(info: HostInfo, serverId: string = LOCAL, url?: string): Host {
   const sys = (info.system ?? {}) as Record<string, unknown>
   const num = (v: unknown) => (typeof v === 'number' ? Math.round(v * 10) / 10 : 0)
   return {
-    id: info.id, name: info.name || info.id, location: info.devHost ? '开发机' : '—', arch: String(sys.arch ?? 'arm64'),
+    serverId, url, id: info.id, name: info.name || info.id, location: info.devHost ? '开发机' : '—', arch: String(sys.arch ?? 'arm64'),
     gpu: info.gpuFamily === 'software' ? '无（软件渲染）' : info.gpuFamily, gpuFamily: info.gpuFamily,
     cpus: num(sys.cpus), memGb: num(sys.memGb), memUsedGb: num(num(sys.memGb) - num(sys.memAvailGb)), diskGb: num(sys.diskGb), diskUsedGb: num(num(sys.diskGb) - num(sys.diskFreeGb)),
     online: true, kernel: String(sys.kernel ?? '—'), maxRunning: info.maxRunning, networkEnabled: info.network === true, netHealth: info.netHealth, androidVersions: [...(info.androidVersions ?? [])].sort((a, b) => a - b)
@@ -67,15 +71,44 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [proxies, setProxies] = useState<Proxy[]>([])
   const [groups, setGroups] = useState<Group[]>([])
   const [hosts, setHosts] = useState<Host[]>([])
+  const [servers, setServers] = useState<ServerRef[]>([])
 
   const load = useCallback(async () => {
     try {
-      const [host, list, proxyList, groupList] = await Promise.all([api.host(), api.phones(), api.proxies(), api.groups()])
-      setHosts([hostFromInfo(host)])
-      setPhones((list ?? []).map((p) => ({ ...p, fields: p.fields ?? {} })))
+      const [host, list, proxyList, groupList, serverList] = await Promise.all([
+        api.host(), api.phones(), api.proxies(), api.groups(), api.servers().catch(() => [] as ServerRef[])
+      ])
+      setRemoteServers(serverList ?? [])
+      setServers(serverList ?? [])
+      // 别的服务器一起读；连不上的显示成离线，不影响其他的
+      const remote = await Promise.all((serverList ?? []).map(async (sv) => {
+        try {
+          const [h, ps, px, gs] = await Promise.all([api.host(sv.id), api.phones(sv.id), api.proxies(sv.id), api.groups(sv.id)])
+          return { sv, h, ps: ps ?? [], px: px ?? [], gs: gs ?? [] }
+        } catch (error) {
+          return { sv, error: (error as Error).message }
+        }
+      }))
+      const allHosts: Host[] = [hostFromInfo(host)]
+      const allPhones: Phone[] = (list ?? []).map((p) => ({ ...p, serverId: LOCAL, fields: p.fields ?? {} }))
       // 开发机允许「直连（仅开发）」，管家程序认这个固定 ID；正式机器没有这一项。
-      setProxies([...(proxyList ?? []), ...(host.devHost ? [DEV_DIRECT] : [])])
-      setGroups(groupList ?? [])
+      const allProxies: Proxy[] = [...(proxyList ?? []), ...(host.devHost ? [DEV_DIRECT] : [])].map((p) => ({ ...p, serverId: LOCAL }))
+      const allGroups: Group[] = (groupList ?? []).map((g) => ({ ...g, serverId: LOCAL }))
+      for (const r of remote) {
+        if ('error' in r) {
+          allHosts.push({ ...hostFromInfo({ id: `offline-${r.sv.id}`, name: r.sv.name, gpuFamily: '—', devHost: false, maxRunning: 0, androidVersions: [] }, r.sv.id, r.sv.url), online: false, error: r.error })
+          continue
+        }
+        allHosts.push(hostFromInfo(r.h, r.sv.id, r.sv.url))
+        allPhones.push(...r.ps.map((p) => ({ ...p, serverId: r.sv.id, fields: p.fields ?? {} })))
+        allProxies.push(...[...r.px, ...(r.h.devHost ? [DEV_DIRECT] : [])].map((p) => ({ ...p, serverId: r.sv.id })))
+        allGroups.push(...r.gs.map((g) => ({ ...g, serverId: r.sv.id })))
+      }
+      for (const p of allPhones) rememberPhoneServer(p.id, p.serverId ?? LOCAL)
+      setHosts(allHosts)
+      setPhones(allPhones)
+      setProxies(allProxies)
+      setGroups(allGroups)
       setMode('live')
     } catch (error) {
       if (error instanceof ApiError && error.status === 401) { setMode('login'); return }
@@ -100,9 +133,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   }, [mode, load])
 
   const modelOf = useCallback((phone: Phone) => models.find((m) => m.id === phone.modelId), [])
-  const proxyOf = useCallback((phone: Phone) => proxies.find((p) => p.id === phone.proxyId), [proxies])
+  const same = (a?: string, b?: string) => (a ?? LOCAL) === (b ?? LOCAL)
+  const proxyOf = useCallback((phone: Phone) => proxies.find((p) => p.id === phone.proxyId && same(p.serverId, phone.serverId)), [proxies])
   const hostOf = useCallback((phone: Phone) => hosts.find((h) => h.id === phone.hostId) ?? (mode === 'live' ? hosts[0] : undefined), [hosts, mode])
-  const groupOf = useCallback((phone: Phone) => groups.find((g) => g.id === phone.groupId), [groups])
+  const groupOf = useCallback((phone: Phone) => groups.find((g) => g.id === phone.groupId && same(g.serverId, phone.serverId)), [groups])
   const issuesOf = useCallback(
     (phone: Phone) => [
       ...checkPhone({ phone, model: modelOf(phone), proxy: proxyOf(phone), host: hostOf(phone), others: phones }),
@@ -128,7 +162,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       await load().catch(() => undefined)
     }
     return {
-      mode, phones, proxies, groups, hosts, models, modelOf, proxyOf, hostOf, groupOf, issuesOf,
+      mode, phones, proxies, groups, hosts, servers, models, modelOf, proxyOf, hostOf, groupOf, issuesOf,
+      serverName: (sid) => (!sid || sid === LOCAL ? hosts.find((h) => (h.serverId ?? LOCAL) === LOCAL)?.name ?? '本机' : servers.find((s) => s.id === sid)?.name ?? sid),
       setStatus: async (ids, status) => {
         if (!live) { setPhones((list) => list.map((p) => (ids.includes(p.id) ? { ...p, status } : p))); return }
         if (status === 'running') setPhones((list) => list.map((p) => (ids.includes(p.id) ? { ...p, status: 'starting' } : p)))
@@ -145,7 +180,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       addPhone: async (phone) => {
         if (!live) { setPhones((list) => [...list, phone]); return }
         // 字段由管家程序按机型生成，页面只传基本信息。
-        await each([phone.id], '创建', () => api.createPhone({ name: phone.name, modelId: phone.modelId, androidVersion: phone.androidVersion, proxyId: phone.proxyId, groupId: phone.groupId, note: phone.note }))
+        // 建在选中的机器所在的服务器上
+        const sid = hosts.find((h) => h.id === phone.hostId)?.serverId ?? LOCAL
+        await each([phone.id], '创建', () => api.createPhone({ name: phone.name, modelId: phone.modelId, androidVersion: phone.androidVersion, proxyId: phone.proxyId, groupId: phone.groupId, note: phone.note }, sid))
       },
       resetPhones: async (ids, androidVersion) => {
         if (!live) { message.info('预览模式：接上管家程序后可用'); return }
@@ -157,19 +194,19 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       },
       addProxy: async (proxy) => {
         if (!live) { setProxies((list) => [...list, proxy]); return }
-        await each([proxy.id], '添加代理', () => api.createProxy({ name: proxy.name, protocol: proxy.protocol, address: proxy.address, note: proxy.note }))
+        await each([proxy.id], '添加代理', () => api.createProxy({ name: proxy.name, protocol: proxy.protocol, address: proxy.address, note: proxy.note }, proxy.serverId))
       },
-      checkProxies: async (ids) => {
+      checkProxies: async (ids, sid) => {
         if (!live) { message.info('预览模式：接上管家程序后才能检测'); return }
-        await each(ids, '检测', (id) => api.checkProxy(id))
+        await each(ids, '检测', (id) => api.checkProxy(id, sid))
       },
-      removeProxy: async (id) => {
+      removeProxy: async (id, sid) => {
         if (!live) { setProxies((list) => list.filter((p) => p.id !== id)); return }
-        await each([id], '删除代理', () => api.deleteProxy(id))
+        await each([id], '删除代理', () => api.deleteProxy(id, sid))
       },
-      importProxies: async (req) => {
+      importProxies: async (req, sid) => {
         if (!live) throw new Error('预览模式：接上管家程序后才能导入')
-        const result = await api.importProxies(req)
+        const result = await api.importProxies(req, sid)
         await load().catch(() => undefined)
         return result
       },
@@ -178,15 +215,15 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           setGroups((list) => (group.id ? list.map((g) => (g.id === group.id ? { ...g, ...group } as Group : g)) : [...list, { ...group, id: `g-${Date.now().toString(36)}` }]))
           return
         }
-        await each([group.id ?? 'new'], '保存分组', () => (group.id ? api.updateGroup(group as Group) : api.createGroup(group)))
+        await each([group.id ?? 'new'], '保存分组', () => (group.id ? api.updateGroup(group as Group, group.serverId) : api.createGroup(group, group.serverId)))
       },
-      removeGroup: async (id) => {
+      removeGroup: async (id, sid) => {
         if (!live) {
           setGroups((list) => list.filter((g) => g.id !== id))
           setPhones((list) => list.map((p) => (p.groupId === id ? { ...p, groupId: '' } : p)))
           return
         }
-        await each([id], '删除分组', () => api.deleteGroup(id))
+        await each([id], '删除分组', () => api.deleteGroup(id, sid))
       },
       input: async (id, req) => {
         if (!live) return
@@ -199,7 +236,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       },
       refresh: load
     }
-  }, [mode, phones, proxies, groups, hosts, modelOf, proxyOf, hostOf, groupOf, issuesOf, load, message])
+  }, [mode, phones, proxies, groups, hosts, servers, modelOf, proxyOf, hostOf, groupOf, issuesOf, load, message])
 
   return <WorkspaceContext.Provider value={value}>{children}</WorkspaceContext.Provider>
 }
