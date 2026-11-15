@@ -97,6 +97,16 @@ func (s *Service) ImportDeviceParams(id, dump string) (imported, missing []strin
 	if len(fields) == 0 {
 		return nil, nil, fmt.Errorf("dump 里没有可识别的身份属性（如 ro.product.brand / ro.build.fingerprint）")
 	}
+	// buildId / incremental 从指纹里自动派生，导入了指纹就不算缺失。
+	if _, ok := fields["fingerprint"]; ok {
+		var m2 []string
+		for _, k := range miss {
+			if k != "buildId" && k != "incremental" {
+				m2 = append(m2, k)
+			}
+		}
+		miss = m2
+	}
 	if err := s.Save(id, SaveRequest{Fields: fields}); err != nil {
 		return nil, nil, err
 	}
