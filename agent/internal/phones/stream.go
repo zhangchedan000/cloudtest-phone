@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"strconv"
 	"sync"
+	"time"
 )
 
 // 实时画面：容器里跑安卓自带的 screenrecord，输出 H.264 裸流（Annex-B），管家程序原样转给浏览器，
@@ -38,6 +39,68 @@ func (t *streamTracker) replace(id string, cancel context.CancelFunc) {
 	t.cancel[id] = cancel
 }
 
+// audNAL H.264 的「访问单元分隔符」（AUD，NAL 类型 9），6 个字节。
+var audNAL = []byte{0, 0, 0, 1, 0x09, 0xf0}
+
+// frameGap screenrecord 一帧是一口气写完的；停了这么久没新数据，就认为这一帧写完了。
+const frameGap = 15 * time.Millisecond
+
+// copyWithFrameEnds 把 screenrecord 的输出原样转给浏览器，每次停顿（一帧写完）后补一个 AUD。
+//
+// 为什么：裸流里一个 NAL 在哪结束，要等下一个起始码到了才知道，所以浏览器总是晚一帧显示；
+// 画面不动时 screenrecord 不再出新帧，最后一帧（包括刚打开时的第一帧）就一直显示不出来——
+// 打开详情页是黑屏、点完按钮画面停在上一帧（2026-11-15 真浏览器里测出）。
+// 补上 AUD 后，上一帧马上有了结尾；浏览器认出结尾的 AUD 就立刻解码显示。
+// 旧版页面不认这个 AUD 也没关系：它会被当成下一帧开头的分隔符，标准允许。
+func copyWithFrameEnds(w io.Writer, r io.Reader, gap time.Duration) error {
+	chunks := make(chan []byte, 16)
+	readErr := make(chan error, 1)
+	go func() {
+		defer close(chunks)
+		for {
+			buf := make([]byte, 64<<10)
+			n, err := r.Read(buf)
+			if n > 0 {
+				chunks <- buf[:n]
+			}
+			if err != nil {
+				readErr <- err
+				return
+			}
+		}
+	}()
+	timer := time.NewTimer(time.Hour)
+	timer.Stop()
+	pending := false
+	for {
+		select {
+		case b, ok := <-chunks:
+			if !ok {
+				if err := <-readErr; err != io.EOF {
+					return err
+				}
+				return nil
+			}
+			if _, err := w.Write(b); err != nil {
+				go func() { // 浏览器断开了：把剩下的读完，让 screenrecord 能退出
+					for range chunks {
+					}
+				}()
+				return err
+			}
+			pending = true
+			timer.Reset(gap)
+		case <-timer.C:
+			if pending {
+				if _, err := w.Write(audNAL); err != nil {
+					return err
+				}
+				pending = false
+			}
+		}
+	}
+}
+
 // streamArgs screenrecord 的参数（参数不对就用默认值，不报错）。
 func streamArgs(opt StreamOptions) []string {
 	args := []string{"screenrecord", "--output-format=h264", "--time-limit", "180"}
@@ -64,14 +127,18 @@ func (s *Service) Stream(ctx context.Context, id string, opt StreamOptions, w io
 	// 顶掉旧的一路：docker exec 的进程被杀不会连带杀掉容器里的 screenrecord，要进容器停。
 	_, _ = s.run.Run(ctx, "docker", "exec", name, "pkill", "-x", "screenrecord")
 	cmd := exec.CommandContext(ctx, "docker", append([]string{"exec", name}, streamArgs(opt)...)...)
-	cmd.Stdout = w
+	out, err := cmd.StdoutPipe()
+	if err != nil {
+		return fmt.Errorf("启动画面失败：%w", err)
+	}
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("启动画面失败：%w", err)
 	}
 	if started != nil {
 		started()
 	}
-	err := cmd.Wait()
+	_ = copyWithFrameEnds(w, out, frameGap)
+	err = cmd.Wait()
 	// 页面关了或被顶掉：把容器里的 screenrecord 也停掉
 	_, _ = s.run.Run(context.Background(), "docker", "exec", name, "pkill", "-x", "screenrecord")
 	if ctx.Err() != nil {

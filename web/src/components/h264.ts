@@ -29,6 +29,18 @@ export function splitNals(buf: Uint8Array): { nals: Uint8Array[]; rest: Uint8Arr
 
 export const nalType = (nal: Uint8Array): number => (nal[0] ?? 0) & 0x1f
 
+/**
+ * rest 是不是一个完整的 AUD（分隔符，NAL 类型 9）。管家程序每写完一帧补一个 AUD；
+ * 它后面不会马上有起始码，按常规要等下一帧才算完整——但 AUD 长度固定（1~2 字节），可以直接认。
+ * 认出来就返回去掉起始码的 AUD，调用方当成一个完整 NAL 处理，这一帧就能立刻显示。
+ */
+export function trailingAud(rest: Uint8Array): Uint8Array | undefined {
+  const sc = findStartCode(rest, 0)
+  if (!sc || sc.at !== 0) return undefined
+  const nal = rest.subarray(sc.len)
+  return (nal.length === 1 || nal.length === 2) && nalType(nal) === 9 ? nal : undefined
+}
+
 /** SPS → WebCodecs 的 codec 字符串，例如 avc1.42c01f。 */
 export function codecFromSps(sps: Uint8Array): string {
   const hex = (n: number) => n.toString(16).padStart(2, '0')
@@ -65,6 +77,8 @@ export class FrameAssembler {
     if (type === 7) this.sps = nal
     const isSlice = type === 1 || type === 5
     let done: { data: Uint8Array; key: boolean } | undefined
+    // AUD：只用来标记「上一帧结束了」，本身不送给解码器
+    if (type === 9) return this.frame.length ? this.flush() : undefined
     if (isSlice && (nal[1] & 0x80) !== 0 && this.frame.length) done = this.flush()
     if (!isSlice) {
       if (this.frame.length) done = this.flush()
@@ -89,9 +103,9 @@ export const videoSupported = (): boolean => typeof window !== 'undefined' && 'V
 
 /**
  * 播放一路视频流，直到 signal 结束或流断开。返回 'ended'（正常结束，可重连）或抛出错误。
- * onSize：第一帧解出来时告诉调用方画面尺寸。
+ * onFrame：每画出一帧调用一次（调用方用它判断「画面出来了」，之前继续显示截图，免得黑屏）。
  */
-export async function playStream(url: string, headers: Record<string, string>, canvas: HTMLCanvasElement, signal: AbortSignal): Promise<'ended'> {
+export async function playStream(url: string, headers: Record<string, string>, canvas: HTMLCanvasElement, signal: AbortSignal, onFrame?: () => void): Promise<'ended'> {
   const response = await fetch(url, { headers, signal })
   if (!response.ok || !response.body) {
     let message = `画面连接失败（${response.status}）`
@@ -113,7 +127,9 @@ export async function playStream(url: string, headers: Record<string, string>, c
       merged.set(buf)
       merged.set(value, buf.length)
       const { nals, rest } = splitNals(merged)
-      buf = new Uint8Array(rest)
+      const aud = trailingAud(rest)
+      if (aud) nals.push(aud) // 管家程序标记的帧结尾：不用等下一帧
+      buf = aud ? new Uint8Array(0) : new Uint8Array(rest)
       for (const nal of nals) {
         const frame = assembler.push(nal)
         if (!frame) continue
@@ -126,6 +142,7 @@ export async function playStream(url: string, headers: Record<string, string>, c
               }
               ctx?.drawImage(vf, 0, 0)
               vf.close()
+              onFrame?.()
             },
             error: () => undefined
           })

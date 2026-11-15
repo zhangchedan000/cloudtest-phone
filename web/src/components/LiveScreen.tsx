@@ -34,16 +34,18 @@ export function LiveScreen({ id, size }: { id: string; size: 'thumb' | 'large' }
   const [video, setVideo] = useState<VideoState>(size === 'large' && videoSupported() ? 'connecting' : 'off')
   const [videoError, setVideoError] = useState('')
   const [quality, setQuality] = useState<Quality>(savedQuality)
+  // 视频连上了不等于画面出来了：第一帧解出来之前继续显示截图，免得一打开是黑屏
+  const [gotFrame, setGotFrame] = useState(false)
   const down = useRef<{ x: number; y: number; at: number } | null>(null)
   const canvas = useRef<HTMLCanvasElement>(null)
   const wantVideo = video === 'connecting' || video === 'playing'
 
-  // 截屏：视频在放的时候不再截；否则大屏 1 秒、小图 5 秒一张，图片加载完才请求下一张。
+  // 截屏：视频画面出来以后不再截；否则大屏 1 秒、小图 5 秒一张，图片加载完才请求下一张。
   useEffect(() => {
-    if (video === 'playing') return
+    if (video === 'playing' && gotFrame) return
     const timer = setTimeout(() => setTick((t) => t + 1), size === 'large' ? 1000 : 5000)
     return () => clearTimeout(timer)
-  }, [tick, size, video])
+  }, [tick, size, video, gotFrame])
 
   // 视频流：先靠一张截图知道手机分辨率，再按画质档位要视频；180 秒到时间自动重连，换档位立即重连。
   useEffect(() => {
@@ -58,7 +60,7 @@ export function LiveScreen({ id, size }: { id: string; size: 'thumb' | 'large' }
       while (!abort.signal.aborted) {
         try {
           setVideo('playing')
-          await playStream(`/api/phones/${id}/stream?w=${w}&h=${h}&br=${q.bitRate}`, token ? { Authorization: `Bearer ${token}` } : {}, el, abort.signal)
+          await playStream(`/api/phones/${id}/stream?w=${w}&h=${h}&br=${q.bitRate}`, token ? { Authorization: `Bearer ${token}` } : {}, el, abort.signal, () => setGotFrame(true))
         } catch (error) {
           if (abort.signal.aborted) return
           setVideoError((error as Error).message)
@@ -95,7 +97,7 @@ export function LiveScreen({ id, size }: { id: string; size: 'thumb' | 'large' }
     }
   } : {}
 
-  const showVideo = video === 'playing'
+  const showVideo = video === 'playing' && gotFrame
   return (
     <div className="pp-live">
       {!showVideo && (

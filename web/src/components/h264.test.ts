@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { codecFromSps, findStartCode, FrameAssembler, joinAnnexB, nalType, splitNals } from './h264'
+import { codecFromSps, findStartCode, FrameAssembler, joinAnnexB, nalType, splitNals, trailingAud } from './h264'
 
 const sps = new Uint8Array([0x67, 0x42, 0xc0, 0x1f, 0xaa])
 const pps = new Uint8Array([0x68, 0xce, 0x3c])
@@ -34,5 +34,26 @@ describe('h264', () => {
     expect(out[1]).toEqual({ key: false, data: joinAnnexB([p1, p1b]) })
     expect(out[2]?.key).toBe(false)
     expect(a.sps).toEqual(sps)
+  })
+
+  // 管家程序每写完一帧补一个 AUD：画面不动时最后一帧也要马上能显示，不用等下一帧
+  const aud = new Uint8Array([0x09, 0xf0])
+  it('recognises a trailing AUD as complete', () => {
+    const { nals, rest } = splitNals(joinAnnexB([sps, pps, idr, aud]))
+    expect(nals.map(nalType)).toEqual([7, 8, 5])
+    expect(trailingAud(rest)).toEqual(aud)
+    expect(trailingAud(new Uint8Array([0, 0, 0, 1]))).toBeUndefined()       // AUD 只到了起始码
+    expect(trailingAud(new Uint8Array([0, 0, 0, 1, 0x41, 0x9a]))).toBeUndefined() // 普通片，不完整
+  })
+
+  it('an AUD ends the frame and is not sent to the decoder', () => {
+    const a = new FrameAssembler()
+    expect(a.push(sps)).toBeUndefined()
+    expect(a.push(pps)).toBeUndefined()
+    expect(a.push(idr)).toBeUndefined()
+    expect(a.push(aud)).toEqual({ key: true, data: joinAnnexB([sps, pps, idr]) })
+    expect(a.push(p1)).toBeUndefined()
+    expect(a.push(aud)).toEqual({ key: false, data: joinAnnexB([p1]) })
+    expect(a.push(aud)).toBeUndefined() // 连着两个 AUD：没有新帧
   })
 })
