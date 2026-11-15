@@ -77,6 +77,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/proxies/import", s.importProxies)
 	mux.HandleFunc("GET /api/trash", s.listTrash)
 	mux.HandleFunc("DELETE /api/trash/{name}", s.deleteTrash)
+	mux.HandleFunc("GET /api/servers", s.listServers)
+	mux.HandleFunc("POST /api/servers", s.addServer)
+	mux.HandleFunc("PUT /api/servers/{id}", s.updateServer)
+	mux.HandleFunc("DELETE /api/servers/{id}", s.deleteServer)
 	mux.HandleFunc("GET /api/groups", s.listGroups)
 	mux.HandleFunc("POST /api/groups", s.createGroup)
 	mux.HandleFunc("PUT /api/groups/{id}", s.updateGroup)
@@ -84,7 +88,7 @@ func (s *Server) Handler() http.Handler {
 	if s.web != nil {
 		mux.Handle("/", http.FileServerFS(s.web))
 	}
-	return s.auth(mux)
+	return s.cors(s.auth(mux))
 }
 
 // auth：设置了 token 就要求 /api/* 带上（请求头 Authorization: Bearer xxx，或 cookie pp_token）。

@@ -73,6 +73,16 @@ type State struct {
 	Phones  []Phone `json:"phones"`
 	Proxies []Proxy `json:"proxies"`
 	Groups  []Group `json:"groups"`
+	// Servers 别的云手机服务器（多台机器统一管理，2026-11-15）：管理页直接连它们，口令存在这里。
+	Servers []Server `json:"servers,omitempty"`
+}
+
+// Server 另一台跑着管家程序的机器。
+type Server struct {
+	ID    string `json:"id"`
+	Name  string `json:"name"`
+	URL   string `json:"url"`   // 例如 https://phone2.example.com（管理页的地址）
+	Token string `json:"token"` // 那台的 PP_TOKEN
 }
 
 const currentSchema = 1
@@ -183,6 +193,9 @@ func (st *State) FreeID(base string) string {
 	}
 	for _, p := range st.Phones {
 		used[p.ID] = true
+	}
+	for _, sv := range st.Servers {
+		used[sv.ID] = true
 	}
 	id := base
 	for n := 2; used[id]; n++ {
