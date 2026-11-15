@@ -634,7 +634,15 @@ func (s *Service) Stop(ctx context.Context, id string) error {
 	if _, err := st.Phone(id); err != nil {
 		return err
 	}
-	err := s.docker.StopContainer(ctx, containerName(id), 15)
+	name := containerName(id)
+	// 体面关机：先广播关机 intent（App 有机会存数据）、sync 刷盘，再停容器。
+	// 否则 docker stop 到点直接 SIGKILL，相当于硬断电，App 没存的数据会丢。
+	// 尽力而为，失败忽略（可能本来就没在运行）；超时给够、再停容器时也多给几秒。
+	gctx, cancel := context.WithTimeout(ctx, 12*time.Second)
+	_, _ = s.run.Run(gctx, "docker", "exec", name, "sh", "-c",
+		"am broadcast -a android.intent.action.ACTION_SHUTDOWN >/dev/null 2>&1; sync")
+	cancel()
+	err := s.docker.StopContainer(ctx, name, 25)
 	if docker.IsNotFound(err) {
 		return nil
 	}

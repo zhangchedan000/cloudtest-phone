@@ -59,9 +59,13 @@ func TestProcVersionMatchesKernelSeries(t *testing.T) {
 	}
 }
 
-func TestEmptySpecMakesNothing(t *testing.T) {
+func TestEmptySpecOnlyMakesCmdline(t *testing.T) {
+	// 空 Spec 没有机型数据，只生成通用的 /proc/cmdline（擦掉云主机内核命令行）。
 	files, err := Build(Spec{})
-	if err != nil || len(files) != 0 {
-		t.Fatalf("没数据不该生成文件：%v %v", files, err)
+	if err != nil || len(files) != 1 || files[0].Target != "/proc/cmdline" {
+		t.Fatalf("空 Spec 应只生成 /proc/cmdline：%v %v", files, err)
+	}
+	if strings.Contains(files[0].Content, "oracle") || strings.Contains(files[0].Content, "cloudimg") {
+		t.Fatalf("cmdline 不该含云主机痕迹：%s", files[0].Content)
 	}
 }

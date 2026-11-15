@@ -39,6 +39,13 @@ type File struct {
 // Build 生成全部伪造文件。缺数据的项跳过（不生成半真半假的内容）。
 func Build(s Spec) ([]File, error) {
 	var files []File
+	// /proc/cmdline：默认是宿主机云主机的内核命令行（含 oracle / cloudimg / iscsi / nvme，
+	// 一看就是服务器），换成一条通用的安卓启动命令行，和伪装属性一致（verifiedbootstate=green 等）。
+	files = append(files, File{
+		Target:  "/proc/cmdline",
+		Name:    "cmdline",
+		Content: "bootopt=64S3,32N2,64N2 androidboot.verifiedbootstate=green androidboot.veritymode=enforcing buildvariant=user\n",
+	})
 	if len(s.CPUParts) > 0 {
 		cpuinfo, midrs, err := cpuInfo(s.CPUParts, s.HostCPUInfo)
 		if err != nil {
