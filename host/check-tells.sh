@@ -131,10 +131,15 @@ if [ -z "$simop$brd_sim" ]; then brd "没有 SIM / 运营商信息（真机即�
 # 蓝牙
 ax 'command -v dumpsys >/dev/null && dumpsys bluetooth_manager 2>/dev/null | grep -qi "enabled\|address" && echo yes' | grep -q yes && info "有蓝牙子系统" || brd "没有蓝牙"
 
-# 电池：容器里常年 AC 供电 / 固定电量
+# 电池：已由管家的电池漂移处理（随机 60% 放电/40% 充电，插口+status 一致，后台慢漂）。
+# 这里只做提示：显示 AC 本身不是破绽（真机充电时也是 AC）；真正的破绽是"永远 AC、电量不动"。
 batt=$(ax 'dumpsys battery 2>/dev/null')
 bl=$(echo "$batt" | grep -iE 'level|AC powered|status' | tr '\n' ' '); info "电池：${bl:-读不到}"
-echo "$batt" | grep -qi 'AC powered: true' && brd "电池显示一直 AC 供电（真机用电池时为 false），容器典型特征"
+if echo "$batt" | grep -qi 'AC powered: true'; then
+  info "↑ 这台当前是充电态（AC）。注：电池漂移已实现（battery.go），放电态会显示 false；若所有手机永远 AC 才是问题"
+else
+  hid "电池为放电态（AC=false），电池漂移已生效"
+fi
 
 # ========== 小结 ==========
 sect "小结"
