@@ -2,7 +2,7 @@
   "id": "redmi-note-13-pro-plus",
   "schema": 1,
   "verified": false,
-  "verifyNote": "2026-11-15 核对：官网 mi.com 规格页确认 天玑 7200-Ultra、2712×1220、120Hz、446 ppi、8+256 / 12+512、出厂 MIUI 14（Android 13）；固件记录（代号 zircon）全球版最高 Android 16（OS3.0.303.0.WNOMIXM）。dpi 填的是 ppi，待真机核实；CPU 识别信息没有可靠来源，没填 | fingerprint(15) 真实 stock：设备树 github.com/zircon-development/android_device_xiaomi_zircon",
+  "verifyNote": "2026-11-15 核对：官网 mi.com 规格页确认 天玑 7200-Ultra、2712×1220、120Hz、446 ppi、8+256 / 12+512、出厂 MIUI 14（Android 13）；固件记录（代号 zircon）全球版最高 Android 16（OS3.0.303.0.WNOMIXM）。dpi 填的是 ppi，待真机核实；CPU 识别信息没有可靠来源，没填 | fingerprint(15) 真实 stock：设备树 github.com/zircon-development/android_device_xiaomi_zircon。A16(HyperOS3)全球增量 OS3.0.301.0.WNOMIXM（xmfirmwareupdater，package user-16.0）——build id 待真机 dump",
   "gpuFamily": "Mali-G610",
   "market": "GLOBAL",
   "values": {
