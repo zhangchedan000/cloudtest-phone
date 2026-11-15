@@ -58,7 +58,11 @@ func (s *Service) preinstall(ctx context.Context, id string) (installed, problem
 		return nil, nil
 	}
 	name := containerName(id)
-	done, _ := s.run.Run(ctx, "docker", "exec", name, "cat", preinstallMarker) // 没有记录文件 = 一个都没装过
+	done, err := s.run.Run(ctx, "docker", "exec", name, "cat", preinstallMarker)
+	if err != nil {
+		// 没有记录文件 = 一个都没装过（出错时输出里是 "No such file" 的报错，不能当成记录，否则会误判成不是新手机）
+		done = ""
+	}
 	have := map[string]bool{}
 	for _, line := range strings.Split(done, "\n") {
 		have[strings.TrimSpace(line)] = true
