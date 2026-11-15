@@ -2,7 +2,7 @@
   "id": "xiaomi-13t",
   "schema": 1,
   "verified": false,
-  "verifyNote": "数值凭公开资料整理，待核实",
+  "verifyNote": "2026-11-15 核对：官网 mi.com 确认 天玑 8200-Ultra、144Hz；分辨率 1220×2712 / 446 ppi 来自第三方规格站；出厂 Android 13（MIUI 14）；固件记录（代号 aristotle）全球版最高 Android 16（OS3.0.6.0.WMFMIXM）。型号 2306EPN60G 这次没找到独立来源；dpi 填的是 ppi，待真机核实",
   "gpuFamily": "Mali-G610",
   "market": "GLOBAL",
   "values": {
@@ -49,6 +49,7 @@
   "androidVersions": [
     13,
     14,
-    15
+    15,
+    16
   ]
 }

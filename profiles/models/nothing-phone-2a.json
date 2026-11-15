@@ -2,7 +2,7 @@
   "id": "nothing-phone-2a",
   "schema": 1,
   "verified": false,
-  "verifyNote": "公开参数来自厂商官网规格页（2026-11-15 查）；型号、代号来自固件发布记录。CPU 识别信息（cpuParts / cpuMaxFreq）没有可靠来源，暂不填，待用真机或固件核实。天玑 7200 Pro（2×A715 + 6×A510）；分辨率各家写 1080×2412 或 1084×2412，取 1080×2412；dpi 按约 394 ppi 填，待核实",
+  "verifyNote": "2026-11-15 核对：天玑 7200 Pro、6.7 寸 AMOLED、120Hz（多家规格站一致，官网规格页没取到）；分辨率各家写 1080×2412 或 1084×2412，取 1080×2412；约 395 ppi（Kimovil）；出厂 Android 14（Nothing OS 2.5），2025-11 推送 Nothing OS 4.0（Android 16）。型号 A142 / 代号 Pacman 来自固件记录。dpi 是估计值，待真机核实；CPU 识别信息没有可靠来源，没填",
   "gpuFamily": "Mali-G610",
   "market": "GLOBAL",
   "values": {
@@ -19,13 +19,14 @@
       "w": 1080,
       "h": 2412
     },
-    "dpi": 394,
+    "dpi": 395,
     "refreshRate": 120,
     "touchPoints": 10,
     "boardPlatform": "mt6886"
   },
   "androidVersions": [
     14,
-    15
+    15,
+    16
   ]
 }

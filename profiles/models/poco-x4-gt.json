@@ -2,7 +2,7 @@
   "id": "poco-x4-gt",
   "schema": 1,
   "verified": false,
-  "verifyNote": "数值凭公开资料整理，待核实",
+  "verifyNote": "2026-11-15 核对：官网 po.co 规格页确认 天玑 8100、4×A78 2.85GHz + 4×A55 2.0GHz、Mali-G610 MC6、2460×1080、144Hz、8+128 / 8+256、出厂 Android 12；固件记录（xmfirmwareupdater，代号 xaga，全球版和 Redmi Note 11T Pro / K50i 共用）最高 Android 14。dpi（安卓显示密度）官网没有，待真机核实",
   "gpuFamily": "Mali-G610",
   "market": "GLOBAL",
   "values": {

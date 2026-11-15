@@ -2,7 +2,7 @@
   "id": "redmi-note-13-pro-plus",
   "schema": 1,
   "verified": false,
-  "verifyNote": "公开参数来自厂商官网规格页（2026-11-15 查）；型号、代号来自固件发布记录。CPU 识别信息（cpuParts / cpuMaxFreq）没有可靠来源，暂不填，待用真机或固件核实。官网：mi.com/global/product/redmi-note-13-pro-plus-5g/specs（天玑 7200-Ultra，2×A715 + 6×A510，和 RK3588 的 4+4 布局不同）",
+  "verifyNote": "2026-11-15 核对：官网 mi.com 规格页确认 天玑 7200-Ultra、2712×1220、120Hz、446 ppi、8+256 / 12+512、出厂 MIUI 14（Android 13）；固件记录（代号 zircon）全球版最高 Android 16（OS3.0.303.0.WNOMIXM）。dpi 填的是 ppi，待真机核实；CPU 识别信息没有可靠来源，没填",
   "gpuFamily": "Mali-G610",
   "market": "GLOBAL",
   "values": {
@@ -27,6 +27,7 @@
   "androidVersions": [
     13,
     14,
-    15
+    15,
+    16
   ]
 }

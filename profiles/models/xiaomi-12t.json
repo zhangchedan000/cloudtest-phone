@@ -2,7 +2,7 @@
   "id": "xiaomi-12t",
   "schema": 1,
   "verified": false,
-  "verifyNote": "公开参数来自厂商官网规格页（2026-11-15 查）；型号、代号来自固件发布记录。CPU 识别信息（cpuParts / cpuMaxFreq）没有可靠来源，暂不填，待用真机或固件核实。官网：mi.com/global/product/xiaomi-12t/specs",
+  "verifyNote": "2026-11-15 核对：官网 mi.com 规格页确认 天玑 8100-Ultra、2712×1220、120Hz、446 ppi、8+128 / 8+256、出厂 Android 12；固件记录（代号 plato）全球版最高 Android 15（OS2.0.219.0.VLQMIXM）。dpi 填的是 ppi，安卓实际显示密度待真机核实；CPU 识别信息没有可靠来源，没填",
   "gpuFamily": "Mali-G610",
   "market": "GLOBAL",
   "values": {
@@ -27,6 +27,7 @@
   "androidVersions": [
     12,
     13,
-    14
+    14,
+    15
   ]
 }
