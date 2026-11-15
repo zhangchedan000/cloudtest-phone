@@ -41,7 +41,10 @@ type Model struct {
 	Market          string         `json:"market"`
 	Values          map[string]any `json:"values"`
 	AndroidVersions []int          `json:"androidVersions"`
-	Raw             json.RawMessage
+	// Fingerprints 按安卓版本（"14"/"15"）存的真实 stock 指纹（从设备树/固件抠）。
+	// 必须和手机实际跑的安卓版本一致，否则指纹里的 release 和 ro.build.version.release 对不上。
+	Fingerprints map[string]string `json:"fingerprints"`
+	Raw          json.RawMessage
 }
 
 func (c *Catalog) Field(key string) (Field, bool) {

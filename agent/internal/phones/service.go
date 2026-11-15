@@ -353,7 +353,12 @@ func (s *Service) BootArgs(p store.Phone, st store.State) []string {
 	sort.Strings(props)
 	args = append(args, props...)
 	args = append(args, disguiseProps()...)
-	return append(args, fingerprintProps(byKey, p.AndroidVersion)...)
+	// 按手机的安卓版本取真实指纹（版本必须一致）。
+	var realFP string
+	if m := s.model(p.ModelID); m != nil {
+		realFP = m.Fingerprints[fmt.Sprintf("%d", p.AndroidVersion)]
+	}
+	return append(args, fingerprintProps(byKey, realFP, p.AndroidVersion)...)
 }
 
 // redroidBuildID 各安卓版本的 Redroid 镜像自带的 buildId / incremental（真实值，
@@ -371,14 +376,18 @@ var redroidBuildID = map[int]struct{ buildID, incremental string }{
 //   - 机型档案填了真实 stock 指纹（fingerprint 字段，从设备树/固件抠）就用真的，各字段从里面拆；
 //   - 没填就用 Redroid 镜像的真实 buildId/incremental 兜底拼一个一致的（incremental 仍是 eng.*）。
 // 注意：不设带空格的值（启动参数遇空格会截断）——ro.build.description 带空格，留作残留（很少被读）。
-func fingerprintProps(byKey map[string]any, androidVer int) []string {
-	fp := str(byKey["fingerprint"])
+func fingerprintProps(byKey map[string]any, realFP string, androidVer int) []string {
+	fp := realFP
 	product, buildID, incremental, ok := parseFingerprint(fp)
+	// 真指纹的安卓版本必须和手机一致，否则 release 对不上，宁可回退。
+	if ok && !strings.HasPrefix(strings.SplitN(fp, ":", 3)[1], fmt.Sprintf("%d/", androidVer)) {
+		ok = false
+	}
 	if !ok {
 		bi, ridOK := redroidBuildID[androidVer]
 		brand, device := str(byKey["brand"]), str(byKey["device"])
 		if !ridOK || brand == "" || device == "" {
-			return nil // 既没真指纹、也没兜底数据：不覆盖，免得拼出错的
+			return nil // 既没（版本相符的）真指纹、也没兜底数据：不覆盖，免得拼出错的
 		}
 		product, buildID, incremental = device, bi.buildID, bi.incremental
 		fp = fmt.Sprintf("%s/%s/%s:%d/%s/%s:user/release-keys", brand, product, device, androidVer, buildID, incremental)

@@ -11,7 +11,6 @@
     "model": "22041216G",
     "marketName": "POCO X4 GT",
     "device": "xaga",
-    "fingerprint": "POCO/xaga_global/xaga:14/UP1A.231005.007/OS2.0.3.0.ULOMIXM:user/release-keys",
     "socModel": "MT6895",
     "socManufacturer": "Mediatek",
     "cpuParts": [
@@ -51,5 +50,8 @@
     12,
     13,
     14
-  ]
+  ],
+  "fingerprints": {
+    "14": "POCO/xaga_global/xaga:14/UP1A.231005.007/OS2.0.3.0.ULOMIXM:user/release-keys"
+  }
 }

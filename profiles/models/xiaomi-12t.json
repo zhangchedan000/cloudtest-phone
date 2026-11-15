@@ -2,7 +2,7 @@
   "id": "xiaomi-12t",
   "schema": 1,
   "verified": false,
-  "verifyNote": "2026-11-15 核对：官网 mi.com 规格页确认 天玑 8100-Ultra、2712×1220、120Hz、446 ppi、8+128 / 8+256、出厂 Android 12；固件记录（代号 plato）全球版最高 Android 15（OS2.0.219.0.VLQMIXM）。dpi 填的是 ppi，安卓实际显示密度待真机核实；CPU 识别信息没有可靠来源，没填",
+  "verifyNote": "2026-11-15 核对：官网 mi.com 规格页确认 天玑 8100-Ultra、2712×1220、120Hz、446 ppi、8+128 / 8+256、出厂 Android 12；固件记录（代号 plato）全球版最高 Android 15（OS2.0.219.0.VLQMIXM）。dpi 填的是 ppi，安卓实际显示密度待真机核实；CPU 识别信息没有可靠来源，没填 | fingerprint(15) 真实 stock：设备树 github.com/mt6895-plato/android_device_xiaomi_plato",
   "gpuFamily": "Mali-G610",
   "market": "GLOBAL",
   "values": {
@@ -29,5 +29,8 @@
     13,
     14,
     15
-  ]
+  ],
+  "fingerprints": {
+    "15": "Xiaomi/plato_global/plato:15/AP3A.240905.015.A2/OS2.0.219.0.VLQMIXM:user/release-keys"
+  }
 }
