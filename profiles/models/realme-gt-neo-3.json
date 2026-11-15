@@ -1,0 +1,54 @@
+{
+  "id": "realme-gt-neo-3",
+  "schema": 1,
+  "verified": false,
+  "verifyNote": "2026-11-15 核对：GSMArena、realme 官网规格页确认 天玑 8100（MT6895）、4×A78 2.85GHz + 4×A55 2.0GHz、Mali-G610 MC6、6.7\" AMOLED 1080×2412、120Hz、8/12+256；出厂 Android 12（realme UI 3.0），可升级到 14。代号 ossi：来自实际设备源码树 v4lkyr/android_device_oplus_ossi（由 RMX3560 stock ROM 生成，描述为 realme GT Neo 3）。CPU 核心/midr/频率与同款天玑 8100 的 POCO X4 GT(xaga) 一致，直接复用已核实值。dpi（安卓显示密度）官网没有、按常见值填，待真机核实；build 指纹等身份字段留空，待真机 adb 读取。",
+  "gpuFamily": "Mali-G610",
+  "market": "GLOBAL",
+  "values": {
+    "brand": "realme",
+    "manufacturer": "realme",
+    "model": "RMX3561",
+    "marketName": "realme GT Neo 3",
+    "device": "ossi",
+    "socModel": "MT6895",
+    "socManufacturer": "Mediatek",
+    "cpuParts": [
+      {
+        "part": "Cortex-A55",
+        "midr": "0x412fd050",
+        "count": 4
+      },
+      {
+        "part": "Cortex-A78",
+        "midr": "0x411fd410",
+        "count": 4
+      }
+    ],
+    "cpuMaxFreq": [
+      2000000,
+      2000000,
+      2000000,
+      2000000,
+      2850000,
+      2850000,
+      2850000,
+      2850000
+    ],
+    "memTotal": 8,
+    "storageTotal": 256,
+    "resolution": {
+      "w": 1080,
+      "h": 2412
+    },
+    "dpi": 480,
+    "refreshRate": 120,
+    "touchPoints": 10,
+    "boardPlatform": "mt6895"
+  },
+  "androidVersions": [
+    12,
+    13,
+    14
+  ]
+}
