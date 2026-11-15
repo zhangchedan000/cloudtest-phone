@@ -348,7 +348,21 @@ func (s *Service) BootArgs(p store.Phone, st store.State) []string {
 	}
 	sort.Strings(props)
 	args = append(args, props...)
-	return append(args, disguiseProps()...)
+	args = append(args, disguiseProps()...)
+	return append(args, deviceFidelityProps(byKey)...)
+}
+
+// deviceFidelityProps 把默认值还露着 Redroid 痕迹、但能填对的属性补上。
+// 只设不影响开机的属性：ro.hardware / ro.board.platform 不能在这里设
+//（安卓按它们加载硬件驱动，启动参数改了会开不了机——实测，见 boardPlatform 字段和单测）。
+func deviceFidelityProps(byKey map[string]any) []string {
+	var out []string
+	// ro.product.name 默认是 redroid_arm64_only（明显痕迹）；真机是产品名，用机型代号。
+	// 这个只是产品名、不参与驱动加载，设了不影响开机。
+	if dev := str(byKey["device"]); dev != "" {
+		out = append(out, "ro.product.name="+dev)
+	}
+	return out
 }
 
 // disguiseProps 所有云手机都加的固定属性：让容器看起来像一台「锁了 bootloader 的正式版」手机，

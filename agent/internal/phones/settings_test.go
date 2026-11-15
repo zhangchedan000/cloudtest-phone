@@ -202,3 +202,18 @@ func TestBatteryReseedsAfterStateLost(t *testing.T) {
 		t.Fatal("运行中但状态丢失时，漂移应从档案重新播种")
 	}
 }
+
+func TestDeviceFidelityProps(t *testing.T) {
+	svc, _, _ := newTestService(t, true, "software")
+	p, _ := svc.Create(CreateRequest{Name: "A", ModelID: "poco-x4-gt", AndroidVersion: 14, ProxyID: DirectDevProxyID})
+	args := strings.Join(svc.BootArgs(*mustPhone(t, svc, p.ID), svc.store.Snapshot()), " ")
+	for _, want := range []string{"ro.product.name=xaga"} {
+		if !strings.Contains(args, want) {
+			t.Fatalf("缺少设备保真属性 %q：\n%s", want, args)
+		}
+	}
+	// 绝不能用启动参数设 ro.hardware / ro.board.platform（会开不了机）
+	if strings.Contains(args, "ro.hardware=") || strings.Contains(args, "ro.board.platform=") {
+		t.Fatalf("不该用启动参数设 ro.hardware：\n%s", args)
+	}
+}
