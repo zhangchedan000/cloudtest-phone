@@ -399,24 +399,48 @@ func fingerprintProps(byKey map[string]any, realFP string, androidVer int) []str
 		product, buildID, incremental = device, bi.buildID, bi.incremental
 		fp = fmt.Sprintf("%s/%s/%s:%d/%s/%s:user/release-keys", brand, product, device, androidVer, buildID, incremental)
 	}
-	var out []string
-	for _, name := range []string{
-		"ro.build.fingerprint",
-		"ro.system.build.fingerprint", "ro.vendor.build.fingerprint",
-		"ro.product.build.fingerprint", "ro.odm.build.fingerprint",
-		"ro.bootimage.build.fingerprint",
-	} {
-		out = append(out, name+"="+fp)
-	}
-	out = append(out,
-		"ro.product.name="+product, // 真实产品名，如 xaga_global（默认是 redroid_arm64_only）
-		"ro.build.id="+buildID,
-		"ro.build.display.id="+buildID,
-		"ro.build.version.incremental="+incremental,
-		"ro.build.flavor="+product+"-user",
+	brand, manu, model, device := str(byKey["brand"]), str(byKey["manufacturer"]), str(byKey["model"]), str(byKey["device"])
+	// 主 build 属性。
+	out := []string{
+		"ro.build.fingerprint=" + fp,
+		"ro.product.name=" + product, // 真实产品名，如 xaga_global（默认是 redroid_arm64_only）
+		"ro.build.id=" + buildID,
+		"ro.build.display.id=" + buildID,
+		"ro.build.version.incremental=" + incremental,
+		"ro.build.flavor=" + product + "-user",
 		"ro.build.host=android-build",
 		"ro.build.user=android",
-	)
+	}
+	// 每个分区的 build 子属性全覆盖：不光主 fingerprint，连各分区的 build.id / tags / type /
+	// incremental 也要盖，否则默认镜像残留的 redroid / redroid_arm64_only / UD2A.* /
+	// userdebug / test-keys / eng.frank 会从 system_ext / vendor_dlkm / odm_dlkm 等分区漏出去
+	// （魔云腾改机 SDK 也处理 vendor_dlkm/odm_dlkm 分区，漏了会被查出，2026-11-15 实测发现）。
+	for _, p := range []string{"system", "vendor", "odm", "product", "system_ext", "vendor_dlkm", "odm_dlkm", "system_dlkm", "bootimage"} {
+		out = append(out,
+			"ro."+p+".build.fingerprint="+fp,
+			"ro."+p+".build.id="+buildID,
+			"ro."+p+".build.tags=release-keys",
+			"ro."+p+".build.type=user",
+			"ro."+p+".build.version.incremental="+incremental,
+		)
+	}
+	// 各分区的 ro.product.* 身份：system/vendor/odm/product 由机型字段已设，
+	// 这里补 system_ext/vendor_dlkm/odm_dlkm/system_dlkm 这几个漏掉的分区（默认全是 redroid）。
+	for _, p := range []string{"system_ext", "vendor_dlkm", "odm_dlkm", "system_dlkm"} {
+		if brand != "" {
+			out = append(out, "ro.product."+p+".brand="+brand)
+		}
+		if manu != "" {
+			out = append(out, "ro.product."+p+".manufacturer="+manu)
+		}
+		if model != "" {
+			out = append(out, "ro.product."+p+".model="+model)
+		}
+		if device != "" {
+			out = append(out, "ro.product."+p+".device="+device)
+		}
+		out = append(out, "ro.product."+p+".name="+product)
+	}
 	return out
 }
 

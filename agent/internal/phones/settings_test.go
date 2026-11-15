@@ -31,7 +31,12 @@ func TestSettingsAppliedAfterBoot(t *testing.T) {
 		}
 	}
 	got := svc.settings.get(p.ID)
-	appliedSet := strings.Join(func() []string { if got == nil { return nil }; return got.Applied }(), ",")
+	appliedSet := strings.Join(func() []string {
+		if got == nil {
+			return nil
+		}
+		return got.Applied
+	}(), ",")
 	if got == nil || got.State != "applied" || !strings.Contains(appliedSet, "timezone") || !strings.Contains(appliedSet, "locale") {
 		t.Fatalf("设置结果不对：%+v", got)
 	}
@@ -244,18 +249,34 @@ func TestFingerprintPropsConsistent(t *testing.T) {
 			t.Fatalf("缺少 %q", want)
 		}
 	}
-	// build 属性里不能有 redroid / userdebug / test-keys / frank / build1 痕迹
-	// （androidboot.redroid_* 是 redroid 启动配置、不是 getprop 属性，/proc/cmdline 也不暴露，排除）
-	var buildArgs []string
-	for _, a := range args {
-		if strings.HasPrefix(a, "ro.build.") || strings.Contains(a, ".build.fingerprint") {
-			buildArgs = append(buildArgs, a)
+	// 容易漏的分区（system_ext / vendor_dlkm / odm_dlkm / system_dlkm）也要覆盖：
+	// 指纹、各分区 build.id/tags/type/incremental、以及 ro.product.*.{brand,model,device,name}。
+	for _, p := range []string{"system_ext", "vendor_dlkm", "odm_dlkm", "system_dlkm"} {
+		for _, want := range []string{
+			"ro." + p + ".build.fingerprint=" + wantFP,
+			"ro." + p + ".build.id=UP1A.231005.007",
+			"ro." + p + ".build.tags=release-keys",
+			"ro." + p + ".build.type=user",
+			"ro.product." + p + ".brand=POCO",
+			"ro.product." + p + ".name=xaga_global",
+		} {
+			if !strings.Contains(joined, want) {
+				t.Fatalf("分区 %s 没覆盖 %q：\n%s", p, want, joined)
+			}
 		}
 	}
-	bj := strings.Join(buildArgs, " ")
-	for _, bad := range []string{"redroid", "userdebug", "test-keys", "build1"} {
+	// 所有 ro.product.* 和 *.build.* 属性里都不能有 redroid / userdebug / test-keys / frank / build1 痕迹
+	// （androidboot.redroid_* 是 redroid 启动配置、不是 getprop 属性，/proc/cmdline 也不暴露，排除）
+	var idArgs []string
+	for _, a := range args {
+		if strings.HasPrefix(a, "ro.build.") || strings.HasPrefix(a, "ro.product.") || strings.Contains(a, ".build.fingerprint") || strings.Contains(a, ".build.id") || strings.Contains(a, ".build.tags") || strings.Contains(a, ".build.type") || strings.Contains(a, ".build.version.incremental") {
+			idArgs = append(idArgs, a)
+		}
+	}
+	bj := strings.Join(idArgs, " ")
+	for _, bad := range []string{"redroid", "userdebug", "test-keys", "build1", "eng.frank"} {
 		if strings.Contains(bj, bad) {
-			t.Fatalf("build 属性里还有痕迹 %q：\n%s", bad, bj)
+			t.Fatalf("身份/build 属性里还有痕迹 %q：\n%s", bad, bj)
 		}
 	}
 	// 每个参数都不能含空格（会被截断）
