@@ -55,11 +55,17 @@ export function authHeaders(path: string, serverId?: string): Record<string, str
 }
 
 async function call<T>(method: string, path: string, body?: unknown, serverId?: string): Promise<T> {
-  const response = await fetch(apiUrl(path, serverId), {
-    method,
-    headers: { ...(body === undefined ? {} : { 'Content-Type': 'application/json' }), ...authHeaders(path, serverId) },
-    body: body === undefined ? undefined : JSON.stringify(body)
-  })
+  let response: Response
+  try {
+    response = await fetch(apiUrl(path, serverId), {
+      method,
+      headers: { ...(body === undefined ? {} : { 'Content-Type': 'application/json' }), ...authHeaders(path, serverId) },
+      body: body === undefined ? undefined : JSON.stringify(body)
+    })
+  } catch {
+    // 浏览器只给一句 Failed to fetch：换成看得懂的话
+    throw new ApiError(`连不上${serverId && serverId !== LOCAL ? '这台服务器' : '管家程序'}（网络不通，或者那台的管家程序没在运行）`, 0)
+  }
   const text = await response.text()
   let data: unknown
   try { data = text ? JSON.parse(text) : undefined } catch { data = undefined }
