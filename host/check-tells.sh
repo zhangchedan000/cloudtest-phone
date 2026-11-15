@@ -11,6 +11,7 @@
 # 每项前面的标签：
 #   [已遮住]  管家程序的 fakefs 已经改了这项的读取结果，验证它有没有生效
 #   [现在可做] 纯软件 / 配置问题，这台甲骨文机器上就能改
+#   [容器改不了] 实测在容器里没有干净办法（如 /proc/mounts 软链接遮不住、uname 系统调用、wlan0 需 WiFi HAL），要拦系统调用或改镜像/容器运行方式
 #   [等板子]  硬件缺的（显卡、传感器、摄像头等），和显卡一个性质，要等 RK3588 板子
 set -u
 
@@ -29,11 +30,13 @@ if [ "$(docker inspect -f '{{.State.Running}}' "$C")" != true ]; then echo "容�
 echo "自检容器：$C"
 
 # ---------- 小工具 ----------
-hide=0; nowfix=0; board=0
+hide=0; nowfix=0; board=0; cant=0
 ax()  { docker exec "$C" sh -c "$1" 2>/dev/null; }                 # 在安卓容器里跑
 gp()  { docker exec "$C" getprop "$1" 2>/dev/null; }
 hid() { echo "  [已遮住]  $*"; hide=$((hide+1)); }
 now() { echo "  [现在可做] $*"; nowfix=$((nowfix+1)); }
+# [容器改不了]：实测在容器里没有干净办法，要靠拦系统调用（脆弱）或改镜像/容器运行方式，归到镜像/板子阶段
+cnt() { echo "  [容器改不了] $*"; cant=$((cant+1)); }
 brd() { echo "  [等板子]  $*"; board=$((board+1)); }
 info(){ echo "  ·        $*"; }
 sect(){ echo; echo "== $*"; }
@@ -48,7 +51,7 @@ midr=$(ax 'cat /sys/devices/system/cpu/cpu0/regs/identification/midr_el1'); info
 [ -n "$midr" ] && hid "CPU 型号寄存器 midr_el1 有值（按机型写的）" || now "midr_el1 读不到，确认 fakefs 挂载"
 
 # ========== 2. 系统 / 容器特征（现在就能在这台机器上处理）==========
-sect "2. 系统 / 容器特征（现在可做）"
+sect "2. 系统 / 容器特征"
 
 # ro.hardware：Redroid 容器经常直接写着 redroid，等于明牌
 rohw=$(gp ro.hardware); info "ro.hardware = ${rohw:-空}"
@@ -69,12 +72,12 @@ bootimg=$(gp ro.bootimage.build.fingerprint); vendfp=$(gp ro.vendor.build.finger
 
 # 内核：App 直接调 uname() 拿到的是宿主机内核（fakefs 只改文件视图，改不了系统调用）
 unamer=$(ax 'uname -r'); info "uname -r（系统调用）：$unamer"
-now "uname() 系统调用返回宿主机内核 $unamer，fakefs 只改 /proc 文件、改不了这个；真机上是对应机型内核，这是容器的硬伤之一"
+cnt "uname() 系统调用返回宿主机内核 $unamer，fakefs 只改 /proc 文件、改不了这个；要拦系统调用（脆弱），真机上是对应机型内核"
 
 # /proc/mounts：overlay、docker、fakefs 自己的 bind mount 都会露
 mnt=$(ax 'cat /proc/mounts')
-echo "$mnt" | grep -qi overlay && now "/proc/mounts 有 overlay（容器文件系统特征）"
-echo "$mnt" | grep -qiE '/dev/null .* (cpuinfo|midr|version|osrelease)' && now "fakefs 用 bind mount 盖文件，/proc/mounts 里能看到这些挂载点本身（遮了内容、露了手法）"
+echo "$mnt" | grep -qi overlay && cnt "/proc/mounts 有 overlay + containerd 路径（容器特征）。实测遮不住：/proc/mounts 是软链接→/proc/self/mounts，bind 会跟链接绑到当前 pid 的 proc 上、对别的进程无效，procfs 又不让改符号链接（踩坑见记录）。要靠拦系统调用或换容器运行方式（镜像阶段）"
+echo "$mnt" | grep -qiE '/dev/null .* (cpuinfo|midr|version|osrelease)' && info "fakefs 的 bind mount 挂载点本身也在 /proc/mounts 里（遮了内容、露了手法）——同上，遮不住"
 bindcnt=$(echo "$mnt" | grep -cE 'cpuinfo|midr_el1|osrelease|/proc/version'); [ "$bindcnt" -gt 0 ] && info "可疑 bind mount 行数：$bindcnt"
 
 # cgroup：容器路径
@@ -97,8 +100,8 @@ adbp=$(gp service.adb.tcp.port); [ -n "$adbp" ] && info "service.adb.tcp.port=$a
 
 # 网卡：veth + 10.88 内网
 ifs=$(ax 'ip -o addr show 2>/dev/null || cat /proc/net/fib_trie 2>/dev/null | head')
-echo "$ifs" | grep -qE '10\.88\.|veth|eth0@' && now "网卡是容器虚拟网卡 / 10.88 内网段（真机是 wlan0 + 运营商/家庭 IP）"
-echo "$ifs" | grep -qi wlan0 || now "没有 wlan0 无线网卡（真机一定有 WiFi 接口）"
+echo "$ifs" | grep -qE '10\.88\.|veth|eth0@' && cnt "网卡是容器虚拟网卡 eth0 / 10.88 内网段（真机是 wlan0 + 家庭/运营商 IP）。改名 wlan0 需要 WiFi HAL 才能被 Android 当 WiFi 管理，单纯改名会断网——归镜像/板子阶段（mac80211_hwsim）"
+echo "$ifs" | grep -qi wlan0 || cnt "没有 wlan0 无线网卡（真机一定有 WiFi 接口）。同上，容器里加不出能用的 WiFi 接口"
 
 # 屏幕密度：和机型档案对不对得上（文档里标过待核实）
 den=$(ax 'wm density 2>/dev/null' | tr -dc '0-9 :a-zA-Z'); info "wm density：${den:-读不到}"
@@ -135,8 +138,9 @@ echo "$batt" | grep -qi 'AC powered: true' && brd "电池显示一直 AC 供电�
 
 # ========== 小结 ==========
 sect "小结"
-echo "  已遮住 $hide 项 · 现在可做 $nowfix 项 · 等板子 $board 项"
+echo "  已遮住 $hide 项 · 现在可做 $nowfix 项 · 容器改不了 $cant 项 · 等板子 $board 项"
 echo
-echo "  · [现在可做] 的项，这台甲骨文机器上就能一项项改（内核系统调用那条除外，容器改不了）。"
+echo "  · [现在可做] 的项，这台甲骨文机器上就能一项项改。"
+echo "  · [容器改不了] 的项，实测在容器里没有干净办法（uname/mounts/网卡都试过），要靠拦系统调用（脆弱）或改镜像/容器运行方式，归镜像/板子阶段。"
 echo "  · [等板子] 的项都是硬件缺的，和显卡一个性质，RK3588 板子到手插上真硬件后再处理，现在做了也白做。"
 echo "  · 这个脚本只读不改，可以随时跑。"
