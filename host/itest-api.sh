@@ -6,6 +6,7 @@
 # 开发机用「直连（仅开发）」，不需要代理。
 set -u
 BASE=${1:-http://127.0.0.1:8099}
+PP_TOKEN=${PP_TOKEN:-$(sed -n 's/^PP_TOKEN=//p' /etc/prism-phone/agent.env 2>/dev/null)}  # 管理页设了口令时自动带上
 APK=${2:-}
 TMP=$(mktemp -d)
 pass=0; failn=0

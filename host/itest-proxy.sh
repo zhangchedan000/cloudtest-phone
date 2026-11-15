@@ -5,15 +5,16 @@
 # 删手机、删代理。代理账号只从环境变量读，不写进仓库、不留在代理库里。
 set -u
 BASE=http://127.0.0.1:8099
+PP_TOKEN=${PP_TOKEN:-$(sed -n 's/^PP_TOKEN=//p' /etc/prism-phone/agent.env 2>/dev/null)}  # 管理页设了口令时自动带上
 pass=0; failn=0
 ok()  { echo "✅ $*"; pass=$((pass+1)); }
 bad() { echo "❌ $*"; failn=$((failn+1)); }
-api() { curl -s -m 600 -X "$1" "$BASE/api$2" ${3:+-H 'Content-Type: application/json' -d "$3"}; }
+api() { curl -s -m 600 -X "$1" "$BASE/api$2" ${3:+-H 'Content-Type: application/json' -d "$3"} ${PP_TOKEN:+-H "Authorization: Bearer $PP_TOKEN"}; }
 jget() { python3 -c "import json,sys; d=json.load(sys.stdin); print(eval(sys.argv[1]))" "$1" 2>/dev/null; }
 [ -n "${PP_TEST_PROXY:-}" ] || { echo "要设置 PP_TEST_PROXY"; exit 1; }
 [ "$(api GET /host | jget 'd.get("network")')" = True ] || { echo "网络模块没开"; exit 1; }
 
-PX=$(python3 -c 'import json,os;print(json.dumps({"name":"测试代理（测完删除）","protocol":"socks5","address":os.environ["PP_TEST_PROXY"]}))' | curl -s -X POST "$BASE/api/proxies" -H 'Content-Type: application/json' -d @- | jget 'd["id"]')
+PX=$(python3 -c 'import json,os;print(json.dumps({"name":"测试代理（测完删除）","protocol":"socks5","address":os.environ["PP_TEST_PROXY"]}))' | curl -s -X POST "$BASE/api/proxies" -H 'Content-Type: application/json' ${PP_TOKEN:+-H "Authorization: Bearer $PP_TOKEN"} -d @- | jget 'd["id"]')
 [ -n "$PX" ] && ok "代理已加进代理库" || { bad "加代理失败"; exit 1; }
 chk=$(api POST "/proxies/$PX/check")
 exit_ip=$(echo "$chk" | jget 'd.get("exitIp","")')

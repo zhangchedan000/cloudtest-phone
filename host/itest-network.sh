@@ -7,11 +7,12 @@
 set -u
 cd "$(dirname "$0")/.."
 BASE=http://127.0.0.1:8099
+PP_TOKEN=${PP_TOKEN:-$(sed -n 's/^PP_TOKEN=//p' /etc/prism-phone/agent.env 2>/dev/null)}  # 管理页设了口令时自动带上
 ENVF=/etc/prism-phone/agent.env
 pass=0; failn=0
 ok()  { echo "✅ $*"; pass=$((pass+1)); }
 bad() { echo "❌ $*"; failn=$((failn+1)); }
-api() { curl -s -m 600 -X "$1" "$BASE/api$2" ${3:+-H 'Content-Type: application/json' -d "$3"}; }
+api() { curl -s -m 600 -X "$1" "$BASE/api$2" ${3:+-H 'Content-Type: application/json' -d "$3"} ${PP_TOKEN:+-H "Authorization: Bearer $PP_TOKEN"}; }
 jget() { python3 -c "import json,sys; d=json.load(sys.stdin); print(eval(sys.argv[1]))" "$1" 2>/dev/null; }
 
 echo "== 1. 安装 mihomo"

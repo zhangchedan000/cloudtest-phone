@@ -4,12 +4,13 @@
 set -u
 cd "$(dirname "$0")/.."
 BASE=http://127.0.0.1:8099
+PP_TOKEN=${PP_TOKEN:-$(sed -n 's/^PP_TOKEN=//p' /etc/prism-phone/agent.env 2>/dev/null)}  # 管理页设了口令时自动带上
 ENVF=/etc/prism-phone/agent.env
 IMG15=${PP_IMG15:-redroid/redroid:15.0.0_64only-latest}
 pass=0; failn=0
 ok()  { echo "✅ $*"; pass=$((pass+1)); }
 bad() { echo "❌ $*"; failn=$((failn+1)); }
-api() { curl -s -m 900 -X "$1" "$BASE/api$2" ${3:+-H 'Content-Type: application/json' -d "$3"}; }
+api() { curl -s -m 900 -X "$1" "$BASE/api$2" ${3:+-H 'Content-Type: application/json' -d "$3"} ${PP_TOKEN:+-H "Authorization: Bearer $PP_TOKEN"}; }
 jget() { python3 -c "import json,sys; d=json.load(sys.stdin); print(eval(sys.argv[1]))" "$1" 2>/dev/null; }
 wait_running() { for _ in $(seq 1 90); do [ "$(api GET /phones | jget "[p['status'] for p in d if p['id']=='$1'][0]")" = running ] && return 0; sleep 5; done; return 1; }
 
