@@ -1,0 +1,127 @@
+##### CMD 2026-11-11T04:11:22.097Z: {"command": "curl.exe -s -m 10 --noproxy \"*\" https://api.ipify.org; ''; curl.exe -s -m 10 --noproxy \"*\" https://ipinfo.io/json", "description": "Check this PC's public egress IP"}
+##### CMD 2026-11-11T04:11:56.086Z: {"advance": true}
+##### CMD 2026-11-11T04:11:58.002Z: {"command": "$adb = Join-Path $env:TEMP 'claude\\0b0eb30f14870bc2\\0d3deae2-f4a8-45d5-bd37-23f93ed760a8\\scratchpad\\adb\\platform-tools\\adb.exe'; & $adb connect 148.153.227.17:22991; Start-Sleep 2; & $adb devices -l", "description": "Connect ADB to the DuoPlus cloud phone", "timeout": 60000}
+##### CMD 2026-11-11T04:12:19.940Z: {"command": "$adb = Join-Path $env:TEMP 'claude\\0b0eb30f14870bc2\\0d3deae2-f4a8-45d5-bd37-23f93ed760a8\\scratchpad\\adb\\platform-tools\\adb.exe'; & $adb disconnect | Out-Null; Start-Sleep 3; & $adb connect 148.153.227.17:22991; Start-Sleep 5; & $adb devices -l; Test-NetConnection 148.153.227.17 -P
+##### CMD 2026-11-11T04:13:00.625Z: {"command": "ssh us-site 'which adb || (cd /opt && timeout 120 curl -sSL -o /tmp/pt.zip https://dl.google.com/android/repository/platform-tools-latest-linux.zip && unzip -qo /tmp/pt.zip -d /opt && rm /tmp/pt.zip && /opt/platform-tools/adb version | head -2); curl -s -m 8 https://api.ipify.org; echo;
+##### CMD 2026-11-11T04:13:10.939Z: {"recap": "电脑上的 ADB 能连到端口，但握手被拒绝，因为代理导致出网 IP 不在白名单里。已改在美国独立站上准备好 ADB，出网 IP 固定是 38.49.55.5，等你把这个 IP 加进白名单。", "ask": "把 38.49.55.5 加进 DuoPlus 的 ADB 白名单了吗？", "blocked": true, "actions": [{"label": "加好了"}]}
+##### CMD 2026-11-11T04:13:44.417Z: {"command": "ssh us-site '/opt/platform-tools/adb connect 148.153.227.17:22991; sleep 4; /opt/platform-tools/adb devices'", "description": "Try ADB connect from US VPS", "timeout": 60000}
+##### CMD 2026-11-11T04:14:32.618Z: {"command": "ssh us-site 'A=/opt/platform-tools/adb; $A disconnect >/dev/null; $A connect 148.153.227.17:22991; sleep 5; $A devices'", "description": "Retry ADB connect from US VPS", "timeout": 60000}
+##### CMD 2026-11-11T04:14:51.127Z: {"command": "ssh us-site 'A=\"/opt/platform-tools/adb -s 148.153.227.17:22991 shell\"; $A \"\necho ==PROPS; for p in ro.product.model ro.product.brand ro.product.manufacturer ro.product.device ro.hardware ro.board.platform ro.soc.manufacturer ro.soc.model ro.product.cpu.abilist ro.build.version.rele
+===== 2026-11-11T04:14:55.421Z
+==PROPS
+ro.product.model=PJW110
+ro.product.brand=OPPO
+ro.product.manufacturer=OPPO
+ro.product.device=OP5A2BL1
+ro.hardware=mt6985
+ro.board.platform=mt6985
+ro.soc.manufacturer=Mediatek
+ro.soc.model=MT6985
+ro.product.cpu.abilist=arm64-v8a,armeabi-v7a,armeabi
+ro.build.version.release=15
+ro.build.fingerprint=OPPO/PJW110/OP5A2BL1:15/AP3A.240617.008/U.1cfb07c_1-19430:user/release-keys
+ro.boot.hardware=mt6985
+ro.kernel.qemu=
+ro.boot.redroid_gpu_mode=
+ro.dalvik.vm.native.bridge=0
+ro.hardware.egl=mali
+ro.hardware.vulkan=default
+==KERNEL
+Linux localhost 5.15.149-android15-8-o-g114ffdb494cd #1 SMP PREEMPT Thu Feb 27 12:49:21 UTC 2025 aarch64 Toybox
+Linux version 6.1.118-1.7.0 (work@5087582f1b13) (Android (7284624, based on r416183b) clang version 12.0.5 (https://android.googlesource.com/toolchain/llvm-project c935d99d7cf2016289302412d708641d52d2f7ee), LLD 12.0.5 (/buildbot/src/android/llvm-toolchain/out/llvm-project/lld c935d99d7cf2016289302412d708641d52d2f7ee)) #1 SMP PREEMPT Fri Aug  7 09:20:31 UTC 2026
+==CPU
+8
+      8 CPU implementer	: 0x41
+      4 CPU part	: 0xd05
+      4 CPU part	: 0xd0b
+==MEM
+MemTotal:        4194304 kB
+MemFree:         1012936 kB
+==CGROUP
+11:memory:/
+10:cpuset:/
+9:perf_event:/
+8:pids:/
+7:cpu,cpuacct:/
+==VIRT
+==GPU
+Sync configuration: [using: EGL_ANDROID_native_fence_sync EGL_KHR_wait_sync]
+EGL implementation : 1.5 Android META-EGL
+EGL_ANDROID_front_buffer_auto_refresh EGL_ANDROID_get_native_client_buffer EGL_ANDROID_presentation_time EGL_EXT_surface_CTA861_3_metadata EGL_EXT_surface_SMPTE2086_metadata EGL_KHR_get_all_proc_addresses EGL_KHR_swap_buffers_with_damage EGL_ANDROID_get_frame_timestamps EGL_ANDROID_image_native_buffer EGL_ANDROID_native_fence_sync EGL_ANDROID_recordable EGL_EXT_create_context_robustness EGL_EXT_image_gl_colorspace EGL_EXT_pixel_format_float EGL_EXT_yuv_surface EGL_IMG_context_priority EGL_KHR_config_attribs EGL_KHR_create_context EGL_KHR_fence_sync EGL_KHR_gl_colorspace EGL_KHR_gl_renderbuffer_image EGL_KHR_gl_texture_2D_image EGL_KHR_gl_texture_3D_image EGL_KHR_gl_texture_cubemap_image EGL_KHR_image EGL_KHR_image_base EGL_KHR_mutable_render_buffer EGL_KHR_no_config_context EGL_KHR_partial_update EGL_KHR_surfaceless_context EGL_KHR_wait_sync EGL_NV_context_priority_realtime 
+==SENSORS
+0x00000000) active-count = 2; sampling_period(ms) = {200.0, 66.7}, selected = 66.67 ms; batching_period(ms) = 
+0000000000) Acceleration sensor       | iven_sense      | ver: 1 | type: android.sensor.accelerometer(1) | per
+0x00000001) Compass Magnetic field sensor | akm             | ver: 1 | type: android.sensor.magnetic_field(2) 
+0x00000002) Compass Orientation sensor | mtk             | ver: 1 | type: android.sensor.orientation(3) | perm
+0x00000003) Gravity sensor            | mtk             | ver: 1 | type: android.sensor.gravity(9) | perm: n/a
+0x00000004) Step Counter sensor       | QTI             | ver: 1 | type: android.sensor.step_counter(19) | per
+0x00000005) Step Detector sensor      | QTI             | ver: 1 | type: android.sensor.step_detector(18) | pe
+0x00000006) Gyroscope sensor          | iven_sense      | ver: 1 | type: android.sensor.gyroscope(4) | perm: n
+0x00000007) Light sensor              | OPLUS           | ver: 1 | type: android.sensor.light(5) | perm: n/a |
+0x00000008) Proximity sensor          | si              | ver: 1 | type: android.sensor.proximity(8) | perm: n
+0x00000009) Pressure sensor           | InvenSense      | ver: 1 | type: android.sensor.pressure(6) | perm: n/
+0x0000000a) Temperature sensor        | Sensortek       | ver: 1 | type: android.sensor.ambient_temperature(13
+0x0000000b) Gyroscope Uncalibrated    | QTI             | ver: 1 | type: android.sensor.gyroscope_uncalibrated
+0x0000000c) Significant Motion        | QTI             | ver: 1 | type: android.sensor.significant_motion(17)
+0x00000010) Tilt Detector             | QTI             | ver: 1 | type: android.sensor.tilt_detector(22) | pe
+0x00000012) Accelerometer Uncalibrated | QTI             | ver: 1 | type: android.sensor.accelerometer_uncalib
+0x00000013) Device Orientation        | QTI             | ver: 1 | type: android.sensor.device_orientation(27)
+0x00000014) Motion Detect             | QTI             | ver: 1 | type: android.sensor.motion_detect(30) | pe
+0x00000015) Stationary Detect         | QTI             | ver: 1 | type: android.sensor.stationary_detect(29) 
+0x00000016) CCT Sensor                | ams             | ver: 1 | type:       qti.sensor.rgb(33171074) | perm
+0x00000017) Rear Light Sensor         | ams             | ver: 1 | type: qti.sensor.light_rear(33171055) | per
+0x00000018) pedo_minute               | oplus           | ver: 1 | type: qti.sensor.pedometer_minute(33171034)
+0x00000019) fold_state                | oplus           | ver: 1 | type: qti.sensor.fold_state(33171063) | per
+0x0000001b) Pick Up Gesture           | oplus           | ver: 1 | type: android.sensor.pick_up_gesture(25) | 
+0x0bebc200) Accelerometer             | QTI             | ver: 1 | type: android.sensor.accelerometer(1) | per
+0x0bebc201) Magnetometer Uncalibrated | AKM             | ver: 1 | type: android.sensor.magnetic_field_uncalib
+0x0bebc202) Accelerometer             | QTI             | ver: 1 | type: android.sensor.accelerometer(1) | per
+0x5f636779) Corrected Gyroscope Sensor | oppo            | ver: 1 | type: android.sensor.gyroscope(4) | perm: 
+0x5f676172) Game Rotation Vector Sensor | oppo            | ver: 3 | type: android.sensor.game_rotation_vector
+0x5f676273) Gyroscope Bias (debug)    | oppo            | ver: 1 | type: android.sensor.accelerometer(1) | per
+0x5f67656f) GeoMag Rotation Vector Sensor | oppo            | ver: 3 | type: android.sensor.geomagnetic_rotati
+0x5f677276) Gravity Sensor            | oppo            | ver: 3 | type: android.sensor.gravity(9) | perm: n/a
+0x5f6c696e) Linear Acceleration Sensor | oppo            | ver: 3 | type: android.sensor.linear_acceleration(1
+0x5f726f76) Rotation Vector Sensor    | oppo            | ver: 3 | type: android.sensor.rotation_vector(11) | 
+0x5f797072) Orientation Sensor        | oppo            | ver: 1 | type: android.sensor.orientation(3) | perm:
+Acceleration sensor (handle=0x00000000, connections=2)
+==BATTERY
+  AC powered: true
+  USB powered: false
+  Max charging voltage: 5000000
+  health: 2
+  level: 85
+  voltage: 4215
+  temperature: 300
+  technology: Li-ion
+==THERMAL
+soc-thermal=43461
+bigcore0-thermal=42538
+bigcore1-thermal=43461
+littlecore-thermal=43461
+center-thermal=41615
+gpu-thermal=41615
+npu-thermal=41615
+==DISPLAY
+Physical size: 1080x1920
+Physical density: 480
+==INPUT
+add device 1: /dev/input/event3
+  name:     "GamePad.2"
+add device 2: /dev/input/event2
+  name:     "Mouse.2"
+add device 3: /dev/input/event1
+  name:     "GamePad"
+add device 4: /dev/input/event0
+  name:     "Game China Virtual Input Device.2"
+==NET
+1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN mode DEFAULT
+2: tunl0@NONE: <NOARP> mtu 1480 qdisc noop state DOWN mode DEFAULT group default
+3: gre0@NONE: <NOARP> mtu 1476 qdisc noop state DOWN mode DEFAULT group default 
+4: gretap0@NONE: <BROADCAST,MULTICAST> mtu 1462 qdisc noop state DOWN mode DEFAU
+5: erspan0@NONE: <BROADCAST,MULTICAST> mtu 1450 qdisc noop state DOWN mode DEFAU
+6: ip_vti0@NONE: <NOARP> mtu 1480 qdisc noop state DOWN mode DEFAULT group defau
+7: ip6_vti0@NONE: <NOARP> mtu 1428 qdisc noop state DOWN mode DEFAULT group defa
+8: sit0@NONE: <NOARP> mtu 1480 qdisc noop state DOWN mode DEFAULT group default
+##### CMD 2026-11-11T04:15:11.714Z: {"command": "ssh us-site '/opt/platform-tools/adb disconnect; /opt/platform-tools/adb kill-server'; $null 2>/dev/null; \"C:/Users/ADMINI~1.DES/AppData/Local/Temp/claude/0b0eb30f14870bc2/0d3deae2-f4a8-45d5-bd37-23f93ed760a8/scratchpad/adb/platform-tools/adb.exe\" kill-server 2>/dev/null; echo done", 
+##### CMD 2026-11-11T04:15:17.016Z: {"recap": "DuoPlus 这台已经通过 ADB 查清楚：底层是 RK3588 板卡加容器，伪装成 OPPO 天玑 9200 手机，不是真机。ADB 已断开，服务器上的 adb 工具还留在 /opt/platform-tools。"}
