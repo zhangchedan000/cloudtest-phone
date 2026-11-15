@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 )
 
 // 预装应用：把 APK 放进 DataDir/preinstall/（阿什本：/opt/prism-phone/data/preinstall/），
@@ -106,7 +107,20 @@ func (s *Service) relayoutLauncher(ctx context.Context, name string) {
 	if !strings.HasPrefix(home, aosp) {
 		return // 不是安卓自带桌面，不动
 	}
-	if _, err := s.run.Run(ctx, "docker", "exec", name, "pm", "clear", "com.android.launcher3"); err == nil {
-		_, _ = s.run.Run(ctx, "docker", "exec", name, "input", "keyevent", "KEYCODE_HOME")
+	if _, err := s.run.Run(ctx, "docker", "exec", name, "pm", "clear", "com.android.launcher3"); err != nil {
+		return
+	}
+	// 实测（踩坑 #32）：清完数据系统马上重开桌面，正好撞上旧窗口还在退出，桌面没起来、之后按主页键也不再启动
+	// （系统以为它还开着）→ 一直黑屏。所以先彻底停掉，再打开桌面，确认进程起来了；没起来就再来一次。
+	_, _ = s.run.Run(ctx, "docker", "exec", name, "am", "force-stop", "com.android.launcher3")
+	for try := 0; try < 5; try++ {
+		_, _ = s.run.Run(ctx, "docker", "exec", name, "am", "start", "-a", "android.intent.action.MAIN", "-c", "android.intent.category.HOME")
+		for wait := 0; wait < 5; wait++ {
+			time.Sleep(s.pollEvery())
+			if pid, err := s.run.Run(ctx, "docker", "exec", name, "pidof", "com.android.launcher3"); err == nil && strings.TrimSpace(pid) != "" {
+				return
+			}
+		}
+		_, _ = s.run.Run(ctx, "docker", "exec", name, "am", "force-stop", "com.android.launcher3")
 	}
 }
