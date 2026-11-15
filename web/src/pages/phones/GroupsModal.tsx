@@ -22,7 +22,7 @@ export function GroupsModal({ open, onClose }: { open: boolean; onClose: () => v
     <Modal open={open} title="分组管理" footer={null} onCancel={onClose} destroyOnHidden>
       <div style={{ marginBottom: 12 }}><ServerSelect value={sid} onChange={setSid} /></div>
       <Space.Compact style={{ width: '100%', marginBottom: 12 }}>
-        <Input value={name} placeholder="新分组名称，例如：店铺 A" onChange={(e) => setName(e.target.value)} onPressEnter={() => void add()} />
+        <Input value={name} placeholder="新分组名称，例如：测试组 A" onChange={(e) => setName(e.target.value)} onPressEnter={() => void add()} />
         <Button type="primary" onClick={() => void add()}>新建</Button>
       </Space.Compact>
       <Table<Group>

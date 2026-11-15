@@ -47,7 +47,7 @@ func TestInstallAndUpload(t *testing.T) {
 	}
 	r := &pmRunner{}
 	svc.run = r
-	if _, err := svc.InstallAPK(ctx, p.ID, "tiktok.APK", strings.NewReader("apk-bytes")); err != nil {
+	if _, err := svc.InstallAPK(ctx, p.ID, "demo.APK", strings.NewReader("apk-bytes")); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := svc.InstallAPK(ctx, p.ID, "a.zip", strings.NewReader("x")); !errors.Is(err, ErrInvalid) {

@@ -72,7 +72,7 @@ func TestProxyLibrary(t *testing.T) {
 func TestGroups(t *testing.T) {
 	srv, st := newTestServer(t, "")
 	var g store.Group
-	if code := do(t, srv, "POST", "/groups", `{"name":"店铺 A","color":"#2f6bff"}`, &g); code != 201 {
+	if code := do(t, srv, "POST", "/groups", `{"name":"测试组 A","color":"#2f6bff"}`, &g); code != 201 {
 		t.Fatalf("创建分组：%d", code)
 	}
 	_ = st.Update(func(s *store.State) error {
@@ -80,8 +80,8 @@ func TestGroups(t *testing.T) {
 		return nil
 	})
 	var upd store.Group
-	do(t, srv, "PUT", "/groups/"+g.ID, `{"name":"店铺 B"}`, &upd)
-	if upd.Name != "店铺 B" || upd.Color != "#2f6bff" {
+	do(t, srv, "PUT", "/groups/"+g.ID, `{"name":"测试组 B"}`, &upd)
+	if upd.Name != "测试组 B" || upd.Color != "#2f6bff" {
 		t.Fatalf("改名不对：%+v", upd)
 	}
 	if code := do(t, srv, "PUT", "/groups/"+g.ID, `{"name":"  "}`, nil); code != 400 {

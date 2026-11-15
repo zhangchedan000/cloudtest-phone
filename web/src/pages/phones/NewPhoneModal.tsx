@@ -40,7 +40,7 @@ export function NewPhoneModal({ open, onClose }: { open: boolean; onClose: () =>
 
   return (
     <Modal open={open} title="新建云手机" onCancel={onClose} onOk={() => form.submit()} okText="创建" destroyOnHidden>
-      <Form form={form} layout="vertical" onFinish={create} onValuesChange={(changed) => { if ('hostId' in changed) form.setFieldsValue({ proxyId: undefined, groupId: undefined }) }} initialValues={{ name: 'TK-', count: 1, hostId: ws.hosts[0]?.id, modelId: ws.models[0]?.id, androidVersion: 14, groupId: ws.groups.filter(same)[0]?.id }}>
+      <Form form={form} layout="vertical" onFinish={create} onValuesChange={(changed) => { if ('hostId' in changed) form.setFieldsValue({ proxyId: undefined, groupId: undefined }) }} initialValues={{ name: '手机-', count: 1, hostId: ws.hosts[0]?.id, modelId: ws.models[0]?.id, androidVersion: 14, groupId: ws.groups.filter(same)[0]?.id }}>
         <Form.Item label="名称" name="name" rules={[{ required: true }]}><Input /></Form.Item>
         <Form.Item label="数量" name="count"><InputNumber min={1} max={20} /></Form.Item>
         <Form.Item label="所在机器" name="hostId" rules={[{ required: true }]}><Select options={ws.hosts.map((h) => ({ value: h.id, label: `${h.name}（${h.gpu}）${h.online ? '' : ' · 离线'}`, disabled: !h.online }))} /></Form.Item>

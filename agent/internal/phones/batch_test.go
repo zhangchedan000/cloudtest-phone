@@ -27,7 +27,7 @@ func TestBatchInstallAndUpload(t *testing.T) {
 	r := &pmRunner{}
 	svc.run = r
 
-	res, err := svc.InstallAPKMany(ctx, ids, "tiktok.apk", strings.NewReader("apk-bytes"))
+	res, err := svc.InstallAPKMany(ctx, ids, "demo.apk", strings.NewReader("apk-bytes"))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -8,8 +8,8 @@ export const hosts: Host[] = [
 ]
 
 export const groups: Group[] = [
-  { id: 'g-shop-a', name: '店铺 A 引流', color: '#2f6bff' },
-  { id: 'g-shop-b', name: '店铺 B 引流', color: '#0f9d8a' },
+  { id: 'g-test-a', name: '测试组 A', color: '#2f6bff' },
+  { id: 'g-test-b', name: '测试组 B', color: '#0f9d8a' },
   { id: 'g-test', name: '测试', color: '#e8590c' }
 ]
 
@@ -24,7 +24,7 @@ export const proxies: Proxy[] = [
 
 export const phones: Phone[] = [
   {
-    id: 'ph-001', name: 'TK-A01', hostId: 'ashburn', status: 'running', androidVersion: 14, modelId: 'poco-x4-gt', proxyId: 'p-us-1', groupId: 'g-shop-a', createdAt: now, lastActiveAt: now,
+    id: 'ph-001', name: '测试-A01', hostId: 'ashburn', status: 'running', androidVersion: 14, modelId: 'poco-x4-gt', proxyId: 'p-us-1', groupId: 'g-test-a', createdAt: now, lastActiveAt: now,
     fields: {
       androidId: { mode: 'random', value: '9f3c1a7e52b04d18' }, serial: { mode: 'random', value: 'R7XK29QF' },
       wifiMac: { mode: 'random', value: '7c:2a:31:9e:04:5b' }, bluetoothMac: { mode: 'random', value: '7c:2a:31:9e:04:5c' },
@@ -33,14 +33,14 @@ export const phones: Phone[] = [
     }
   },
   {
-    id: 'ph-002', name: 'TK-A02', hostId: 'ashburn', status: 'stopped', androidVersion: 14, modelId: 'xiaomi-12t', proxyId: 'p-us-2', groupId: 'g-shop-a', createdAt: now,
+    id: 'ph-002', name: '测试-A02', hostId: 'ashburn', status: 'stopped', androidVersion: 14, modelId: 'xiaomi-12t', proxyId: 'p-us-2', groupId: 'g-test-a', createdAt: now,
     fields: {
       androidId: { mode: 'random', value: '1b8e44c0d9a27f63' }, serial: { mode: 'random', value: 'K2HW81PZ' },
       timezone: { mode: 'manual', value: 'Asia/Shanghai' }, locale: { mode: 'manual', value: 'zh-CN' }, batteryLevel: { mode: 'random', value: 56 }
     }
   },
   {
-    id: 'ph-003', name: 'TK-B01', hostId: 'rk3588-01', status: 'stopped', androidVersion: 14, modelId: 'xiaomi-13t', proxyId: 'p-us-3', groupId: 'g-shop-b', createdAt: now,
+    id: 'ph-003', name: '测试-B01', hostId: 'rk3588-01', status: 'stopped', androidVersion: 14, modelId: 'xiaomi-13t', proxyId: 'p-us-3', groupId: 'g-test-b', createdAt: now,
     fields: { androidId: { mode: 'random', value: '9f3c1a7e52b04d18' }, timezone: { mode: 'proxy' }, locale: { mode: 'proxy' } }
   },
   {
