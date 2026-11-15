@@ -48,7 +48,10 @@ describe('一致性检查', () => {
   })
 
   it('国行机型配美国 IP 给提示', () => {
-    expect(codes(phones[1])).toContain('market')
+    // 机型库里已经没有国行机型了（2026-11-15 删了 Redmi K50），这里造一个国行的测提示逻辑
+    const cn = { ...model('xiaomi-12t')!, market: 'CN' }
+    expect(codes(phones[1], { model: cn })).toContain('market')
+    expect(codes(phones[1])).not.toContain('market')
   })
 
   it('代理不支持 UDP 给警告', () => {

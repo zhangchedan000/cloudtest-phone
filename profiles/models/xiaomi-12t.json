@@ -1,0 +1,32 @@
+{
+  "id": "xiaomi-12t",
+  "schema": 1,
+  "verified": false,
+  "verifyNote": "公开参数来自厂商官网规格页（2026-11-15 查）；型号、代号来自固件发布记录。CPU 识别信息（cpuParts / cpuMaxFreq）没有可靠来源，暂不填，待用真机或固件核实。官网：mi.com/global/product/xiaomi-12t/specs",
+  "gpuFamily": "Mali-G610",
+  "market": "GLOBAL",
+  "values": {
+    "brand": "Xiaomi",
+    "manufacturer": "Xiaomi",
+    "model": "22071212AG",
+    "marketName": "Xiaomi 12T",
+    "device": "plato",
+    "socModel": "MT6895",
+    "socManufacturer": "Mediatek",
+    "memTotal": 8,
+    "storageTotal": 256,
+    "resolution": {
+      "w": 1220,
+      "h": 2712
+    },
+    "dpi": 446,
+    "refreshRate": 120,
+    "touchPoints": 10,
+    "boardPlatform": "mt6895"
+  },
+  "androidVersions": [
+    12,
+    13,
+    14
+  ]
+}

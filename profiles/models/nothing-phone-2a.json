@@ -1,0 +1,31 @@
+{
+  "id": "nothing-phone-2a",
+  "schema": 1,
+  "verified": false,
+  "verifyNote": "公开参数来自厂商官网规格页（2026-11-15 查）；型号、代号来自固件发布记录。CPU 识别信息（cpuParts / cpuMaxFreq）没有可靠来源，暂不填，待用真机或固件核实。天玑 7200 Pro（2×A715 + 6×A510）；分辨率各家写 1080×2412 或 1084×2412，取 1080×2412；dpi 按约 394 ppi 填，待核实",
+  "gpuFamily": "Mali-G610",
+  "market": "GLOBAL",
+  "values": {
+    "brand": "Nothing",
+    "manufacturer": "Nothing",
+    "model": "A142",
+    "marketName": "Phone (2a)",
+    "device": "Pacman",
+    "socModel": "MT6886",
+    "socManufacturer": "Mediatek",
+    "memTotal": 8,
+    "storageTotal": 256,
+    "resolution": {
+      "w": 1080,
+      "h": 2412
+    },
+    "dpi": 394,
+    "refreshRate": 120,
+    "touchPoints": 10,
+    "boardPlatform": "mt6886"
+  },
+  "androidVersions": [
+    14,
+    15
+  ]
+}

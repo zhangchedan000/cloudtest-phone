@@ -1,0 +1,32 @@
+{
+  "id": "redmi-note-13-pro-plus",
+  "schema": 1,
+  "verified": false,
+  "verifyNote": "公开参数来自厂商官网规格页（2026-11-15 查）；型号、代号来自固件发布记录。CPU 识别信息（cpuParts / cpuMaxFreq）没有可靠来源，暂不填，待用真机或固件核实。官网：mi.com/global/product/redmi-note-13-pro-plus-5g/specs（天玑 7200-Ultra，2×A715 + 6×A510，和 RK3588 的 4+4 布局不同）",
+  "gpuFamily": "Mali-G610",
+  "market": "GLOBAL",
+  "values": {
+    "brand": "Redmi",
+    "manufacturer": "Xiaomi",
+    "model": "23090RA98G",
+    "marketName": "Redmi Note 13 Pro+ 5G",
+    "device": "zircon",
+    "socModel": "MT6886",
+    "socManufacturer": "Mediatek",
+    "memTotal": 8,
+    "storageTotal": 256,
+    "resolution": {
+      "w": 1220,
+      "h": 2712
+    },
+    "dpi": 446,
+    "refreshRate": 120,
+    "touchPoints": 10,
+    "boardPlatform": "mt6886"
+  },
+  "androidVersions": [
+    13,
+    14,
+    15
+  ]
+}

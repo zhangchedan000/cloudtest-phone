@@ -33,7 +33,7 @@ export const phones: Phone[] = [
     }
   },
   {
-    id: 'ph-002', name: 'TK-A02', hostId: 'ashburn', status: 'stopped', androidVersion: 14, modelId: 'redmi-k50', proxyId: 'p-us-2', groupId: 'g-shop-a', createdAt: now,
+    id: 'ph-002', name: 'TK-A02', hostId: 'ashburn', status: 'stopped', androidVersion: 14, modelId: 'xiaomi-12t', proxyId: 'p-us-2', groupId: 'g-shop-a', createdAt: now,
     fields: {
       androidId: { mode: 'random', value: '1b8e44c0d9a27f63' }, serial: { mode: 'random', value: 'K2HW81PZ' },
       timezone: { mode: 'manual', value: 'Asia/Shanghai' }, locale: { mode: 'manual', value: 'zh-CN' }, batteryLevel: { mode: 'random', value: 56 }
