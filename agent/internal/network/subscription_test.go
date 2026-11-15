@@ -1,6 +1,7 @@
 package network
 
 import (
+	"context"
 	"encoding/base64"
 	"fmt"
 	"strings"
@@ -61,6 +62,53 @@ func TestImportNodesUniqueIDs(t *testing.T) {
 			t.Fatalf("ID 重复：%s", p.ID)
 		}
 		seen[p.ID] = true
+	}
+}
+
+// 机场订阅顶层 proxies 空、节点挂在 proxy-providers 二级地址上（OpenClash 这类），
+// 导入要自动跟进 provider 把节点取回来。
+func TestParseSubscriptionFollowsProviders(t *testing.T) {
+	top := `
+proxies: []
+proxy-providers:
+  airport:
+    type: http
+    url: https://sub.example.com/provider
+    interval: 3600
+  file-based:
+    type: file
+    path: /tmp/x.yaml
+proxy-groups: []
+`
+	providerBody := `
+proxies:
+  - {name: "US-vless", type: vless, server: us.example.com, port: 443, uuid: aaaa-bbbb, tls: true}
+  - {name: "HK-anytls", type: anytls, server: hk.example.com, port: 443, password: p}
+`
+	fetch := func(_ context.Context, url string) (string, error) {
+		if url != "https://sub.example.com/provider" {
+			return "", fmt.Errorf("不该下载这个地址：%s", url)
+		}
+		return providerBody, nil
+	}
+	nodes, skipped, err := ParseSubscriptionWithProviders(context.Background(), top, fetch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(nodes) != 1 || nodes[0].Name != "US-vless" {
+		t.Fatalf("应从 provider 取回 1 个 vless 节点：%+v", nodes)
+	}
+	if len(skipped) != 1 || !strings.Contains(skipped[0], "anytls") {
+		t.Fatalf("anytls 应被跳过并说明：%v", skipped)
+	}
+	// 没有 fetch 回退到纯解析：顶层空 + 无法下载 provider => 报没节点。
+	if _, _, err := ParseSubscriptionWithProviders(context.Background(), top, nil); err == nil {
+		t.Fatal("没有 fetch 时顶层空订阅应报错")
+	}
+	// 顶层就有节点的普通订阅，行为和 ParseSubscription 一致。
+	n, _, err := ParseSubscriptionWithProviders(context.Background(), clashSub, fetch)
+	if err != nil || len(n) != 2 {
+		t.Fatalf("普通 Clash 订阅应正常解析：%+v %v", n, err)
 	}
 }
 

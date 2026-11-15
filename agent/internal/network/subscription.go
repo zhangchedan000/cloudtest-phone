@@ -68,14 +68,21 @@ func ParseSubscription(body string) (nodes []Node, skipped []string, err error) 
 }
 
 func parseClash(text string) ([]Node, []string, error) {
+	nodes, skipped := parseClashNodes(text)
+	if len(nodes) == 0 {
+		return nil, skipped, fmt.Errorf("订阅里没有能用的节点")
+	}
+	return nodes, skipped, nil
+}
+
+// parseClashNodes 解析 Clash 配置顶层 proxies，空列表不当错误（可能节点挂在 proxy-providers 里）。
+func parseClashNodes(text string) (nodes []Node, skipped []string) {
 	var doc struct {
 		Proxies []map[string]any `yaml:"proxies"`
 	}
 	if err := yaml.Unmarshal([]byte(text), &doc); err != nil {
-		return nil, nil, fmt.Errorf("Clash 订阅格式不对：%v", err)
+		return nil, nil
 	}
-	var nodes []Node
-	var skipped []string
 	for _, p := range doc.Proxies {
 		name := strings.TrimSpace(fmt.Sprint(p["name"]))
 		typ := strings.ToLower(fmt.Sprint(p["type"]))
@@ -94,10 +101,92 @@ func parseClash(text string) ([]Node, []string, error) {
 		}
 		nodes = append(nodes, Node{Name: name, Protocol: "clash", Address: string(raw)})
 	}
+	return nodes, skipped
+}
+
+// clashProviderURLs 取出 Clash 配置里 http 类型 proxy-provider 的下载地址。
+// 很多机场（如 OpenClash 订阅）顶层 proxies 是空的，真正的节点挂在这些二级地址上。
+func clashProviderURLs(text string) []string {
+	if !strings.Contains(text, "proxy-providers:") {
+		return nil
+	}
+	var doc struct {
+		ProxyProviders map[string]struct {
+			Type string `yaml:"type"`
+			URL  string `yaml:"url"`
+		} `yaml:"proxy-providers"`
+	}
+	if err := yaml.Unmarshal([]byte(text), &doc); err != nil {
+		return nil
+	}
+	var urls []string
+	for _, pv := range doc.ProxyProviders {
+		if strings.EqualFold(strings.TrimSpace(pv.Type), "http") && strings.TrimSpace(pv.URL) != "" {
+			urls = append(urls, strings.TrimSpace(pv.URL))
+		}
+	}
+	return urls
+}
+
+// FetchFunc 下载一个订阅 / provider 地址的内容（实参一般是 FetchSubscription）。
+type FetchFunc func(ctx context.Context, url string) (string, error)
+
+// ParseSubscriptionWithProviders 在 ParseSubscription 的基础上，自动跟进 Clash 配置里的
+// proxy-providers：顶层没节点时（机场常把节点挂在 provider 的二级地址上），逐个下载 provider
+// 再解析，合并去重。fetch 为 nil 或订阅里没有 provider 时，行为和 ParseSubscription 一致。
+func ParseSubscriptionWithProviders(ctx context.Context, body string, fetch FetchFunc) (nodes []Node, skipped []string, err error) {
+	text := strings.TrimSpace(body)
+	if text == "" {
+		return nil, nil, fmt.Errorf("订阅内容是空的")
+	}
+	providers := clashProviderURLs(text)
+	// 先尽量收顶层节点。顶层没节点但有 provider 是正常的，继续跟进 provider。
+	if n, s, e := ParseSubscription(text); e == nil {
+		nodes, skipped = n, s
+	} else if len(providers) == 0 {
+		return nil, nil, e
+	}
+	// 跟进 proxy-providers（逐个下载再解析）。
+	if fetch != nil {
+		seen := map[string]bool{}
+		for _, u := range providers {
+			if seen[u] {
+				continue
+			}
+			seen[u] = true
+			pb, fe := fetch(ctx, u)
+			if fe != nil {
+				skipped = append(skipped, "provider "+short(u)+"："+fe.Error())
+				continue
+			}
+			pn, ps, pe := ParseSubscription(pb)
+			skipped = append(skipped, ps...)
+			if pe != nil {
+				skipped = append(skipped, "provider "+short(u)+"："+pe.Error())
+				continue
+			}
+			nodes = append(nodes, pn...)
+		}
+	}
+	nodes = dedupeNodes(nodes)
 	if len(nodes) == 0 {
 		return nil, skipped, fmt.Errorf("订阅里没有能用的节点")
 	}
 	return nodes, skipped, nil
+}
+
+// dedupeNodes 按地址去重（同一节点可能既在顶层又在 provider 里）。
+func dedupeNodes(in []Node) []Node {
+	seen := map[string]bool{}
+	out := make([]Node, 0, len(in))
+	for _, n := range in {
+		if strings.TrimSpace(n.Address) == "" || seen[n.Address] {
+			continue
+		}
+		seen[n.Address] = true
+		out = append(out, n)
+	}
+	return out
 }
 
 // linkName 分享链接 # 后面是节点名（vmess 的名字在 JSON 的 ps 里）。

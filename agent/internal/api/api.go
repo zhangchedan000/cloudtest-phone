@@ -548,7 +548,8 @@ func (s *Server) importProxies(w http.ResponseWriter, r *http.Request) {
 			note = "订阅导入"
 		}
 	}
-	nodes, skipped, err := netcfg.ParseSubscription(body)
+	// 自动跟进 proxy-providers：有的机场订阅顶层 proxies 是空的，节点挂在二级 provider 地址上。
+	nodes, skipped, err := netcfg.ParseSubscriptionWithProviders(r.Context(), body, netcfg.FetchSubscription)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error(), "skipped": skipped})
 		return
