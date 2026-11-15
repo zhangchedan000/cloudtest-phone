@@ -35,6 +35,20 @@ func isLiveProp(key string) bool {
 	return ok
 }
 
+// safeSettingValue 允许写进 settings 的值：可见 ASCII + 常见符号，不含控制字符，长度有限。
+// settings put 的参数不过 shell（docker exec 直接带参），这里主要挡控制字符和超长值。
+func safeSettingValue(v string) bool {
+	if v == "" || len(v) > 64 {
+		return false
+	}
+	for _, r := range v {
+		if r < 0x20 || r == 0x7f {
+			return false
+		}
+	}
+	return true
+}
+
 // waitBooted 等安卓开机完成；超时或设备停了返回 false。
 func (s *Service) waitBooted(ctx context.Context, id string) bool {
 	deadline := time.Now().Add(s.bootTimeout())
@@ -94,6 +108,39 @@ func (s *Service) applySettings(ctx context.Context, id string) {
 		applied = append(applied, r.Key)
 		restart = restart || def.restart
 	}
+	// setting 类字段：开机后用安卓 settings put 写（android_id、设备名、蓝牙 MAC 等）。
+	for _, r := range s.resolve(*p, st) {
+		f, ok := s.cat.Field(r.Key)
+		if !ok || f.Sink.Kind != "setting" || r.Value == nil {
+			continue
+		}
+		val := fmt.Sprint(r.Value)
+		if !safeSettingValue(val) {
+			problems = append(problems, fmt.Sprintf("%s 的值 %q 含非法字符，没设置", r.Key, val))
+			continue
+		}
+		wrote := false
+		for _, sink := range f.Sink.Names {
+			ns, key, found := strings.Cut(sink, ":") // 形如 "secure:android_id"
+			if !found {
+				continue
+			}
+			// 已经是目标值就跳过（避免每次开机都写一遍）。
+			if cur, _ := s.run.Run(ctx, "docker", "exec", name, "settings", "get", ns, key); strings.TrimSpace(cur) == val {
+				wrote = true
+				continue
+			}
+			if out, err := s.run.Run(ctx, "docker", "exec", name, "settings", "put", ns, key, val); err != nil {
+				problems = append(problems, fmt.Sprintf("%s（%s）设置失败：%v %s", r.Key, sink, err, out))
+				continue
+			}
+			wrote = true
+		}
+		if wrote {
+			applied = append(applied, r.Key)
+		}
+	}
+
 	if restart {
 		// 语言变了：重启安卓框架（不是重启容器，几十秒）。
 		if out, err := s.run.Run(ctx, "docker", "exec", name, "setprop", "ctl.restart", "zygote"); err != nil {

@@ -31,7 +31,8 @@ func TestSettingsAppliedAfterBoot(t *testing.T) {
 		}
 	}
 	got := svc.settings.get(p.ID)
-	if got == nil || got.State != "applied" || len(got.Applied) != 2 {
+	appliedSet := strings.Join(func() []string { if got == nil { return nil }; return got.Applied }(), ",")
+	if got == nil || got.State != "applied" || !strings.Contains(appliedSet, "timezone") || !strings.Contains(appliedSet, "locale") {
 		t.Fatalf("设置结果不对：%+v", got)
 	}
 	for _, a := range svc.BootArgs(*mustPhone(t, svc, p.ID), svc.store.Snapshot()) {
@@ -100,5 +101,30 @@ func TestBootArgsHaveDisguiseProps(t *testing.T) {
 	// 不能传空值属性
 	if strings.Contains(args, "security_patch= ") || strings.HasSuffix(args, "=") {
 		t.Fatalf("不该出现空值属性：\n%s", args)
+	}
+}
+
+func TestSettingSinkWritesAndroidIdAndNames(t *testing.T) {
+	svc, _, _ := newTestService(t, true, "software")
+	p, _ := svc.Create(CreateRequest{Name: "A", ModelID: "poco-x4-gt", AndroidVersion: 14, ProxyID: DirectDevProxyID})
+	_ = svc.Save(p.ID, SaveRequest{Fields: map[string]store.FieldSetting{
+		"androidId":    {Mode: "manual", Value: "0123456789abcdef"},
+		"bluetoothMac": {Mode: "manual", Value: "aa:bb:cc:dd:ee:ff"},
+	}})
+	if err := svc.Start(context.Background(), p.ID); err != nil {
+		t.Fatal(err)
+	}
+	calls := strings.Join(svc.run.(*fakeRunner).calls, "\n")
+	for _, want := range []string{
+		"settings put secure android_id 0123456789abcdef",
+		"settings put secure bluetooth_address aa:bb:cc:dd:ee:ff",
+	} {
+		if !strings.Contains(calls, want) {
+			t.Fatalf("缺少 setting 写入 %q：\n%s", want, calls)
+		}
+	}
+	// 含控制字符的值要被挡掉
+	if !safeSettingValue("POCO X4 GT") || safeSettingValue("bad\nvalue") || safeSettingValue("") {
+		t.Fatal("safeSettingValue 判断不对")
 	}
 }

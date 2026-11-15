@@ -268,6 +268,11 @@ func (s *Service) resolve(p store.Phone, st store.State) []ResolvedField {
 			rf.Reason = "值里有空格，启动参数传不了（待改用 build.prop 写入）"
 		case f.Sink.Kind == "prop":
 			rf.Applied = true
+		case f.Sink.Kind == "setting":
+			// 开机后用安卓 settings put 写（settings.go）。个别值（如 android_id）
+			// 系统可能另有机制，是否真生效以实机 settings get 为准。
+			rf.Applied = true
+			rf.Reason = "开机后设置"
 		default:
 			rf.Reason = "落地方式（" + f.Sink.Kind + "）还没实现"
 		}
