@@ -103,6 +103,7 @@ export const api = {
   savePhone: (id: string, req: { fields?: Record<string, FieldSetting>; modelId?: string; proxyId?: string; proxyIds?: string[]; groupId?: string; name?: string; note?: string }) => call('PUT', `/phones/${id}`, req),
   /** 切换这台当前用的代理（开着的手机时区马上跟着换）。 */
   switchProxy: (id: string, proxyId: string) => call<{ proxyId: string; timezone?: string; warning?: string }>('POST', `/phones/${id}/proxy`, { proxyId }),
+  importParams: (id: string, dump: string, sid?: string) => call<{ imported: string[]; missing: string[] }>('POST', `/phones/${id}/import-params`, { dump }, sid),
   deletePhone: (id: string) => call('DELETE', `/phones/${id}`),
   start: (id: string) => call('POST', `/phones/${id}/start`),
   stop: (id: string) => call('POST', `/phones/${id}/stop`),

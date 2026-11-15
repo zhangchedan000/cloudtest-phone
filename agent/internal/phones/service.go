@@ -359,9 +359,12 @@ func (s *Service) BootArgs(p store.Phone, st store.State) []string {
 	sort.Strings(props)
 	args = append(args, props...)
 	args = append(args, disguiseProps()...)
-	// 按手机的安卓版本取真实指纹（版本必须一致）。
+	// 指纹来源：手动填写 / 导入真参的优先（fingerprint 字段非空就用它），
+	// 否则按手机安卓版本取机型库里的真实指纹（版本必须一致）。
 	var realFP string
-	if m := s.model(p.ModelID); m != nil {
+	if fp := str(byKey["fingerprint"]); fp != "" {
+		realFP = fp
+	} else if m := s.model(p.ModelID); m != nil {
 		realFP = m.Fingerprints[fmt.Sprintf("%d", p.AndroidVersion)]
 	}
 	return append(args, fingerprintProps(byKey, realFP, p.AndroidVersion)...)

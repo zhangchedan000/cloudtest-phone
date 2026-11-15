@@ -1,6 +1,7 @@
-import { LockOutlined, ReloadOutlined, UnlockOutlined } from '@ant-design/icons'
-import { Alert, Button, Collapse, Input, InputNumber, Select, Space, Tag, Tooltip } from 'antd'
+import { ImportOutlined, LockOutlined, ReloadOutlined, UnlockOutlined } from '@ant-design/icons'
+import { Alert, App, Button, Collapse, Input, InputNumber, Modal, Select, Space, Tag, Tooltip } from 'antd'
 import { useMemo, useState } from 'react'
+import { api } from '@/data/api'
 import { catalog, fieldsOfGroup, formatValue, resolveField } from '@/data/catalog'
 import { checkPhone } from '@/data/consistency'
 import { randomValue } from '@/data/random'
@@ -12,8 +13,27 @@ const APPLY_COLOR: Record<string, string> = { live: 'green', restart: 'blue', im
 /** 参数面板：每个字段都能看到实际值，也都能改（字段清单来自 profiles/fields.json）。 */
 export function ParamPanel({ phone, onSaved }: { phone: Phone; onSaved?: (restartNeeded: boolean) => void }) {
   const ws = useWorkspace()
+  const { message } = App.useApp()
   const [draft, setDraft] = useState<Record<string, FieldSetting>>(phone.fields)
   const [modelId, setModelId] = useState(phone.modelId)
+  const [importOpen, setImportOpen] = useState(false)
+  const [dumpText, setDumpText] = useState('')
+  const [importing, setImporting] = useState(false)
+
+  const doImport = async () => {
+    if (!dumpText.trim()) { message.warning('请先粘贴真机的 getprop 输出'); return }
+    setImporting(true)
+    try {
+      const res = await api.importParams(phone.id, dumpText, phone.serverId)
+      await ws.refresh()
+      setImportOpen(false); setDumpText('')
+      message.success(`导入成功：套了 ${res.imported.length} 项身份（${res.imported.join('、')}）${res.missing?.length ? `；dump 里没找到：${res.missing.join('、')}` : ''}。重启这台安卓后生效`)
+    } catch (e) {
+      message.error((e as Error).message)
+    } finally {
+      setImporting(false)
+    }
+  }
   const draftPhone: Phone = { ...phone, fields: draft, modelId }
   const model = ws.models.find((m) => m.id === modelId)
   const ctx = { phone: draftPhone, model, proxy: ws.proxyOf(phone), host: ws.hostOf(phone) }
@@ -53,8 +73,26 @@ export function ParamPanel({ phone, onSaved }: { phone: Phone; onSaved?: (restar
             options={ws.models.map((m) => ({ value: m.id, label: `${String(m.values.marketName)}（${String(m.values.model)}）${m.verified ? '' : ' · 待核实'}` }))}
           />
           <Tooltip title="所有「随机」模式、没锁定的字段重新生成一次（相当于一键新机，不改机型）"><Button icon={<ReloadOutlined />} onClick={randomizeAll}>随机字段全部重新生成</Button></Tooltip>
+          <Tooltip title="粘贴一份真机的 getprop 输出（买来的「真参」或自己扒的真机 dump），自动把品牌/型号/指纹/序列号/MAC 等身份套到这台手机上"><Button icon={<ImportOutlined />} onClick={() => setImportOpen(true)}>导入真机身份（真参）</Button></Tooltip>
         </Space>
       </div>
+
+      <Modal
+        open={importOpen}
+        title="导入真机身份（真参）"
+        onCancel={() => setImportOpen(false)}
+        onOk={() => void doImport()}
+        okText="导入"
+        confirmLoading={importing}
+        width={620}
+        destroyOnHidden
+      >
+        <div className="pp-muted" style={{ marginBottom: 8 }}>
+          粘贴真机的 <b>getprop</b> 输出（格式 <code>[ro.product.brand]: [POCO]</code>，或 <code>ro.x=y</code>）。只套身份字段（品牌/型号/设备代号/指纹/序列号/WiFi·蓝牙 MAC/芯片），不碰 CPU/显卡/屏幕（那些跟机型/板子走）。<br />
+          建议：先在上方选一个芯片/显卡接近的机型（都 Mali-G610），再导入身份，否则 CPU/显卡会和导入的型号对不上。重启这台安卓后生效。
+        </div>
+        <Input.TextArea value={dumpText} onChange={(e) => setDumpText(e.target.value)} rows={12} placeholder={'[ro.product.brand]: [Redmi]\n[ro.product.model]: [23049RAD8C]\n[ro.product.device]: [sapphire]\n[ro.build.fingerprint]: [Redmi/sapphire/...:user/release-keys]\n[ro.serialno]: [...]\n...'} />
+      </Modal>
 
       {issues.filter((i) => i.level !== 'info').map((issue) => (
         <Alert key={issue.code} type={issue.level === 'error' ? 'error' : 'warning'} showIcon title={issue.message} className="pp-alert" />

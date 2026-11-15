@@ -62,6 +62,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/phones/{id}/stream", s.stream)
 	mux.HandleFunc("POST /api/phones/{id}/input", s.input)
 	mux.HandleFunc("POST /api/phones/{id}/proxy", s.switchProxy)
+	mux.HandleFunc("POST /api/phones/{id}/import-params", s.importParams)
 	mux.HandleFunc("GET /api/phones/{id}/clipboard", s.getClipboard)
 	mux.HandleFunc("POST /api/phones/{id}/clipboard", s.setClipboard)
 	mux.HandleFunc("POST /api/phones/{id}/apk", s.installAPK)
@@ -346,6 +347,23 @@ func (s *Server) input(w http.ResponseWriter, r *http.Request) {
 }
 
 // switchProxy 切换这台手机当前用的代理：POST {"proxyId": "..."}（一台手机可以挂多个代理）。
+// importParams 导入真机身份（真参）：粘贴一份真机 getprop dump，套到这台手机上。
+func (s *Server) importParams(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Dump string `json:"dump"`
+	}
+	if err := decode(r, &req); err != nil {
+		fail(w, err)
+		return
+	}
+	imported, missing, err := s.svc.ImportDeviceParams(r.PathValue("id"), req.Dump)
+	if err != nil {
+		fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"imported": imported, "missing": missing})
+}
+
 func (s *Server) switchProxy(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		ProxyID string `json:"proxyId"`
