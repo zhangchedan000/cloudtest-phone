@@ -87,7 +87,7 @@ export function PhoneDrawer({ phone, onClose }: { phone?: Phone; onClose: () => 
           >
             <Button>重置 / 刷机</Button>
           </Dropdown>
-          {running ? (
+          {running || live.status === 'starting' ? (
             <>
               <Button icon={<RedoOutlined />} onClick={() => void ws.setStatus([live.id], 'stopped').then(() => ws.setStatus([live.id], 'running'))}>重启</Button>
               <Button danger icon={<PoweroffOutlined />} onClick={() => ws.setStatus([live.id], 'stopped')}>关机</Button>

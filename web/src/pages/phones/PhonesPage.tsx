@@ -100,7 +100,7 @@ export function PhonesPage() {
                   {p.usage && <div className="pp-card-row pp-small pp-muted">{usageText(p.usage)}</div>}
                 </div>
                 <div className="pp-card-actions">
-                  {p.status === 'running'
+                  {p.status === 'running' || p.status === 'starting' // 开机中也只能关机，不能再点一次开机
                     ? <Button size="small" onClick={() => ws.setStatus([p.id], 'stopped')}>关机</Button>
                     : <Tooltip title={blocksStart(issues) ? '有错误，禁止开机' : ''}><Button size="small" type="primary" disabled={blocksStart(issues)} onClick={() => start([p.id])}>开机</Button></Tooltip>}
                   <Button size="small" onClick={() => setOpen(p)}>打开</Button>

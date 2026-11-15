@@ -21,9 +21,11 @@ export function ProxyCell({ proxy }: { proxy?: Proxy }) {
   const check = proxy.check
   if (!check) return <span className="pp-muted">{proxy.name} · 未检测</span>
   if (!check.ok) return <Tooltip title={check.error}><span className="pp-danger-text">{proxy.name} · 不通</span></Tooltip>
+  // 直连（仅开发）等没有城市 / 地区的，显示代理名，免得只剩一个逗号
+  const place = [check.city, check.region].filter(Boolean).join('，') || proxy.name
   return (
-    <Tooltip title={`${proxy.name}｜${check.exitIp}｜${check.timezone}｜${check.latencyMs}ms`}>
-      <span>{FLAG[check.country ?? ''] ?? '🌐'} {check.city}，{check.region}</span>
+    <Tooltip title={[proxy.name, check.exitIp, check.timezone, check.latencyMs != null ? `${check.latencyMs}ms` : ''].filter(Boolean).join('｜')}>
+      <span>{FLAG[check.country ?? ''] ?? '🌐'} {place}</span>
     </Tooltip>
   )
 }
