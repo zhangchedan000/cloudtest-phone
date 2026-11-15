@@ -85,13 +85,29 @@ systemctl daemon-reload
 install -m 0755 "$binary" "$BIN"
 systemctl enable prism-phone-agent >/dev/null 2>&1
 systemctl restart prism-phone-agent
-sleep 3
-if ! systemctl is-active --quiet prism-phone-agent; then
-  log "新程序没起来，日志："
+
+# 判断新程序是否真的起来了：光看 systemd「在运行」不够（进程卡住、没监听端口也算在运行），
+# 要等 /api/health 有回应（200 正常；503 是自检有问题，但程序本身在工作，也算起来了）。最多等 20 秒。
+listen=$(sed -n 's/^AGENT_ARGS=.*-listen[ =]\([^ ]*\).*/\1/p' "$ENV" | head -1)
+listen=${listen:-127.0.0.1:8099}
+case "$listen" in 0.0.0.0:*|:*) listen="127.0.0.1:${listen##*:}" ;; esac
+up=0
+for _ in $(seq 1 20); do
+  sleep 1
+  code=$(curl -s -m 3 -o /dev/null -w '%{http_code}' "http://$listen/api/health" || true)
+  if [ "$code" = 200 ] || [ "$code" = 503 ]; then up=1; break; fi
+done
+if [ "$up" != 1 ] || ! systemctl is-active --quiet prism-phone-agent; then
+  log "新程序没起来（20 秒内 http://$listen/api/health 没回应），日志："
   journalctl -u prism-phone-agent -n 20 --no-pager || true
   if [ -f "$BIN.prev" ]; then
     cp -f "$BIN.prev" "$BIN" && systemctl restart prism-phone-agent
-    die "已换回旧程序"
+    for _ in $(seq 1 20); do
+      sleep 1
+      code=$(curl -s -m 3 -o /dev/null -w '%{http_code}' "http://$listen/api/health" || true)
+      if [ "$code" = 200 ] || [ "$code" = 503 ]; then die "已换回旧程序（$("$BIN" -version)），旧程序在正常工作"; fi
+    done
+    die "已换回旧程序，但旧程序也没回应：journalctl -u prism-phone-agent -n 50"
   fi
   die "安装失败"
 fi
