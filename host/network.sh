@@ -10,8 +10,9 @@
 #   bash host/network.sh confirm    # 确认规则没问题，取消自动撤销
 #   bash host/network.sh rollback   # 撤销规则（删除 prism_phone 表和策略路由）
 #   bash host/network.sh status     # 看现状
+#   bash host/network.sh heal       # 策略路由被别的程序删了就补回（自动更新每 10 分钟调一次，踩坑 #34）
 #
-# 状态：2026-11-15 写好，还没在阿什本实机跑过。第一次跑必须按「防失联规矩」：先确认甲骨文串口控制台能用。
+# 状态：阿什本已实机启用（11-15）。改动前按「防失联规矩」：先确认甲骨文串口控制台能用。
 set -euo pipefail
 
 SUBNET=${PP_SUBNET:-10.88.0.0/16}
@@ -130,6 +131,7 @@ EOF
   printf '%s\n' "$rules" | nft -c -f - || die "规则语法不对，没有改动任何东西"
   ip rule add fwmark "$MARK" lookup "$TABLE" priority 9233 2>/dev/null || true
   ip route replace local 0.0.0.0/0 dev lo table "$TABLE"
+  keep_networkd_away
   nft delete table ip prism_phone 2>/dev/null || true
   printf '%s\n' "$rules" | nft -f -
   # 甲骨文镜像自带的主机防火墙（iptables INPUT）除了 SSH 全部拒绝，透明代理和 DNS 改写后的流量算「进本机」，
@@ -156,6 +158,35 @@ input_rules() {
       while iptables -C INPUT $spec 2>/dev/null; do iptables -D INPUT $spec; done
     fi
   done
+}
+
+# keep_networkd_away 让 systemd-networkd 不要删我们加的策略路由（踩坑 #34）。
+# 它默认 ManageForeignRoutingPolicyRules=yes：每次重启（例如自动升级装了新的系统库）都会删掉「不是它加的」规则，
+# 云手机就全部断网（2026-11-15 06:10 实际发生）。只写配置文件、不重启 networkd（下次它重启时生效），不会断 SSH。
+keep_networkd_away() {
+  [ -d /etc/systemd ] || return 0
+  mkdir -p /etc/systemd/networkd.conf.d
+  cat > /etc/systemd/networkd.conf.d/prism-phone.conf <<'EOC'
+# prism-phone：不要清掉网络模块加的策略路由（fwmark 0x1b5 → 表 233），否则云手机全部断网（踩坑 #34）
+[Network]
+ManageForeignRoutingPolicyRules=no
+ManageForeignRoutes=no
+EOC
+}
+
+# heal 网络模块开着（prism_phone 表在）但策略路由被别的程序删了：补回去。自动更新每 10 分钟调一次。
+# 网络模块没开就什么都不做。
+heal() {
+  nft list table ip prism_phone >/dev/null 2>&1 || return 0
+  keep_networkd_away
+  if ! ip rule list | grep -q "fwmark $MARK lookup $TABLE"; then
+    ip rule add fwmark "$MARK" lookup "$TABLE" priority 9233
+    log "策略路由被删了（云手机会断网），已补回"
+  fi
+  if ! ip route show table "$TABLE" | grep -q "^local default"; then
+    ip route replace local 0.0.0.0/0 dev lo table "$TABLE"
+    log "表 $TABLE 的本机路由被删了，已补回"
+  fi
 }
 
 rollback() {
@@ -205,6 +236,7 @@ case "${1:-}" in
   apply-boot) apply_rules boot ;;
   confirm) confirm ;;
   rollback) rollback ;;
+  heal) heal ;;
   status) status ;;
   *) sed -n '2,15p' "$0"; exit 1 ;;
 esac

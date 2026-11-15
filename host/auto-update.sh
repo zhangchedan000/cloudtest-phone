@@ -24,6 +24,10 @@ run() {
   cd "$REPO"
   exec 9>/run/prism-phone-auto-update.lock
   flock -n 9 || { log "上一次同步还没做完，跳过"; return 0; }
+  # 顺便检查网络模块的策略路由还在不在（踩坑 #34：被 systemd-networkd 删过，云手机全部断网）
+  local healed
+  healed=$(bash "$REPO/host/network.sh" heal 2>&1 || true)
+  [ -n "$healed" ] && log "$healed"
   git fetch -q origin "$BRANCH" || { log "连不上 GitHub，下次再试"; return 0; }
   local here there
   here=$(git rev-parse HEAD)
