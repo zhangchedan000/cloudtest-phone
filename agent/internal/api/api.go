@@ -157,7 +157,7 @@ func (s *Server) host(w http.ResponseWriter, _ *http.Request) {
 	out := map[string]any{
 		"id": cfg.HostID, "name": cfg.HostName, "gpuFamily": cfg.GPUFamily, "devHost": cfg.DevHost,
 		"maxRunning": cfg.MaxRunning, "androidVersions": versions(cfg.Images), "system": rep.System,
-		"network": s.svc.NetworkEnabled(),
+		"network": s.svc.NetworkEnabled(), "gappsVersions": versions(cfg.GappsImages),
 	}
 	if s.netHealth != nil {
 		if h := s.netHealth(); h != nil {

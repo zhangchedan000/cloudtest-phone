@@ -60,7 +60,8 @@ function hostFromInfo(info: HostInfo, serverId: string = LOCAL, url?: string): H
     serverId, url, id: info.id, name: info.name || info.id, location: info.devHost ? '开发机' : '—', arch: String(sys.arch ?? 'arm64'),
     gpu: info.gpuFamily === 'software' ? '无（软件渲染）' : info.gpuFamily, gpuFamily: info.gpuFamily,
     cpus: num(sys.cpus), memGb: num(sys.memGb), memUsedGb: num(num(sys.memGb) - num(sys.memAvailGb)), diskGb: num(sys.diskGb), diskUsedGb: num(num(sys.diskGb) - num(sys.diskFreeGb)),
-    online: true, kernel: String(sys.kernel ?? '—'), maxRunning: info.maxRunning, networkEnabled: info.network === true, netHealth: info.netHealth, androidVersions: [...(info.androidVersions ?? [])].sort((a, b) => a - b)
+    online: true, kernel: String(sys.kernel ?? '—'), maxRunning: info.maxRunning, networkEnabled: info.network === true, netHealth: info.netHealth, androidVersions: [...(info.androidVersions ?? [])].sort((a, b) => a - b),
+    gappsVersions: [...(info.gappsVersions ?? [])].sort((a, b) => a - b)
   }
 }
 
@@ -182,7 +183,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         // 字段由管家程序按机型生成，页面只传基本信息。
         // 建在选中的机器所在的服务器上
         const sid = hosts.find((h) => h.id === phone.hostId)?.serverId ?? LOCAL
-        await each([phone.id], '创建', () => api.createPhone({ name: phone.name, modelId: phone.modelId, androidVersion: phone.androidVersion, proxyId: phone.proxyId, groupId: phone.groupId, note: phone.note }, sid))
+        await each([phone.id], '创建', () => api.createPhone({ name: phone.name, modelId: phone.modelId, androidVersion: phone.androidVersion, proxyId: phone.proxyId, groupId: phone.groupId, note: phone.note, gapps: phone.gapps }, sid))
       },
       resetPhones: async (ids, androidVersion) => {
         if (!live) { message.info('预览模式：接上管家程序后可用'); return }

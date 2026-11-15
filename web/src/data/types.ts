@@ -62,6 +62,8 @@ export interface Phone {
   proxyId: string
   groupId: string
   note?: string
+  /** 带谷歌服务（GMS / Play 商店）：开机用谷歌服务镜像，需要机器装了对应镜像。 */
+  gapps?: boolean
   createdAt: string
   lastActiveAt?: string
   fields: Record<string, FieldSetting>
@@ -133,4 +135,6 @@ export interface Host {
   error?: string
   /** 这台机器装了哪些安卓版本的镜像。 */
   androidVersions?: number[]
+  /** 这台机器装了哪些安卓版本的「谷歌服务」镜像（带 GMS / Play 商店）；空 = 不支持谷歌服务。 */
+  gappsVersions?: number[]
 }

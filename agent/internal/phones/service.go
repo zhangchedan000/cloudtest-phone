@@ -28,17 +28,18 @@ type Docker interface {
 
 // Config 这台机器（板子）的配置。板子相关的东西都在这里，换板子只改配置。
 type Config struct {
-	HostID     string
-	HostName   string
-	GPUFamily  string         // "software" 表示没有显卡（开发机）
-	GPUMode    string         // Redroid 的 gpu_mode：guest（软件渲染）/ host
-	Images     map[int]string // 安卓版本 → 镜像
-	DataDir    string         // 每台云手机的 /data 放在 DataDir/phones/<id>/data
-	Network    string         // 容器网络名
-	Subnet     string         // 例如 10.88.0.0/16
-	MemoryMB   int64          // 每台容器内存上限（保护宿主机）
-	CPUs       float64        // 每台容器 CPU 上限
-	MaxRunning int            // 同时最多运行几台
+	HostID      string
+	HostName    string
+	GPUFamily   string         // "software" 表示没有显卡（开发机）
+	GPUMode     string         // Redroid 的 gpu_mode：guest（软件渲染）/ host
+	Images      map[int]string // 安卓版本 → 镜像
+	GappsImages map[int]string // 安卓版本 → 带谷歌服务（GMS）的镜像；空 = 这台机器不支持谷歌服务
+	DataDir     string         // 每台云手机的 /data 放在 DataDir/phones/<id>/data
+	Network     string         // 容器网络名
+	Subnet      string         // 例如 10.88.0.0/16
+	MemoryMB    int64          // 每台容器内存上限（保护宿主机）
+	CPUs        float64        // 每台容器 CPU 上限
+	MaxRunning  int            // 同时最多运行几台
 	// DevHost 开发机：允许「直连（仅开发）」代理，方便没代理时测试。正式机器必须是 false。
 	DevHost bool
 	// HostCPUs 宿主机核数（0 = 自动）；BootTimeout / PollEvery 等开机的超时和间隔（0 = 默认）。
@@ -61,7 +62,7 @@ type Service struct {
 	boots    bootTracker
 	streams  streamTracker
 	usage    tracker[docker.Usage]
-	netStat  tracker[NetStatus] // 上网健康检查（netcheck.go）
+	netStat  tracker[NetStatus]    // 上网健康检查（netcheck.go）
 	batt     tracker[batteryState] // 电池漂移状态（battery.go）
 	settings settingsTracker
 	// netGuard 网络模块开着时检查这台设备有没有出口；返回错误就禁止开机（绝不走宿主机网络）。
@@ -105,6 +106,7 @@ type CreateRequest struct {
 	ProxyID        string `json:"proxyId"`
 	GroupID        string `json:"groupId"`
 	Note           string `json:"note"`
+	Gapps          bool   `json:"gapps"` // 带谷歌服务（GMS / Play 商店）
 }
 
 var ErrInvalid = errors.New("参数不对")
@@ -116,6 +118,9 @@ func (s *Service) Create(req CreateRequest) (store.Phone, error) {
 	}
 	if _, ok := s.cfg.Images[req.AndroidVersion]; !ok {
 		return store.Phone{}, fmt.Errorf("%w：这台机器没有 Android %d 的镜像", ErrInvalid, req.AndroidVersion)
+	}
+	if req.Gapps && s.cfg.GappsImages[req.AndroidVersion] == "" {
+		return store.Phone{}, fmt.Errorf("%w：这台机器没装 Android %d 的谷歌服务镜像（先运行 host/build-gapps-image.sh）", ErrInvalid, req.AndroidVersion)
 	}
 	if strings.TrimSpace(req.Name) == "" {
 		return store.Phone{}, fmt.Errorf("%w：名称不能为空", ErrInvalid)
@@ -157,6 +162,7 @@ func (s *Service) Create(req CreateRequest) (store.Phone, error) {
 			CreatedAt:      s.now().UTC(),
 			Fields:         fields,
 			IP:             ip,
+			Gapps:          req.Gapps,
 		}
 		st.Phones = append(st.Phones, created)
 		return nil
@@ -375,6 +381,7 @@ var redroidBuildID = map[int]struct{ buildID, incremental string }{
 // 指纹格式：brand/product/device:release/id/incremental:type/tags。
 //   - 机型档案填了真实 stock 指纹（fingerprint 字段，从设备树/固件抠）就用真的，各字段从里面拆；
 //   - 没填就用 Redroid 镜像的真实 buildId/incremental 兜底拼一个一致的（incremental 仍是 eng.*）。
+//
 // 注意：不设带空格的值（启动参数遇空格会截断）——ro.build.description 带空格，留作残留（很少被读）。
 func fingerprintProps(byKey map[string]any, realFP string, androidVer int) []string {
 	fp := realFP
@@ -487,6 +494,20 @@ type Issue struct {
 	Message string `json:"message"`
 }
 
+// imageFor 选这台手机开机用的镜像：带谷歌服务的用谷歌服务镜像，否则用干净 AOSP 镜像。
+func (s *Service) imageFor(p store.Phone) (string, error) {
+	if p.Gapps {
+		if img := s.cfg.GappsImages[p.AndroidVersion]; img != "" {
+			return img, nil
+		}
+		return "", fmt.Errorf("%w：这台机器没装 Android %d 的谷歌服务镜像（先运行 host/build-gapps-image.sh）", ErrInvalid, p.AndroidVersion)
+	}
+	if img := s.cfg.Images[p.AndroidVersion]; img != "" {
+		return img, nil
+	}
+	return "", fmt.Errorf("%w：这台机器没有 Android %d 的镜像", ErrInvalid, p.AndroidVersion)
+}
+
 // Check 开机前的硬性检查（和管理页的一致性检查同样的规矩，error 级别禁止开机）。
 func (s *Service) Check(p store.Phone, st store.State) []Issue {
 	var issues []Issue
@@ -503,6 +524,9 @@ func (s *Service) Check(p store.Phone, st store.State) []Issue {
 	}
 	// 注：透明代理（tproxy → mihomo → 节点）在开发机上实测已通，分配健康真实代理即走节点 IP，
 	// 不再有「还没接上」的提醒（2026-11-15 端到端验证：手机出口 IP = 节点 IP）。
+	if p.Gapps && s.cfg.GappsImages[p.AndroidVersion] == "" {
+		issues = append(issues, Issue{"error", "gapps-image-missing", fmt.Sprintf("这台机器没装 Android %d 的谷歌服务镜像，无法开「带谷歌服务」的手机。", p.AndroidVersion)})
+	}
 	m := s.model(p.ModelID)
 	if m == nil {
 		issues = append(issues, Issue{"error", "model-missing", "机型不存在。"})
@@ -585,9 +609,13 @@ func (s *Service) Start(ctx context.Context, id string) error {
 	if err := s.docker.RemoveContainer(ctx, name); err != nil {
 		return fmt.Errorf("清理旧容器：%w", err)
 	}
+	image, err := s.imageFor(*p)
+	if err != nil {
+		return err
+	}
 	_, err = s.docker.CreateContainer(ctx, docker.ContainerSpec{
 		Name:       name,
-		Image:      s.cfg.Images[p.AndroidVersion],
+		Image:      image,
 		Cmd:        s.BootArgs(*p, st),
 		Labels:     map[string]string{"prism-phone": "1", "prism-phone.id": p.ID},
 		Binds:      binds,
@@ -726,6 +754,7 @@ type SaveRequest struct {
 	GroupID  *string   `json:"groupId"`
 	Name     *string   `json:"name"`
 	Note     *string   `json:"note"`
+	Gapps    *bool     `json:"gapps"` // 切换带谷歌服务（下次开机生效）
 }
 
 func (s *Service) Save(id string, req SaveRequest) error {
@@ -773,6 +802,12 @@ func (s *Service) Save(id string, req SaveRequest) error {
 		}
 		if req.Note != nil {
 			p.Note = *req.Note
+		}
+		if req.Gapps != nil {
+			if *req.Gapps && s.cfg.GappsImages[p.AndroidVersion] == "" {
+				return fmt.Errorf("%w：这台机器没装 Android %d 的谷歌服务镜像", ErrInvalid, p.AndroidVersion)
+			}
+			p.Gapps = *req.Gapps
 		}
 		for key, fs := range req.Fields {
 			f, ok := s.cat.Field(key)

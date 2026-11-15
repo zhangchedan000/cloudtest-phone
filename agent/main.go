@@ -37,6 +37,7 @@ func main() {
 	gpuFamily := flag.String("gpu-family", "software", "显卡家族：software（无显卡）/ Mali-G610 …")
 	gpuMode := flag.String("gpu-mode", "guest", "Redroid gpu_mode：guest（软件渲染）/ host")
 	images := flag.String("images", "14=redroid/redroid:14.0.0_64only-latest", "安卓版本=镜像，逗号分隔")
+	gappsImages := flag.String("gapps-images", "", "带谷歌服务（GMS）的镜像：安卓版本=镜像，逗号分隔；空 = 这台机器不支持谷歌服务。镜像用 host/build-gapps-image.sh 生成")
 	network := flag.String("network", "pp-net", "容器网络名")
 	subnet := flag.String("subnet", "10.88.0.0/16", "容器网段")
 	memMB := flag.Int64("mem-mb", 3072, "每台容器内存上限（MB）")
@@ -61,6 +62,10 @@ func main() {
 	if err != nil {
 		log.Fatalf("参数 -images 不对：%v", err)
 	}
+	gappsImgs, err := parseImages(*gappsImages)
+	if err != nil {
+		log.Fatalf("参数 -gapps-images 不对：%v", err)
+	}
 	profilesFS, err := fs.Sub(assets.FS, "profiles")
 	if err != nil {
 		log.Fatal(err)
@@ -76,7 +81,7 @@ func main() {
 	dc := docker.New(*dockerSock)
 	cfg := phones.Config{
 		HostID: *hostID, HostName: firstNonEmpty(*hostName, *hostID), GPUFamily: *gpuFamily, GPUMode: *gpuMode,
-		Images: imgs, DataDir: *dataDir, Network: *network, Subnet: *subnet, MemoryMB: *memMB, CPUs: *cpus,
+		Images: imgs, GappsImages: gappsImgs, DataDir: *dataDir, Network: *network, Subnet: *subnet, MemoryMB: *memMB, CPUs: *cpus,
 		MaxRunning: *maxRunning, DevHost: *devHost,
 	}
 	svc := phones.NewService(cfg, dc, st, cat, models)
@@ -185,6 +190,9 @@ func main() {
 
 func parseImages(s string) (map[int]string, error) {
 	out := map[int]string{}
+	if strings.TrimSpace(s) == "" {
+		return out, nil
+	}
 	for _, part := range strings.Split(s, ",") {
 		kv := strings.SplitN(strings.TrimSpace(part), "=", 2)
 		if len(kv) != 2 {

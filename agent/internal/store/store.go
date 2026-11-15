@@ -38,6 +38,9 @@ type Phone struct {
 	Fields       map[string]FieldSetting `json:"fields"`
 	// IP 在容器网段里的固定地址（代理分流按它来），创建时分配，永不改变。
 	IP string `json:"ip"`
+	// Gapps 带谷歌服务（GMS / Play 商店）：开机用谷歌服务镜像而不是干净 AOSP 镜像。
+	// 需要这台机器装了对应安卓版本的谷歌服务镜像（见 host/build-gapps-image.sh）。
+	Gapps bool `json:"gapps,omitempty"`
 }
 
 type ProxyCheck struct {
