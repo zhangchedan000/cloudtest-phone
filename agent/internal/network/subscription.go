@@ -25,8 +25,9 @@ type Node struct {
 }
 
 // supportedClashTypes mihomo 支持、我们也愿意放进配置的节点类型。
+// anytls 需要 mihomo ≥ v1.19（阿什本 v1.19.34 已验证 mihomo -t 通过），很多机场的住宅/家宽节点是这个。
 var supportedClashTypes = map[string]bool{
-	"ss": true, "vmess": true, "vless": true, "trojan": true, "hysteria2": true, "socks5": true, "http": true, "tuic": true,
+	"ss": true, "vmess": true, "vless": true, "trojan": true, "hysteria2": true, "socks5": true, "http": true, "tuic": true, "anytls": true,
 }
 
 // ParseSubscription 解析订阅内容；认不出的节点跳过并说明原因。

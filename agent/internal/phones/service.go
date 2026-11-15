@@ -500,10 +500,9 @@ func (s *Service) Check(p store.Phone, st store.State) []Issue {
 		issues = append(issues, Issue{"error", "proxy-missing", "没有分配代理，禁止开机（避免暴露机房真实 IP）。"})
 	} else if px.Check != nil && !px.Check.OK {
 		issues = append(issues, Issue{"error", "proxy-down", fmt.Sprintf("代理「%s」检测不通，禁止开机。", px.Name)})
-	} else if s.cfg.DevHost {
-		// TODO：透明代理落地前，开发机上分配了真实代理也还走不了，提醒一下。
-		issues = append(issues, Issue{"warning", "proxy-not-wired", "透明代理还没接上：现在开机走的仍是机房 IP。"})
 	}
+	// 注：透明代理（tproxy → mihomo → 节点）在开发机上实测已通，分配健康真实代理即走节点 IP，
+	// 不再有「还没接上」的提醒（2026-11-15 端到端验证：手机出口 IP = 节点 IP）。
 	m := s.model(p.ModelID)
 	if m == nil {
 		issues = append(issues, Issue{"error", "model-missing", "机型不存在。"})

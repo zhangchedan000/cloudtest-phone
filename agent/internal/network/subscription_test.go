@@ -84,6 +84,7 @@ proxy-groups: []
 proxies:
   - {name: "US-vless", type: vless, server: us.example.com, port: 443, uuid: aaaa-bbbb, tls: true}
   - {name: "HK-anytls", type: anytls, server: hk.example.com, port: 443, password: p}
+  - {name: "老协议", type: ssr, server: 9.9.9.9, port: 1}
 `
 	fetch := func(_ context.Context, url string) (string, error) {
 		if url != "https://sub.example.com/provider" {
@@ -95,11 +96,12 @@ proxies:
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(nodes) != 1 || nodes[0].Name != "US-vless" {
-		t.Fatalf("应从 provider 取回 1 个 vless 节点：%+v", nodes)
+	// vless + anytls 都支持（anytls 是住宅节点常见类型），ssr 不支持跳过。
+	if len(nodes) != 2 || nodes[0].Name != "US-vless" || nodes[1].Name != "HK-anytls" {
+		t.Fatalf("应从 provider 取回 vless + anytls 两个节点：%+v", nodes)
 	}
-	if len(skipped) != 1 || !strings.Contains(skipped[0], "anytls") {
-		t.Fatalf("anytls 应被跳过并说明：%v", skipped)
+	if len(skipped) != 1 || !strings.Contains(skipped[0], "ssr") {
+		t.Fatalf("ssr 应被跳过并说明：%v", skipped)
 	}
 	// 没有 fetch 回退到纯解析：顶层空 + 无法下载 provider => 报没节点。
 	if _, _, err := ParseSubscriptionWithProviders(context.Background(), top, nil); err == nil {
