@@ -188,3 +188,17 @@ func TestBatteryDriftMovesAndClamps(t *testing.T) {
 		t.Fatalf("温度越界：%+v", st)
 	}
 }
+
+func TestBatteryReseedsAfterStateLost(t *testing.T) {
+	svc, _, _ := newTestService(t, true, "software")
+	p, _ := svc.Create(CreateRequest{Name: "A", ModelID: "poco-x4-gt", AndroidVersion: 14, ProxyID: DirectDevProxyID})
+	if err := svc.Start(context.Background(), p.ID); err != nil {
+		t.Fatal(err)
+	}
+	// 模拟 agent 重启：内存状态没了，但手机还在运行。
+	svc.batt.drop(p.ID)
+	svc.driftBattery(context.Background(), p.ID)
+	if svc.batt.get(p.ID) == nil {
+		t.Fatal("运行中但状态丢失时，漂移应从档案重新播种")
+	}
+}

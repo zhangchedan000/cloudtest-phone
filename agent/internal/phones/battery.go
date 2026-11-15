@@ -24,12 +24,17 @@ func (s *Service) seedBattery(id string, level, tempDeci int, charging string) {
 
 // driftBattery 把一台运行中手机的电池推一小步并写进容器。没在运行就清掉状态。
 func (s *Service) driftBattery(ctx context.Context, id string) {
-	cur := s.batt.get(id)
-	if cur == nil {
-		return // 没播种过（这台没有电池字段）
-	}
 	if s.State(ctx, id) != "running" {
 		s.batt.drop(id)
+		return
+	}
+	cur := s.batt.get(id)
+	if cur == nil {
+		// 没有内存状态：要么这台没电池字段，要么 agent 刚重启丢了状态。
+		// 后者要自愈——按档案重新播种并应用一次，下一轮再漂移（agent 重启不会重跑开机设置）。
+		if v := s.batteryValues(id); len(v) > 0 {
+			s.applyBattery(ctx, id, containerName(id), v)
+		}
 		return
 	}
 	next := *cur
@@ -56,6 +61,22 @@ func (s *Service) driftBattery(ctx context.Context, id string) {
 	_, _ = s.run.Run(ctx, "docker", "exec", name, "dumpsys", "battery", "set", "level", strconv.Itoa(next.Level))
 	_, _ = s.run.Run(ctx, "docker", "exec", name, "dumpsys", "battery", "set", "temp", strconv.Itoa(next.TempDeci))
 	s.batt.put(id, next)
+}
+
+// batteryValues 从档案里取这台手机的电池字段值（agent 重启后重新播种用）。
+func (s *Service) batteryValues(id string) map[string]any {
+	st := s.store.Snapshot()
+	p, err := st.Phone(id)
+	if err != nil {
+		return nil
+	}
+	v := map[string]any{}
+	for _, r := range s.resolve(*p, st) {
+		if f, ok := s.cat.Field(r.Key); ok && f.Sink.Kind == "battery" && r.Value != nil {
+			v[r.Key] = r.Value
+		}
+	}
+	return v
 }
 
 // SampleBattery 把所有有电池状态的手机各推一步。
