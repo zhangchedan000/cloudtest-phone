@@ -1,2 +1,2 @@
-# 脚本在 Linux 上跑：Windows 上检出也保持 LF，免得 bash 报 $''
+# 脚本在 Linux 上跑：Windows 上检出也保持 LF（否则 bash 会报  相关的错）
 *.sh text eol=lf
