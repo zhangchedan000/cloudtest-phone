@@ -273,6 +273,10 @@ func (s *Service) resolve(p store.Phone, st store.State) []ResolvedField {
 			// 系统可能另有机制，是否真生效以实机 settings get 为准。
 			rf.Applied = true
 			rf.Reason = "开机后设置"
+		case f.Sink.Kind == "battery":
+			// 开机后用 dumpsys battery 覆盖（settings.go）。
+			rf.Applied = true
+			rf.Reason = "开机后设置"
 		default:
 			rf.Reason = "落地方式（" + f.Sink.Kind + "）还没实现"
 		}

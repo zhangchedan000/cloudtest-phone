@@ -128,3 +128,29 @@ func TestSettingSinkWritesAndroidIdAndNames(t *testing.T) {
 		t.Fatal("safeSettingValue 判断不对")
 	}
 }
+
+func TestBatterySinkAppliesViaDumpsys(t *testing.T) {
+	svc, _, _ := newTestService(t, true, "software")
+	p, _ := svc.Create(CreateRequest{Name: "A", ModelID: "poco-x4-gt", AndroidVersion: 14, ProxyID: DirectDevProxyID})
+	_ = svc.Save(p.ID, SaveRequest{Fields: map[string]store.FieldSetting{
+		"batteryLevel":    {Mode: "manual", Value: 61},
+		"batteryCharging": {Mode: "manual", Value: "usb"},
+		"batteryTemp":     {Mode: "manual", Value: 32.5},
+		"batteryHealth":   {Mode: "manual", Value: "good"},
+	}})
+	if err := svc.Start(context.Background(), p.ID); err != nil {
+		t.Fatal(err)
+	}
+	calls := strings.Join(svc.run.(*fakeRunner).calls, "\n")
+	for _, want := range []string{
+		"dumpsys battery set level 61",
+		"dumpsys battery set usb 1",
+		"dumpsys battery set status 2",
+		"dumpsys battery set temp 325",
+		"dumpsys battery set health 2",
+	} {
+		if !strings.Contains(calls, want) {
+			t.Fatalf("缺少电池命令 %q：\n%s", want, calls)
+		}
+	}
+}

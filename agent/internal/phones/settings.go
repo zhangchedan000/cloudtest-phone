@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -33,6 +34,72 @@ var liveProps = map[string]struct {
 func isLiveProp(key string) bool {
 	_, ok := liveProps[key]
 	return ok
+}
+
+// batteryHealthCode 机型档案里的健康度 → Android BatteryManager 的 health 数值。
+var batteryHealthCode = map[string]int{"good": 2, "overheat": 3, "cold": 7}
+
+// applyBattery 开机后用 dumpsys battery 覆盖电池状态。dumpsys battery set 会让电池进入
+// 「人工覆盖」模式，值固定到下次重启或 reset；applySettings 每次开机都跑，所以每次开机重新覆盖。
+// 返回非空表示有失败项。
+func (s *Service) applyBattery(ctx context.Context, name string, v map[string]any) []string {
+	var probs []string
+	run := func(args ...string) {
+		full := append([]string{"exec", name, "dumpsys", "battery"}, args...)
+		if out, err := s.run.Run(ctx, "docker", full...); err != nil {
+			probs = append(probs, fmt.Sprintf("dumpsys battery %s 失败：%v %s", strings.Join(args, " "), err, out))
+		}
+	}
+	if lv, ok := toInt(v["batteryLevel"]); ok && lv >= 0 && lv <= 100 {
+		run("set", "level", strconv.Itoa(lv))
+	}
+	// 充电状态：设插口的同时把 status 设一致（真机充电=2 充电中，拔了=3 放电中），
+	// 否则会出现「USB 供电 true 但 status 未知」这种自相矛盾、容易被看出来。
+	switch fmt.Sprint(v["batteryCharging"]) {
+	case "ac":
+		run("set", "ac", "1")
+		run("set", "usb", "0")
+		run("set", "status", "2")
+	case "usb":
+		run("set", "usb", "1")
+		run("set", "ac", "0")
+		run("set", "status", "2")
+	case "none":
+		run("unplug")
+		run("set", "status", "3")
+	}
+	if t, ok := toFloat(v["batteryTemp"]); ok && t > -50 && t < 150 {
+		// dumpsys battery 的温度单位是 0.1℃。
+		run("set", "temp", strconv.Itoa(int(t*10)))
+	}
+	// 健康度：档案填了按档案，没填默认 good（2）；真机极少报「未知」。
+	code := batteryHealthCode["good"]
+	if c, ok := batteryHealthCode[fmt.Sprint(v["batteryHealth"])]; ok {
+		code = c
+	}
+	run("set", "health", strconv.Itoa(code))
+	return probs
+}
+
+// toInt / toFloat：JSON 数字是 float64，统一转一下。
+func toInt(v any) (int, bool) {
+	switch n := v.(type) {
+	case float64:
+		return int(n), true
+	case int:
+		return n, true
+	}
+	return 0, false
+}
+
+func toFloat(v any) (float64, bool) {
+	switch n := v.(type) {
+	case float64:
+		return n, true
+	case int:
+		return float64(n), true
+	}
+	return 0, false
 }
 
 // safeSettingValue 允许写进 settings 的值：可见 ASCII + 常见符号，不含控制字符，长度有限。
@@ -138,6 +205,21 @@ func (s *Service) applySettings(ctx context.Context, id string) {
 		}
 		if wrote {
 			applied = append(applied, r.Key)
+		}
+	}
+
+	// battery 类字段：开机后用 dumpsys battery 覆盖（电量、充电、温度、健康）。
+	batteryVals := map[string]any{}
+	for _, r := range s.resolve(*p, st) {
+		if f, ok := s.cat.Field(r.Key); ok && f.Sink.Kind == "battery" && r.Value != nil {
+			batteryVals[r.Key] = r.Value
+		}
+	}
+	if len(batteryVals) > 0 {
+		if probs := s.applyBattery(ctx, name, batteryVals); len(probs) > 0 {
+			problems = append(problems, probs...)
+		} else {
+			applied = append(applied, "电池")
 		}
 	}
 
