@@ -22,18 +22,20 @@ type FieldSetting struct {
 }
 
 type Phone struct {
-	ID             string                  `json:"id"`
-	Name           string                  `json:"name"`
-	HostID         string                  `json:"hostId"`
-	Status         string                  `json:"status"` // running / stopped / starting / error（由运行状态覆盖）
-	AndroidVersion int                     `json:"androidVersion"`
-	ModelID        string                  `json:"modelId"`
-	ProxyID        string                  `json:"proxyId"`
-	GroupID        string                  `json:"groupId"`
-	Note           string                  `json:"note,omitempty"`
-	CreatedAt      time.Time               `json:"createdAt"`
-	LastActiveAt   *time.Time              `json:"lastActiveAt,omitempty"`
-	Fields         map[string]FieldSetting `json:"fields"`
+	ID             string `json:"id"`
+	Name           string `json:"name"`
+	HostID         string `json:"hostId"`
+	Status         string `json:"status"` // running / stopped / starting / error（由运行状态覆盖）
+	AndroidVersion int    `json:"androidVersion"`
+	ModelID        string `json:"modelId"`
+	ProxyID        string `json:"proxyId"` // 当前在用的代理
+	// ProxyIDs 这台挂的所有代理（可以随时切换，2026-11-15 用户要求「一台手机可以用多个 IP」）；空 = 只有 ProxyID 一个。
+	ProxyIDs     []string                `json:"proxyIds,omitempty"`
+	GroupID      string                  `json:"groupId"`
+	Note         string                  `json:"note,omitempty"`
+	CreatedAt    time.Time               `json:"createdAt"`
+	LastActiveAt *time.Time              `json:"lastActiveAt,omitempty"`
+	Fields       map[string]FieldSetting `json:"fields"`
 	// IP 在容器网段里的固定地址（代理分流按它来），创建时分配，永不改变。
 	IP string `json:"ip"`
 }

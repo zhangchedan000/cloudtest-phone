@@ -11,6 +11,7 @@ import { blocksStart } from '@/data/consistency'
 import { useWorkspace } from '@/data/store'
 import type { Phone } from '@/data/types'
 import { AdbDialog } from './AdbDialog'
+import { ProxyListEditor, ProxySwitcher } from './ProxySwitcher'
 import { LogsPanel } from './LogsPanel'
 import { ParamPanel } from './ParamPanel'
 
@@ -97,6 +98,7 @@ export function PhoneDrawer({ phone, mode = 'view', onClose, onEdit, bare = fals
   const body = (
       <div className="pp-detail">
         {mode === 'view' && <div className="pp-detail-screen">
+          <ProxySwitcher phone={live} />
           <PhoneScreen id={live.id} status={live.status} name={`${String(model?.values.marketName ?? '')} · Android ${live.androidVersion}`} size="large" seed={live.name.length + live.id.charCodeAt(5)} />
           <div className="pp-detail-controls">
             {controls.map((c) => <Tooltip key={c.tip} title={c.tip} placement="left"><Button disabled={!running} icon={c.icon} onClick={c.onClick} /></Tooltip>)}
@@ -124,7 +126,8 @@ export function PhoneDrawer({ phone, mode = 'view', onClose, onEdit, bare = fals
                 key: 'info', label: '信息', children: (
                   <Descriptions column={1} size="small" bordered items={[
                     { label: '分组', children: ws.groupOf(live)?.name ?? '未分组' },
-                    { label: '代理', children: <ProxyCell proxy={ws.proxyOf(live)} /> },
+                    { label: '当前代理', children: <ProxyCell proxy={ws.proxyOf(live)} /> },
+                    { label: '挂的代理（可多个）', children: <><ProxyListEditor phone={live} /><div className="pp-muted pp-small" style={{ marginTop: 4 }}>在手机窗口上方的下拉框里随时切换，开着的手机时区会马上跟着换</div></> },
                     { label: '出口 IP', children: ws.proxyOf(live)?.check?.exitIp ?? '—' },
                     { label: '所在机器', children: `${host?.name}（${host?.location}）` },
                     { label: '内部 IP（ADB 用）', children: live.ip ? <Space>{live.ip}<Button size="small" onClick={() => setAdbOpen(true)}>ADB 连接命令</Button></Space> : '—' },

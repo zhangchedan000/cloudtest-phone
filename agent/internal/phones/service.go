@@ -150,6 +150,7 @@ func (s *Service) Create(req CreateRequest) (store.Phone, error) {
 			AndroidVersion: req.AndroidVersion,
 			ModelID:        req.ModelID,
 			ProxyID:        req.ProxyID,
+			ProxyIDs:       nonEmpty(req.ProxyID),
 			GroupID:        req.GroupID,
 			Note:           req.Note,
 			CreatedAt:      s.now().UTC(),
@@ -598,9 +599,11 @@ type SaveRequest struct {
 	Fields  map[string]store.FieldSetting `json:"fields"`
 	ModelID *string                       `json:"modelId"`
 	ProxyID *string                       `json:"proxyId"`
-	GroupID *string                       `json:"groupId"`
-	Name    *string                       `json:"name"`
-	Note    *string                       `json:"note"`
+	// ProxyIDs 这台挂的代理列表（可以切换）；当前在用的不在列表里时改成列表第一个。
+	ProxyIDs *[]string `json:"proxyIds"`
+	GroupID  *string   `json:"groupId"`
+	Name     *string   `json:"name"`
+	Note     *string   `json:"note"`
 }
 
 func (s *Service) Save(id string, req SaveRequest) error {
@@ -620,6 +623,25 @@ func (s *Service) Save(id string, req SaveRequest) error {
 				return fmt.Errorf("%w：代理不存在", ErrInvalid)
 			}
 			p.ProxyID = *req.ProxyID
+			if p.ProxyID != "" && len(p.ProxyIDs) > 0 && !contains(p.ProxyIDs, p.ProxyID) {
+				p.ProxyIDs = append([]string{p.ProxyID}, p.ProxyIDs...)
+			}
+		}
+		if req.ProxyIDs != nil {
+			var list []string
+			for _, pid := range *req.ProxyIDs {
+				if pid == "" || contains(list, pid) {
+					continue
+				}
+				if pid != DirectDevProxyID && st.Proxy(pid) == nil {
+					return fmt.Errorf("%w：代理 %q 不存在", ErrInvalid, pid)
+				}
+				list = append(list, pid)
+			}
+			p.ProxyIDs = list
+			if len(list) > 0 && !contains(list, p.ProxyID) {
+				p.ProxyID = list[0]
+			}
 		}
 		if req.GroupID != nil {
 			p.GroupID = *req.GroupID
@@ -663,6 +685,14 @@ func (s *Service) Renew(id string) error {
 		}
 		return nil
 	})
+}
+
+// nonEmpty 一个元素的列表；空字符串返回 nil。
+func nonEmpty(v string) []string {
+	if v == "" {
+		return nil
+	}
+	return []string{v}
 }
 
 func contains(list []string, v string) bool {

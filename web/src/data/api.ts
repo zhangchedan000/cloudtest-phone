@@ -58,7 +58,9 @@ export const api = {
   host: () => call<HostInfo>('GET', '/host'),
   phones: () => call<PhoneView[]>('GET', '/phones'),
   createPhone: (req: { name: string; modelId: string; androidVersion: number; proxyId: string; groupId: string; note?: string }) => call<Phone>('POST', '/phones', req),
-  savePhone: (id: string, req: { fields?: Record<string, FieldSetting>; modelId?: string; proxyId?: string; groupId?: string; name?: string; note?: string }) => call('PUT', `/phones/${id}`, req),
+  savePhone: (id: string, req: { fields?: Record<string, FieldSetting>; modelId?: string; proxyId?: string; proxyIds?: string[]; groupId?: string; name?: string; note?: string }) => call('PUT', `/phones/${id}`, req),
+  /** 切换这台当前用的代理（开着的手机时区马上跟着换）。 */
+  switchProxy: (id: string, proxyId: string) => call<{ proxyId: string; timezone?: string; warning?: string }>('POST', `/phones/${id}/proxy`, { proxyId }),
   deletePhone: (id: string) => call('DELETE', `/phones/${id}`),
   start: (id: string) => call('POST', `/phones/${id}/start`),
   stop: (id: string) => call('POST', `/phones/${id}/stop`),

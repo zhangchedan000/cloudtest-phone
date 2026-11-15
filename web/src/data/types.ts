@@ -65,6 +65,8 @@ export interface Phone {
   fields: Record<string, FieldSetting>
   /** 管家程序返回：开机后设置（时区、语言）的结果。 */
   settings?: { state: 'pending' | 'applied' | 'failed'; applied?: string[]; error?: string }
+  /** 这台挂的所有代理（可以随时切换）；proxyId 是当前在用的那个。 */
+  proxyIds?: string[]
   /** 管家程序返回：容器网段里的 IP（服务器内部地址，ADB 经 SSH 隧道连它）。 */
   ip?: string
   /** 管家程序返回：网络模块开着时，这台设备为什么没有出口（没有就是正常）。 */

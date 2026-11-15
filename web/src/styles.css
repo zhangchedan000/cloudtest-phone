@@ -129,3 +129,4 @@ body { background: var(--fb-bg); color: var(--fb-text); font-family: Inter, ui-s
 .pp-window-body { flex: 1; min-height: 0; overflow: auto; padding: 12px; display: flex; justify-content: center; }
 .pp-window .pp-detail-screen { position: relative; }
 .pp-window .pp-phone-large .pp-phone-screen { height: calc(100vh - 190px); width: calc((100vh - 190px) * 0.47); max-width: calc(100vw - 90px); }
+.pp-proxy-switch { width: 300px; max-width: 100%; margin-bottom: 4px; }

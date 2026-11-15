@@ -61,6 +61,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/phones/{id}/screen", s.screen)
 	mux.HandleFunc("GET /api/phones/{id}/stream", s.stream)
 	mux.HandleFunc("POST /api/phones/{id}/input", s.input)
+	mux.HandleFunc("POST /api/phones/{id}/proxy", s.switchProxy)
 	mux.HandleFunc("GET /api/phones/{id}/clipboard", s.getClipboard)
 	mux.HandleFunc("POST /api/phones/{id}/clipboard", s.setClipboard)
 	mux.HandleFunc("POST /api/phones/{id}/apk", s.installAPK)
@@ -340,6 +341,23 @@ func (s *Server) input(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
+// switchProxy 切换这台手机当前用的代理：POST {"proxyId": "..."}（一台手机可以挂多个代理）。
+func (s *Server) switchProxy(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		ProxyID string `json:"proxyId"`
+	}
+	if err := decode(r, &req); err != nil {
+		fail(w, err)
+		return
+	}
+	res, err := s.svc.SwitchProxy(r.Context(), r.PathValue("id"), req.ProxyID)
+	if err != nil {
+		fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, res)
+}
+
 // getClipboard 读手机剪贴板（管理页「取回手机剪贴板」）。
 func (s *Server) getClipboard(w http.ResponseWriter, r *http.Request) {
 	text, err := s.svc.GetClipboard(r.Context(), r.PathValue("id"))
@@ -411,6 +429,16 @@ func (s *Server) deleteProxy(w http.ResponseWriter, r *http.Request) {
 			if p.ProxyID == id {
 				return fmt.Errorf("%w：设备 %s 还在用这个代理，先给它换一个", ErrInUse, p.Name)
 			}
+		}
+		// 只是挂在某台手机的备用代理列表里（没在用）：从列表里去掉就行
+		for i := range st.Phones {
+			var keep []string
+			for _, pid := range st.Phones[i].ProxyIDs {
+				if pid != id {
+					keep = append(keep, pid)
+				}
+			}
+			st.Phones[i].ProxyIDs = keep
 		}
 		for i := range st.Proxies {
 			if st.Proxies[i].ID == id {
