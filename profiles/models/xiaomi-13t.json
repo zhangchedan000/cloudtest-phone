@@ -2,7 +2,7 @@
   "id": "xiaomi-13t",
   "schema": 1,
   "verified": false,
-  "verifyNote": "2026-11-15 核对：官网 mi.com 确认 天玑 8200-Ultra、144Hz；分辨率 1220×2712 / 446 ppi 来自第三方规格站；出厂 Android 13（MIUI 14）；固件记录（代号 aristotle）全球版最高 Android 16（OS3.0.6.0.WMFMIXM）。型号 2306EPN60G 这次没找到独立来源；dpi 填的是 ppi，待真机核实",
+  "verifyNote": "2026-11-15 核对：官网 mi.com 确认 天玑 8200-Ultra、144Hz；分辨率 1220×2712 / 446 ppi 来自第三方规格站；出厂 Android 13（MIUI 14）；固件记录（代号 aristotle）全球版最高 Android 16（OS3.0.6.0.WMFMIXM）。型号 2306EPN60G 这次没找到独立来源；dpi 填的是 ppi，待真机核实。A15 全球版指纹：incremental OS2.0.212.0.VMFMIXM 来自 xmfirmwareupdater（aristotle 全球版 stable）；build id AP3A.240905.015.A2 为 HyperOS2/A15 标准值（与 plato/zircon/Pacman 一致）。待真机 dump 复核 build id+incremental 配对",
   "gpuFamily": "Mali-G610",
   "market": "GLOBAL",
   "values": {
@@ -51,5 +51,8 @@
     14,
     15,
     16
-  ]
+  ],
+  "fingerprints": {
+    "15": "Xiaomi/aristotle_global/aristotle:15/AP3A.240905.015.A2/OS2.0.212.0.VMFMIXM:user/release-keys"
+  }
 }

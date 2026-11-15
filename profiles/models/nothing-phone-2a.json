@@ -2,7 +2,7 @@
   "id": "nothing-phone-2a",
   "schema": 1,
   "verified": false,
-  "verifyNote": "2026-11-15 核对：天玑 7200 Pro、6.7 寸 AMOLED、120Hz（多家规格站一致，官网规格页没取到）；分辨率各家写 1080×2412 或 1084×2412，取 1080×2412；约 395 ppi（Kimovil）；出厂 Android 14（Nothing OS 2.5），2025-11 推送 Nothing OS 4.0（Android 16）。型号 A142 / 代号 Pacman 来自固件记录。dpi 是估计值，待真机核实；CPU 识别信息没有可靠来源，没填",
+  "verifyNote": "2026-11-15 核对：天玑 7200 Pro、6.7 寸 AMOLED、120Hz（多家规格站一致，官网规格页没取到）；分辨率各家写 1080×2412 或 1084×2412，取 1080×2412；约 395 ppi（Kimovil）；出厂 Android 14（Nothing OS 2.5），2025-11 推送 Nothing OS 4.0（Android 16）。型号 A142 / 代号 Pacman 来自固件记录。dpi 是估计值，待真机核实；CPU 识别信息没有可靠来源，没填。A15 指纹 Nothing/Pacman/Pacman:15/AP3A.240905.015.A2/2508151642：来源 github spike0en/nothing_archive（Pacman_V3.2-250815-1642 全球版，EEA/IND/JPN 同 build id）",
   "gpuFamily": "Mali-G610",
   "market": "GLOBAL",
   "values": {
@@ -28,5 +28,8 @@
     14,
     15,
     16
-  ]
+  ],
+  "fingerprints": {
+    "15": "Nothing/Pacman/Pacman:15/AP3A.240905.015.A2/2508151642:user/release-keys"
+  }
 }

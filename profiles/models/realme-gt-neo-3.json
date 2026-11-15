@@ -2,7 +2,7 @@
   "id": "realme-gt-neo-3",
   "schema": 1,
   "verified": false,
-  "verifyNote": "2026-11-15 核对：GSMArena、realme 官网规格页确认 天玑 8100（MT6895）、4×A78 2.85GHz + 4×A55 2.0GHz、Mali-G610 MC6、6.7\" AMOLED 1080×2412、120Hz、8/12+256；出厂 Android 12（realme UI 3.0），可升级到 14。代号 ossi：来自实际设备源码树 v4lkyr/android_device_oplus_ossi（由 RMX3560 stock ROM 生成，描述为 realme GT Neo 3）。CPU 核心/midr/频率与同款天玑 8100 的 POCO X4 GT(xaga) 一致，直接复用已核实值。dpi（安卓显示密度）官网没有、按常见值填，待真机核实；build 指纹等身份字段留空，待真机 adb 读取。",
+  "verifyNote": "2026-11-15 核对：GSMArena、realme 官网规格页确认 天玑 8100（MT6895）、4×A78 2.85GHz + 4×A55 2.0GHz、Mali-G610 MC6、6.7\" AMOLED 1080×2412、120Hz、8/12+256；出厂 Android 12（realme UI 3.0），可升级到 14。代号 ossi：来自实际设备源码树 v4lkyr/android_device_oplus_ossi（由 RMX3560 stock ROM 生成，描述为 realme GT Neo 3）。CPU 核心/midr/频率与同款天玑 8100 的 POCO X4 GT(xaga) 一致，直接复用已核实值。dpi（安卓显示密度）官网没有、按常见值填，待真机核实；build 指纹等身份字段留空，待真机 adb 读取。。⚠️ 2026-11-15 复核发现代号 ossi 存疑：另有来源指 ossi=realme 12 4G(RMX3871)，且现有 stock dump 是 oplus/ossi/ossi（品牌 oplus 非 realme），GT Neo 3 官方系统最高 Android 13。指纹和代号均待真机 dump 确认后再填——暂不填，以免写成别的机型的指纹（宁缺毋错）",
   "gpuFamily": "Mali-G610",
   "market": "GLOBAL",
   "values": {
