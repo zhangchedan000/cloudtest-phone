@@ -1,5 +1,5 @@
 import {
-  AppstoreAddOutlined, ArrowLeftOutlined, BorderOutlined, CameraOutlined, CodeOutlined, CopyOutlined, HomeOutlined,
+  AppstoreAddOutlined, ArrowLeftOutlined, BorderOutlined, CameraOutlined, CodeOutlined, CopyOutlined, EditOutlined, HomeOutlined, MoreOutlined,
   PoweroffOutlined, RedoOutlined, RotateRightOutlined, SoundOutlined, UploadOutlined
 } from '@ant-design/icons'
 import { App, Button, Descriptions, Drawer, Dropdown, Input, Modal, Space, Tabs, Tooltip } from 'antd'
@@ -14,8 +14,12 @@ import { AdbDialog } from './AdbDialog'
 import { LogsPanel } from './LogsPanel'
 import { ParamPanel } from './ParamPanel'
 
-/** 单台设备：左边大屏操作，右边参数、检查、信息。 */
-export function PhoneDrawer({ phone, onClose }: { phone?: Phone; onClose: () => void }) {
+/**
+ * 单台设备的窗口，两种样子（2026-11-15 用户要求分开）：
+ * - view（点卡片画面打开）：只有手机大屏、操作按钮、发送文字，右上角「编辑」进参数；
+ * - edit（卡片上的「编辑」）：参数、日志、信息。
+ */
+export function PhoneDrawer({ phone, mode = 'view', onClose, onEdit, bare = false }: { phone?: Phone; mode?: 'view' | 'edit'; onClose: () => void; onEdit?: () => void; bare?: boolean }) {
   const ws = useWorkspace()
   const { message } = App.useApp()
   // hooks 要在 return 之前
@@ -61,24 +65,22 @@ export function PhoneDrawer({ phone, onClose }: { phone?: Phone; onClose: () => 
     { icon: <CodeOutlined />, tip: 'ADB 连接命令（复制到自己电脑上用）', onClick: () => (liveMode ? setAdbOpen(true) : message.info('预览模式：接上管家程序后可用')) }
   ]
 
-  return (
-    <Drawer
-      open
-      size={1180}
-      onClose={onClose}
-      destroyOnHidden
-      title={<Space size={12}><b>{live.name}</b><StatusDot status={live.status} /><span className="pp-muted">{String(model?.values.marketName ?? '')} · Android {live.androidVersion}</span></Space>}
-      extra={
-        <Space>
+  const title = <Space size={10}>{mode === 'edit' && <span className="pp-muted">编辑</span>}<b>{live.name}</b><StatusDot status={live.status} />{mode === 'edit' && <span className="pp-muted">{String(model?.values.marketName ?? '')} · Android {live.androidVersion}</span>}</Space>
+  const extra = (<Space size={6}>
+          {mode === 'view' && onEdit && <Button icon={<EditOutlined />} onClick={onEdit}>编辑</Button>}
+          {running || live.status === 'starting'
+            ? <Button danger icon={<PoweroffOutlined />} onClick={() => ws.setStatus([live.id], 'stopped')}>关机</Button>
+            : <Tooltip title={blocked ? '有错误没解决，禁止开机（点「编辑」看「检查」）' : ''}><Button type="primary" disabled={blocked} icon={<PoweroffOutlined />} onClick={() => ws.setStatus([live.id], 'running')}>开机</Button></Tooltip>}
           <Dropdown
             disabled={!liveMode}
             menu={{
               items: [
+                ...(running || live.status === 'starting' ? [{ key: 'restart', label: '重启', icon: <RedoOutlined /> }, { type: 'divider' as const }] : []),
                 { key: 'reset', label: '一键重置（清空数据，恢复出厂）' },
-                { type: 'divider' as const },
                 ...(host?.androidVersions ?? []).filter((v) => v !== live.androidVersion).map((v) => ({ key: `flash-${v}`, label: `刷机：换成 Android ${v}（清空数据）` }))
               ],
               onClick: ({ key }) => {
+                if (key === 'restart') { void ws.setStatus([live.id], 'stopped').then(() => ws.setStatus([live.id], 'running')); return }
                 const version = key.startsWith('flash-') ? Number(key.slice(6)) : undefined
                 Modal.confirm({
                   title: version ? `把 ${live.name} 刷成 Android ${version}？` : `重置 ${live.name}？`,
@@ -89,24 +91,13 @@ export function PhoneDrawer({ phone, onClose }: { phone?: Phone; onClose: () => 
               }
             }}
           >
-            <Button>重置 / 刷机</Button>
+            <Button icon={<MoreOutlined />}>更多</Button>
           </Dropdown>
-          {running || live.status === 'starting' ? (
-            <>
-              <Button icon={<RedoOutlined />} onClick={() => void ws.setStatus([live.id], 'stopped').then(() => ws.setStatus([live.id], 'running'))}>重启</Button>
-              <Button danger icon={<PoweroffOutlined />} onClick={() => ws.setStatus([live.id], 'stopped')}>关机</Button>
-            </>
-          ) : (
-            <Tooltip title={blocked ? '有错误没解决，禁止开机（见「检查」）' : ''}>
-              <Button type="primary" disabled={blocked} icon={<PoweroffOutlined />} onClick={() => ws.setStatus([live.id], 'running')}>开机</Button>
-            </Tooltip>
-          )}
-        </Space>
-      }
-    >
+        </Space>)
+  const body = (
       <div className="pp-detail">
-        <div className="pp-detail-screen">
-          <PhoneScreen id={live.id} status={live.status} name={live.name} size="large" seed={live.name.length + live.id.charCodeAt(5)} />
+        {mode === 'view' && <div className="pp-detail-screen">
+          <PhoneScreen id={live.id} status={live.status} name={`${String(model?.values.marketName ?? '')} · Android ${live.androidVersion}`} size="large" seed={live.name.length + live.id.charCodeAt(5)} />
           <div className="pp-detail-controls">
             {controls.map((c) => <Tooltip key={c.tip} title={c.tip} placement="left"><Button disabled={!running} icon={c.icon} onClick={c.onClick} /></Tooltip>)}
           </div>
@@ -122,9 +113,9 @@ export function PhoneDrawer({ phone, onClose }: { phone?: Phone; onClose: () => 
           />
           <p className="pp-muted pp-small pp-center">在画面上点一下 = 点击，按住拖动 = 滑动</p>
           <ClipboardDialog open={clipOpen} phoneId={live.id} onClose={() => setClipOpen(false)} />
-          <AdbDialog open={adbOpen} ip={live.ip} name={live.name} onClose={() => setAdbOpen(false)} />
-        </div>
-        <div className="pp-detail-side">
+        </div>}
+        <AdbDialog open={adbOpen} ip={live.ip} name={live.name} onClose={() => setAdbOpen(false)} />
+        {mode === 'edit' && <div className="pp-detail-side">
           <Tabs
             items={[
               { key: 'params', label: '参数', children: <ParamPanel phone={live} onSaved={(restart) => message.success(restart && running ? '已保存，正在重启这台安卓' : '已保存')} /> },
@@ -146,8 +137,19 @@ export function PhoneDrawer({ phone, onClose }: { phone?: Phone; onClose: () => 
               }
             ]}
           />
-        </div>
+        </div>}
       </div>
+  )
+  // 独立弹出窗口（每台手机一个，可以同时开好几个）：没有抽屉外框，铺满窗口
+  if (bare) return (
+    <div className="pp-window">
+      <div className="pp-window-head">{title}{extra}</div>
+      <div className="pp-window-body">{body}</div>
+    </div>
+  )
+  return (
+    <Drawer open size={mode === 'view' ? 600 : 860} onClose={onClose} destroyOnHidden title={title} extra={extra}>
+      {body}
     </Drawer>
   )
 }

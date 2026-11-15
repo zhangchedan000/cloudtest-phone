@@ -7,6 +7,8 @@ import { ModelsPage } from '@/pages/other/ModelsPage'
 import { ProxiesPage } from '@/pages/other/ProxiesPage'
 import { PhonesPage } from '@/pages/phones/PhonesPage'
 import { useWorkspace } from '@/data/store'
+import { PhoneDrawer } from '@/pages/phones/PhoneDrawer'
+import { windowPhoneId } from '@/pages/phones/phoneWindow'
 
 /** 页面登记表：侧边栏和标题都从这里读（同 Prism 的 registry）。 */
 const PAGES: { key: string; label: string; icon: ReactNode; render: () => ReactNode }[] = [
@@ -16,7 +18,24 @@ const PAGES: { key: string; label: string; icon: ReactNode; render: () => ReactN
   { key: 'hosts', label: '机器', icon: <CloudServerOutlined />, render: () => <HostsPage /> }
 ]
 
+/** 单台手机的弹出窗口：只有这台的画面和操作按钮（没有侧边栏）。 */
+function PhoneWindow({ id }: { id: string }) {
+  const ws = useWorkspace()
+  const phone = ws.phones.find((p) => p.id === id)
+  useEffect(() => { if (phone) document.title = `${phone.name} · 云手机` }, [phone?.name])
+  if (ws.mode === 'loading') return <Spin className="pp-login" />
+  if (ws.mode === 'login') return <div className="pp-login"><b>请先在主页面登录</b></div>
+  if (!phone) return <div className="pp-login"><b>找不到这台手机（可能已经删除）</b></div>
+  return <PhoneDrawer phone={phone} bare onClose={() => window.close()} />
+}
+
 export function App() {
+  const popupId = windowPhoneId()
+  if (popupId) return <PhoneWindow id={popupId} />
+  return <MainApp />
+}
+
+function MainApp() {
   const [page, setPage] = useState(() => (location.hash.slice(1) || 'phones'))
   const theme = useTheme()
   const ws = useWorkspace()

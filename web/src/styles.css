@@ -56,6 +56,14 @@ body { background: var(--fb-bg); color: var(--fb-text); font-family: Inter, ui-s
 .pp-phone-dock { position: absolute; bottom: 8px; left: 50%; transform: translateX(-50%); width: 40%; height: 4px; border-radius: 4px; background: var(--fb-on-accent-muted); }
 .pp-phone-off { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; color: var(--fb-sidebar-muted); font-size: 13px; }
 .pp-phone-off .anticon { font-size: 26px; }
+.pp-phone-start { cursor: pointer; transition: color .15s; }
+.pp-phone-start-btn { width: 56px; height: 56px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: var(--fb-accent); color: #fff; box-shadow: 0 4px 14px rgba(0,0,0,.25); transition: transform .15s; }
+.pp-phone-start-btn .anticon { font-size: 26px; }
+.pp-card-screen:hover .pp-phone-start-btn { transform: scale(1.08); }
+.pp-card-screen:hover .pp-phone-start { color: #fff; }
+.pp-card-actions .ant-btn { flex: 1; }
+.pp-phone-start-blocked .pp-phone-start-btn { background: var(--fb-sidebar-muted); box-shadow: none; }
+.pp-card-screen:hover .pp-phone-start-blocked .pp-phone-start-btn { transform: none; }
 .pp-phone-error { color: var(--fb-danger); }
 .pp-phone-caption { font-size: 13px; color: var(--fb-text-muted); }
 
@@ -114,3 +122,10 @@ body { background: var(--fb-bg); color: var(--fb-text); font-family: Inter, ui-s
 .pp-live-quality button { border: 0; background: transparent; color: #fff; font-size: 11px; padding: 1px 6px; border-radius: 4px; cursor: pointer; }
 .pp-live-quality button.on { background: rgba(255,255,255,.28); }
 .pp-live-note { position: absolute; left: 6px; right: 6px; bottom: 6px; padding: 2px 6px; border-radius: 6px; background: rgba(0,0,0,.6); color: #fff; font-size: 11px; text-align: center; }
+
+/* 单台手机的弹出窗口（#window=<id>） */
+.pp-window { height: 100vh; display: flex; flex-direction: column; background: var(--fb-bg); }
+.pp-window-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--fb-line); background: var(--fb-surface); flex-wrap: wrap; }
+.pp-window-body { flex: 1; min-height: 0; overflow: auto; padding: 12px; display: flex; justify-content: center; }
+.pp-window .pp-detail-screen { position: relative; }
+.pp-window .pp-phone-large .pp-phone-screen { height: calc(100vh - 190px); width: calc((100vh - 190px) * 0.47); max-width: calc(100vw - 90px); }

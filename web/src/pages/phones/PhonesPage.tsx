@@ -1,4 +1,4 @@
-import { AppstoreAddOutlined, AppstoreOutlined, DeleteOutlined, DownOutlined, PlusOutlined, PoweroffOutlined, ReloadOutlined, SearchOutlined, UnorderedListOutlined, UploadOutlined } from '@ant-design/icons'
+import { AppstoreAddOutlined, AppstoreOutlined, DeleteOutlined, DownOutlined, EditOutlined, PlusOutlined, PoweroffOutlined, ReloadOutlined, SearchOutlined, UnorderedListOutlined, UploadOutlined } from '@ant-design/icons'
 import { Alert, App, Button, Card, Checkbox, Dropdown, Empty, Input, Modal, Segmented, Select, Space, Table, Tag, Tooltip } from 'antd'
 import { useMemo, useRef, useState } from 'react'
 import { batchUpload, type BatchResult } from '@/data/api'
@@ -10,6 +10,7 @@ import type { Phone } from '@/data/types'
 import { GroupsModal } from './GroupsModal'
 import { NewPhoneModal } from './NewPhoneModal'
 import { PhoneDrawer } from './PhoneDrawer'
+import { openPhoneWindow } from './phoneWindow'
 
 export function PhonesPage() {
   const ws = useWorkspace()
@@ -21,6 +22,23 @@ export function PhonesPage() {
   const [selected, setSelected] = useState<string[]>([])
   const [managingGroups, setManagingGroups] = useState(false)
   const [open, setOpen] = useState<Phone>()
+  const [openMode, setOpenMode] = useState<'view' | 'edit'>('view')
+  // 打开手机：单独弹一个窗口（可以同时开好几台）；浏览器拦了弹窗就在页面里打开
+  const view_ = (p: Phone) => {
+    if (ws.mode === 'live' && openPhoneWindow(p)) return
+    if (ws.mode === 'live') message.warning('浏览器拦住了弹出窗口：点地址栏右边的图标，选「始终允许」，之后每台手机都会单独弹出窗口')
+    setOpenMode('view'); setOpen(p)
+  }
+  const edit = (p: Phone) => { setOpenMode('edit'); setOpen(p) }
+  // 点卡片画面：关机的直接开机，开着的放大（打开大屏）
+  const clickScreen = (p: Phone) => {
+    if (p.status === 'stopped' || p.status === 'error') {
+      if (blocksStart(ws.issuesOf(p))) { message.warning('这台有错误没解决，禁止开机：点「编辑」看「检查」'); return }
+      start([p.id])
+      // 开机时就把窗口弹出来：先显示「开机中…」，开好自动出画面
+      if (ws.mode === 'live') openPhoneWindow(p)
+    } else view_(p)
+  }
   const [creating, setCreating] = useState(false)
   // 批量装 App / 传文件：文件只上传一次，服务器分发到选中的每台
   const apkInput = useRef<HTMLInputElement>(null)
@@ -127,9 +145,11 @@ export function PhonesPage() {
                   <b className="pp-card-name">{p.name}</b>
                   <StatusDot status={p.status} />
                 </div>
-                <div className="pp-card-screen" onClick={() => setOpen(p)} role="button" tabIndex={0}>
-                  <PhoneScreen id={p.id} status={p.status} name={p.name} seed={p.name.length + p.id.charCodeAt(5)} />
+                <Tooltip title={p.status === 'running' ? '点击放大' : p.status === 'stopped' || p.status === 'error' ? '点击开机' : ''}>
+                <div className="pp-card-screen" onClick={() => clickScreen(p)} role="button" tabIndex={0}>
+                  <PhoneScreen id={p.id} status={p.status} name={p.name} seed={p.name.length + p.id.charCodeAt(5)} startHint startBlocked={blocksStart(issues)} />
                 </div>
+                </Tooltip>
                 <div className="pp-card-meta">
                   <div>{String(ws.modelOf(p)?.values.marketName ?? '未选机型')} · A{p.androidVersion}</div>
                   <div><ProxyCell proxy={ws.proxyOf(p)} /></div>
@@ -138,10 +158,8 @@ export function PhonesPage() {
                   {p.status === 'running' && p.net && !p.net.ok && <Tooltip title={p.net.error}><Tag color="error" className="pp-small">上不了网</Tag></Tooltip>}
                 </div>
                 <div className="pp-card-actions">
-                  {p.status === 'running' || p.status === 'starting' // 开机中也只能关机，不能再点一次开机
-                    ? <Button size="small" onClick={() => ws.setStatus([p.id], 'stopped')}>关机</Button>
-                    : <Tooltip title={blocksStart(issues) ? '有错误，禁止开机' : ''}><Button size="small" type="primary" disabled={blocksStart(issues)} onClick={() => start([p.id])}>开机</Button></Tooltip>}
-                  <Button size="small" onClick={() => setOpen(p)}>打开</Button>
+                  {(p.status === 'running' || p.status === 'starting') && <Button size="small" onClick={() => ws.setStatus([p.id], 'stopped')}>关机</Button>}
+                  <Button size="small" icon={<EditOutlined />} onClick={() => edit(p)}>编辑</Button>
                 </div>
               </Card>
             )
@@ -153,9 +171,9 @@ export function PhonesPage() {
           dataSource={list}
           pagination={false}
           rowSelection={{ selectedRowKeys: selected, onChange: (keys) => setSelected(keys as string[]) }}
-          onRow={(p) => ({ onDoubleClick: () => setOpen(p) })}
+          onRow={(p) => ({ onDoubleClick: () => view_(p) })}
           columns={[
-            { title: '名称', dataIndex: 'name', render: (name: string, p) => <a onClick={() => setOpen(p)}>{name}</a> },
+            { title: '名称', dataIndex: 'name', render: (name: string, p) => <a onClick={() => view_(p)}>{name}</a> },
             { title: '状态', render: (_, p) => <StatusDot status={p.status} /> },
             { title: '机型', render: (_, p) => String(ws.modelOf(p)?.values.marketName ?? '—') },
             { title: '安卓', render: (_, p) => `Android ${p.androidVersion}` },
@@ -163,7 +181,8 @@ export function PhonesPage() {
             { title: '分组', render: (_, p) => ws.groupOf(p)?.name ?? '未分组' },
             { title: '占用', render: (_, p) => (p.usage ? usageText(p.usage) : '—') },
             { title: '机器', render: (_, p) => ws.hostOf(p)?.name },
-            { title: '检查', render: (_, p) => <IssueBadge issues={ws.issuesOf(p)} /> }
+            { title: '检查', render: (_, p) => <IssueBadge issues={ws.issuesOf(p)} /> },
+            { title: '', render: (_, p) => <Space size={4}>{p.status === 'running' || p.status === 'starting' ? <Button size="small" onClick={() => ws.setStatus([p.id], 'stopped')}>关机</Button> : <Button size="small" type="primary" disabled={blocksStart(ws.issuesOf(p))} onClick={() => start([p.id])}>开机</Button>}<Button size="small" onClick={() => edit(p)}>编辑</Button></Space> }
           ]}
         />
       )}
@@ -175,7 +194,7 @@ export function PhonesPage() {
           { title: '说明', render: (_, r: BatchResult) => r.error ?? r.path ?? '' }
         ]} />
       </Modal>
-      <PhoneDrawer phone={open} onClose={() => setOpen(undefined)} />
+      <PhoneDrawer phone={open} mode={openMode} onEdit={() => setOpenMode('edit')} onClose={() => setOpen(undefined)} />
       <GroupsModal open={managingGroups} onClose={() => setManagingGroups(false)} />
       <NewPhoneModal open={creating} onClose={() => setCreating(false)} />
     </div>
