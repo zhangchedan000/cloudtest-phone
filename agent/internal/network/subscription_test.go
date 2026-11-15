@@ -45,6 +45,25 @@ func TestParseClashSubscription(t *testing.T) {
 	}
 }
 
+// 同一秒导入两次（想用的 ID 一样）不能撞 ID：撞了 mihomo 里会有两个同名出口，检测和分配都会落到别的节点上。
+func TestImportNodesUniqueIDs(t *testing.T) {
+	st := store.State{Groups: []store.Group{{ID: "p-1-000-2"}}}
+	same := func(i int) string { return fmt.Sprintf("p-1-%03d", i) }
+	a := ImportNodes(&st, []Node{{Name: "a", Protocol: "ss", Address: "ss://a"}}, "", same)
+	b := ImportNodes(&st, []Node{{Name: "b", Protocol: "ss", Address: "ss://b"}}, "", same)
+	c := ImportNodes(&st, []Node{{Name: "c", Protocol: "ss", Address: "ss://c"}}, "", same)
+	if a[0].ID != "p-1-000" || b[0].ID != "p-1-000-3" || c[0].ID != "p-1-000-4" {
+		t.Fatalf("ID 不对：%s %s %s", a[0].ID, b[0].ID, c[0].ID)
+	}
+	seen := map[string]bool{}
+	for _, p := range st.Proxies {
+		if seen[p.ID] {
+			t.Fatalf("ID 重复：%s", p.ID)
+		}
+		seen[p.ID] = true
+	}
+}
+
 func TestParseLinkListSubscription(t *testing.T) {
 	list := "trojan://pw@tj.example.com:443#%E7%BE%8E%E5%9B%BD%20TJ\nss://" + base64.StdEncoding.EncodeToString([]byte("aes-128-gcm:x@1.1.1.1:1")) + "#SS\nfoo://bar\n"
 	nodes, skipped, err := ParseSubscription(base64.StdEncoding.EncodeToString([]byte(list)))

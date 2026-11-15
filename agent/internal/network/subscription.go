@@ -151,6 +151,7 @@ func FetchSubscription(ctx context.Context, url string) (string, error) {
 }
 
 // ImportNodes 把节点加进代理库：同样地址的跳过；返回新加的代理。
+// newID 给出想用的 ID，已经被占用时自动加后缀（同一秒导入两次不会撞 ID）。
 func ImportNodes(st *store.State, nodes []Node, note string, newID func(int) string) []store.Proxy {
 	existing := map[string]bool{}
 	for _, p := range st.Proxies {
@@ -162,7 +163,7 @@ func ImportNodes(st *store.State, nodes []Node, note string, newID func(int) str
 			continue
 		}
 		existing[n.Address] = true
-		px := store.Proxy{ID: newID(i), Name: n.Name, Protocol: n.Protocol, Address: n.Address, Note: note}
+		px := store.Proxy{ID: st.FreeID(newID(i)), Name: n.Name, Protocol: n.Protocol, Address: n.Address, Note: note}
 		st.Proxies = append(st.Proxies, px)
 		added = append(added, px)
 	}

@@ -99,8 +99,9 @@ done < <(mine)
 # ---- 5. 连不上的节点 ----
 r=$(api POST /proxies/import "$(body text "ss://$SS@127.0.0.1:18199#测试-连不上" "$NOTE")")
 dead=$(mine | awk '$2=="测试-连不上"{print $1}')
-r=$(api POST "/proxies/$dead/check")
-[ "$(echo "$r" | jget 'd.get("ok")')" = False ] && ok "连不上的节点检测失败：$(echo "$r" | jget 'd.get("error","")' | head -c 120)" || bad "连不上的节点：$r"
+r2=$(api POST "/proxies/$dead/check")
+[ "$(echo "$r2" | jget 'd.get("ok")')" = False ] && ok "连不上的节点检测失败：$(echo "$r2" | jget 'd.get("error","")' | head -c 120)" \
+  || bad "连不上的节点（id=$dead，导入结果 $r）：$r2；配置里：$(grep -c 18199 /opt/prism-phone/data/mihomo/config.yaml) 处"
 
 # ---- 6. 编辑 ----
 tj=$(mine | awk '$2=="测试-trojan"{print $1}')

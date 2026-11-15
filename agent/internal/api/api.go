@@ -247,9 +247,12 @@ func (s *Server) createProxy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	protocolFromAddress(&px)
-	px.ID = "p-" + time.Now().Format("060102150405.000")
 	px.Check = nil
-	if err := s.store.Update(func(st *store.State) error { st.Proxies = append(st.Proxies, px); return nil }); err != nil {
+	if err := s.store.Update(func(st *store.State) error {
+		px.ID = st.FreeID("p-" + time.Now().Format("060102150405.000"))
+		st.Proxies = append(st.Proxies, px)
+		return nil
+	}); err != nil {
 		fail(w, err)
 		return
 	}
@@ -270,8 +273,11 @@ func (s *Server) createGroup(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "分组名不能为空")
 		return
 	}
-	g.ID = "g-" + time.Now().Format("060102150405.000")
-	if err := s.store.Update(func(st *store.State) error { st.Groups = append(st.Groups, g); return nil }); err != nil {
+	if err := s.store.Update(func(st *store.State) error {
+		g.ID = st.FreeID("g-" + time.Now().Format("060102150405.000"))
+		st.Groups = append(st.Groups, g)
+		return nil
+	}); err != nil {
 		fail(w, err)
 		return
 	}

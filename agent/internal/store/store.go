@@ -167,3 +167,24 @@ func (st *State) Proxy(id string) *Proxy {
 	}
 	return nil
 }
+
+// FreeID 返回一个还没被代理、分组、设备用过的 ID：base 没人用就用 base，否则 base-2、base-3……
+// 必须在 Update 里调用（拿着锁），否则两个请求可能拿到同一个。
+// 以前 ID 只用时间戳，同一秒（或同一毫秒）建两次会重复，mihomo 里就有两个同名出口（2026-11-15 实机测出）。
+func (st *State) FreeID(base string) string {
+	used := make(map[string]bool, len(st.Proxies)+len(st.Groups)+len(st.Phones))
+	for _, p := range st.Proxies {
+		used[p.ID] = true
+	}
+	for _, g := range st.Groups {
+		used[g.ID] = true
+	}
+	for _, p := range st.Phones {
+		used[p.ID] = true
+	}
+	id := base
+	for n := 2; used[id]; n++ {
+		id = fmt.Sprintf("%s-%d", base, n)
+	}
+	return id
+}
