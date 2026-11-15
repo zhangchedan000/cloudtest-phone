@@ -217,3 +217,41 @@ func TestDeviceFidelityProps(t *testing.T) {
 		t.Fatalf("不该用启动参数设 ro.hardware：\n%s", args)
 	}
 }
+
+func TestFingerprintPropsConsistent(t *testing.T) {
+	svc, _, _ := newTestService(t, true, "software")
+	p, _ := svc.Create(CreateRequest{Name: "A", ModelID: "poco-x4-gt", AndroidVersion: 14, ProxyID: DirectDevProxyID})
+	args := svc.BootArgs(*mustPhone(t, svc, p.ID), svc.store.Snapshot())
+	joined := strings.Join(args, " ")
+	wantFP := "POCO/xaga/xaga:14/UD2A.240505.001.W1/eng.frank.20240527.152423:user/release-keys"
+	for _, part := range []string{"ro.build.fingerprint", "ro.system.build.fingerprint", "ro.vendor.build.fingerprint", "ro.product.build.fingerprint", "ro.odm.build.fingerprint", "ro.bootimage.build.fingerprint"} {
+		if !strings.Contains(joined, part+"="+wantFP) {
+			t.Fatalf("%s 没覆盖成一致指纹：\n%s", part, joined)
+		}
+	}
+	for _, want := range []string{"ro.build.flavor=xaga-user", "ro.build.host=android-build", "ro.build.user=android"} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("缺少 %q", want)
+		}
+	}
+	// build 属性里不能有 redroid / userdebug / test-keys / frank / build1 痕迹
+	// （androidboot.redroid_* 是 redroid 启动配置、不是 getprop 属性，/proc/cmdline 也不暴露，排除）
+	var buildArgs []string
+	for _, a := range args {
+		if strings.HasPrefix(a, "ro.build.") || strings.Contains(a, ".build.fingerprint") {
+			buildArgs = append(buildArgs, a)
+		}
+	}
+	bj := strings.Join(buildArgs, " ")
+	for _, bad := range []string{"redroid", "userdebug", "test-keys", "build1"} {
+		if strings.Contains(bj, bad) {
+			t.Fatalf("build 属性里还有痕迹 %q：\n%s", bad, bj)
+		}
+	}
+	// 每个参数都不能含空格（会被截断）
+	for _, a := range args {
+		if strings.Contains(a, " ") {
+			t.Fatalf("启动参数含空格会被截断：%q", a)
+		}
+	}
+}

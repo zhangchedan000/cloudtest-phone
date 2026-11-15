@@ -349,7 +349,54 @@ func (s *Service) BootArgs(p store.Phone, st store.State) []string {
 	sort.Strings(props)
 	args = append(args, props...)
 	args = append(args, disguiseProps()...)
-	return append(args, deviceFidelityProps(byKey)...)
+	args = append(args, deviceFidelityProps(byKey)...)
+	return append(args, fingerprintProps(byKey, p.AndroidVersion)...)
+}
+
+// redroidBuildID 各安卓版本的 Redroid 镜像自带的 buildId / incremental（真实值，
+// 从镜像 /system/build.prop 读出来：docker create <镜像> + docker cp /system/build.prop）。
+// 换镜像版本要重新读、更新这里；host/check-tells.sh 会暴露不一致。
+// incremental 是 eng.* 的工程编译痕迹，没有真机真实值之前先沿用（不编造）。
+var redroidBuildID = map[int]struct{ buildID, incremental string }{
+	14: {"UD2A.240505.001.W1", "eng.frank.20240527.152423"},
+	15: {"BP1A.250505.005.D1", "eng.root"},
+}
+
+// fingerprintProps 把各分区指纹和相关 build 字段统一覆盖成一致的值，
+// 擦掉 Redroid 默认里的 redroid / redroid_arm64_only / userdebug / test-keys。
+// 指纹格式：brand/product/device:release/id/incremental:type/tags。
+// product 用机型代号（和 ro.product.name 一致），type/tags 用正式版（user/release-keys）。
+// buildId/incremental 用镜像真实值——incremental 仍是 eng.*，要真机真实 build 号才能彻底换掉。
+func fingerprintProps(byKey map[string]any, androidVer int) []string {
+	bi, ok := redroidBuildID[androidVer]
+	if !ok {
+		return nil // 未知镜像版本：不覆盖，免得拼出错的指纹
+	}
+	brand, device := str(byKey["brand"]), str(byKey["device"])
+	if brand == "" || device == "" {
+		return nil
+	}
+	rel := fmt.Sprintf("%d", androidVer)
+	fp := fmt.Sprintf("%s/%s/%s:%s/%s/%s:user/release-keys", brand, device, device, rel, bi.buildID, bi.incremental)
+	var out []string
+	for _, p := range []string{
+		"ro.build.fingerprint",
+		"ro.system.build.fingerprint", "ro.vendor.build.fingerprint",
+		"ro.product.build.fingerprint", "ro.odm.build.fingerprint",
+		"ro.bootimage.build.fingerprint",
+	} {
+		out = append(out, p+"="+fp)
+	}
+	// 相关 build 字段：去掉 redroid_arm64_only / userdebug / test-keys / frank / build1。
+	// 注意：不设带空格的值（启动参数遇空格会截断，截断比不改更糟）——
+	// ro.build.description 带空格，没法这样设，留作残留（它不是常被读的字段）。
+	out = append(out,
+		"ro.build.flavor="+device+"-user",
+		"ro.build.display.id="+bi.buildID,
+		"ro.build.host=android-build",
+		"ro.build.user=android",
+	)
+	return out
 }
 
 // deviceFidelityProps 把默认值还露着 Redroid 痕迹、但能填对的属性补上。
