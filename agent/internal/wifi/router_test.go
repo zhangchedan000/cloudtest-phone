@@ -125,3 +125,39 @@ func TestSetupWithSystemd(t *testing.T) {
 		t.Error("路由器不在时不该补")
 	}
 }
+
+// 快速关机再开机：旧网卡还没删掉时新网卡要用不同的名字，Teardown 要按前缀清掉漏下的（踩坑 #57-11）。
+func TestRadioNamesUniqueAndLeftoversCleaned(t *testing.T) {
+	useSystemd = func() bool { return false }
+	sys := t.TempDir()
+	SysIeee80211 = sys
+	defer func() { SysIeee80211 = "/sys/class/ieee80211" }()
+	p, _ := PlanFor("378ad10f54b8", "64:a2:00:3c:5e:71", t.TempDir())
+	// 宿主机上有这台手机上次漏下的网卡，还有别的手机的
+	for _, n := range []string{p.StaPhy + "ab12", p.APPhy + "ab12", "pps999999999990000"} {
+		_ = os.MkdirAll(filepath.Join(sys, n), 0o755)
+	}
+	var deleted []string
+	DelRadioFunc = func(ns, name string) error { deleted = append(deleted, name); return nil }
+	var created []string
+	newRadio := func(ns, name string, mac [6]byte) (int, error) { created = append(created, name); return 1, nil }
+	if err := Setup(context.Background(), &fakeRun{}, newRadio, p, 4242, "10.88.0.1", "10.88.0.1:1053"); err != nil {
+		t.Fatal(err)
+	}
+	d := strings.Join(deleted, " ")
+	if !strings.Contains(d, p.StaPhy+"ab12") || !strings.Contains(d, p.APPhy+"ab12") || strings.Contains(d, "pps99999") {
+		t.Fatalf("应只清掉这台手机漏下的网卡：%v", deleted)
+	}
+	if len(created) != 2 || created[0] == p.StaPhy || !strings.HasPrefix(created[0], p.StaPhy) {
+		t.Fatalf("新网卡名要带随机后缀：%v", created)
+	}
+	b, _ := os.ReadFile(filepath.Join(p.Dir, "radios"))
+	if strings.TrimSpace(string(b)) != created[0]+" "+created[1] {
+		t.Fatalf("radios 文件：%q", b)
+	}
+	deleted = nil
+	_ = Teardown(context.Background(), &fakeRun{}, p)
+	if !strings.Contains(strings.Join(deleted, " "), created[0]) {
+		t.Fatalf("关机要按记录删这次的网卡：%v", deleted)
+	}
+}

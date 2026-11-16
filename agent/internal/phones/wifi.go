@@ -48,8 +48,6 @@ func (s *Service) setupWifi(ctx context.Context, id, image string, byKey map[str
 	}
 	if err := wifi.Setup(ctx, s.run, s.newRadio, plan, info.State.Pid, s.gateway(), dns); err != nil {
 		log.Printf("手机 %s：WiFi 没配好（照旧用有线）：%v", id, err)
-		// 手机那块网卡可能已经搬进手机了：在手机的网络命名空间里删，免得手机里留一块没用的 wlan0
-		_ = wifi.DelRadioFunc(fmt.Sprintf("/proc/%d/ns/net", info.State.Pid), plan.StaPhy)
 		_ = wifi.Teardown(ctx, s.run, plan)
 		return false
 	}

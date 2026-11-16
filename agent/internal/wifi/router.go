@@ -2,6 +2,7 @@ package wifi
 
 import (
 	"context"
+	crand "crypto/rand"
 	"crypto/sha256"
 	"fmt"
 	"os"
@@ -138,7 +139,7 @@ type NewRadioFunc func(netnsPath, name string, mac [6]byte) (int, error)
 
 // Setup 给一台刚启动的手机配好 WiFi：containerPid 是手机容器的进程号，gateway / dnsTarget 是宿主机网关和 mihomo DNS。
 // 顺序：先建路由器、网卡、热点、DHCP（这些失败都不影响手机原来的 eth0），最后才把 eth0 搬进路由器。
-func Setup(ctx context.Context, run Runner, newRadio NewRadioFunc, p Plan, containerPid int, gateway, dnsTarget string) error {
+func Setup(ctx context.Context, run Runner, newRadio NewRadioFunc, p Plan, containerPid int, gateway, dnsTarget string) (err error) {
 	pid := strconv.Itoa(containerPid)
 	in := func(args ...string) []string { return append([]string{"netns", "exec", p.Netns}, args...) }
 	inPhone := func(args ...string) []string { return append([]string{"-t", pid, "-n"}, args...) }
@@ -152,6 +153,23 @@ func Setup(ctx context.Context, run Runner, newRadio NewRadioFunc, p Plan, conta
 	if err := os.MkdirAll(p.Dir, 0o700); err != nil {
 		return err
 	}
+	// 每次开机网卡名加随机后缀（踩坑 #57-11）：手机刚关机时，内核把它那块网卡还回宿主机是异步的，
+	// 马上再开机时旧网卡还占着同名，新网卡会被内核悄悄改名成 phyN，后面按名字就找不到了。
+	// 名字记在 radios 文件里，Teardown 按记录和前缀把这台的网卡都清掉。
+	var sfx [2]byte
+	_, _ = crand.Read(sfx[:])
+	p.StaPhy += fmt.Sprintf("%02x%02x", sfx[0], sfx[1])
+	p.APPhy += fmt.Sprintf("%02x%02x", sfx[0], sfx[1])
+	if err := os.WriteFile(filepath.Join(p.Dir, "radios"), []byte(p.StaPhy+" "+p.APPhy+"\n"), 0o600); err != nil {
+		return err
+	}
+	// 网卡已经搬进手机后才失败的话，在手机的网络命名空间里把它删掉（不然手机里留一块没用的 wlan0）
+	movedToPhone := false
+	defer func() {
+		if err != nil && movedToPhone {
+			_ = DelRadioFunc("/proc/"+pid+"/ns/net", p.StaPhy)
+		}
+	}()
 	if err := step("建路由器网络命名空间", "ip", "netns", "add", p.Netns); err != nil {
 		return err
 	}
@@ -168,7 +186,6 @@ func Setup(ctx context.Context, run Runner, newRadio NewRadioFunc, p Plan, conta
 	// iw 按名字找网卡要读 /sys，网卡搬进手机后从外面的 /sys 看不到（踩坑 #57）：
 	// 所以在路由器命名空间里先把 wlan0 建好，再把网卡连同 wlan0 一起搬进手机。
 	// 刚建的网卡在 /sys 里出现要一点时间（机器忙时实测会 ENOENT），稍等重试
-	var err error
 	for i := 0; i < 10; i++ {
 		if err = step("手机 wlan0", "ip", in("iw", "phy", p.StaPhy, "interface", "add", "wlan0", "type", "managed")...); err == nil {
 			break
@@ -181,6 +198,7 @@ func Setup(ctx context.Context, run Runner, newRadio NewRadioFunc, p Plan, conta
 	if err := step("网卡搬进手机", "ip", in("iw", "phy", p.StaPhy, "set", "netns", pid)...); err != nil {
 		return err
 	}
+	movedToPhone = true
 	if err := step("路由器 wlan1", "ip", in("iw", "phy", p.APPhy, "interface", "add", "wlan1", "type", "managed")...); err != nil {
 		return err
 	}
@@ -372,6 +390,9 @@ func lastLines(s string, n int) string {
 	return strings.Join(l, " | ")
 }
 
+// SysIeee80211 宿主机上无线网卡（wiphy）的列表目录（测试时换掉）。
+var SysIeee80211 = "/sys/class/ieee80211"
+
 // DelRadioFunc 删 hwsim 网卡（测试时换成假的）。
 var DelRadioFunc = DelRadioInNetns
 
@@ -379,13 +400,29 @@ var DelRadioFunc = DelRadioInNetns
 // 实测删命名空间不会自动删网卡（会一直留着），所以要显式删：路由器那块在路由器命名空间里删；
 // 手机那块在手机关机后回到管家所在的命名空间，在这里删。
 func Teardown(ctx context.Context, run Runner, p Plan) error {
-	if p.APPhy != "" {
-		_ = DelRadioFunc("/run/netns/"+p.Netns, p.APPhy)
-		_ = DelRadioFunc("", p.APPhy)
+	// 这次开机用的网卡名（带随机后缀，见 Setup）
+	names := []string{p.APPhy, p.StaPhy}
+	if b, err := os.ReadFile(filepath.Join(p.Dir, "radios")); err == nil {
+		names = append(names, strings.Fields(string(b))...)
 	}
-	if p.StaPhy != "" {
-		_ = DelRadioFunc("", p.StaPhy)
+	for _, n := range names {
+		if n == "" {
+			continue
+		}
+		_ = DelRadioFunc("/run/netns/"+p.Netns, n)
+		_ = DelRadioFunc("", n)
 	}
+	// 以前漏掉的（异步还回宿主机、当时没删成的）：宿主机上凡是这台手机前缀的网卡都删
+	if p.StaPhy != "" && p.APPhy != "" {
+		if ents, err := os.ReadDir(SysIeee80211); err == nil {
+			for _, e := range ents {
+				if strings.HasPrefix(e.Name(), p.StaPhy) || strings.HasPrefix(e.Name(), p.APPhy) {
+					_ = DelRadioFunc("", e.Name())
+				}
+			}
+		}
+	}
+	_ = os.Remove(filepath.Join(p.Dir, "radios"))
 	if useSystemd() {
 		_, _ = run.Run(ctx, "systemctl", "stop", unitName(p, "hostapd"), unitName(p, "dnsmasq"))
 	}
