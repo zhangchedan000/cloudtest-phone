@@ -12,7 +12,7 @@
 #   [已遮住]  管家程序的 fakefs 已经改了这项的读取结果，验证它有没有生效
 #   [现在可做] 纯软件 / 配置问题，这台甲骨文机器上就能改
 #   [容器改不了] 实测在容器里没有干净办法（如 /proc/mounts 软链接遮不住、uname 系统调用），要拦系统调用或改镜像/容器运行方式
-#   [等板子]  硬件缺的（显卡、传感器、摄像头等），和显卡一个性质，要等 RK3588 板子
+#   [等板子]  硬件缺的（显卡、摄像头等），和显卡一个性质，要等 RK3588 板子
 set -u
 
 # ---------- 选容器 ----------
@@ -161,9 +161,17 @@ info "渲染器：${rend:-读不到}"
 echo "$rend" | grep -qiE 'swiftshader|software|llvmpipe|android emulator' && brd "GPU 是软件渲染（SwiftShader）——最大破绽，等板子上真 Mali 解决" || info "渲染器未见软件渲染字样（到板子上再确认是硬件 Mali）"
 ls_dri=$(ax 'ls /dev/dri 2>/dev/null'); [ -z "$ls_dri" ] && brd "没有 /dev/dri（没有 GPU 设备节点）" || info "/dev/dri：$ls_dri"
 
-# 传感器
-sens=$(ax 'dumpsys sensorservice 2>/dev/null | grep -ciE "accelerometer|gyroscope|proximity|light"')
-[ "${sens:-0}" -ge 1 ] && info "传感器条目：$sens" || brd "没有重力/陀螺仪/光线/距离等传感器（真机都有）"
+# 传感器（踩坑 #59：模拟器 HAL + 管家喂数据）
+hw=$(ax 'dumpsys sensorservice 2>/dev/null | grep -oE "Total [0-9]+ h/w sensors" | grep -oE "[0-9]+"')
+if [ "${hw:-0}" -ge 1 ]; then
+  hid "有 $hw 个硬件传感器（加速度 / 陀螺仪 / 磁力计 / 距离 / 光线等）"
+  ax 'dumpsys sensorservice 2>/dev/null' | grep -qiE "goldfish|Android Open Source Project" && now "传感器名字 / 厂商还带模拟器字样（镜像没用 patch-ranchu.py 重建）"
+  ev=$(ax 'dumpsys sensorservice 2>/dev/null | grep -A2 "^Accelerometer: last" | tail -1')
+  [ -n "$ev" ] && info "加速度最近一条：$ev" || now "加速度计没有数据（看手机里 vendor.sensord 进程在不在）"
+  info "传感器名字、量程是通用值（各机型真实芯片名要真机数据）"
+else
+  now "没有传感器（换带传感器的镜像：host/build-wifi-image.sh 重建，标签 prism.sensors=1）"
+fi
 
 # 摄像头
 cam=$(ax 'dumpsys media.camera 2>/dev/null | grep -ciE "Camera [0-9]|device id"')
