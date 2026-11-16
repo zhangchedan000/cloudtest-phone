@@ -53,6 +53,9 @@ type Config struct {
 	Wifi bool
 	// Sensors 镜像带传感器 HAL 时给手机喂传感器数据（踩坑 #59）
 	Sensors bool
+	// MemOvercommit 内存超卖倍数（默认 1 = 每台的上限加起来不超过机器内存）。板子上手机平时只用 1~2GB，
+	// 设成 2.5 左右能多开几台；手机里显示的内存不变（按机型）。超卖时开机前还会看机器实际剩多少。
+	MemOvercommit float64
 	// HostGuard 手机开机后把被改掉的宿主机内核设置改回来（hostguard，踩坑 #58）
 	HostGuard bool
 	WifiDNS   string

@@ -64,6 +64,7 @@ func main() {
 	noSensors := flag.Bool("no-sensors", false, "不给手机喂传感器数据（镜像带传感器 HAL 时默认喂，踩坑 #59）")
 	noTimens := flag.Bool("no-timens", false, "不让云手机的开机时长归零（出问题时临时关掉用）")
 	noWifi := flag.Bool("no-wifi", false, "不给手机配虚拟 WiFi（手机照旧用有线 eth0）")
+	memOvercommit := flag.Float64("mem-overcommit", 1, "内存超卖倍数：每台手机的内存上限加起来最多是机器可用内存的几倍（板子上设 2.5 左右多开几台；手机里显示的内存不变）")
 	memFollow := flag.Bool("mem-follow-model", true, "每台手机的内存上限按机型（例如 8GB）；false 时用固定的 -mem-mb")
 	noDataImages := flag.Bool("no-data-images", false, "新手机不用按机型容量的磁盘镜像，/data 直接用宿主机目录")
 	dockerSock := flag.String("docker", "/var/run/docker.sock", "Docker socket")
@@ -108,6 +109,7 @@ func main() {
 	}
 	cfg.DataImages = !*noDataImages && phones.DataImagesSupported()
 	cfg.MemFollowModel = *memFollow
+	cfg.MemOvercommit = *memOvercommit
 	// 宿主机内核设置：手机开机会改宿主机的 kernel.* / vm.*（踩坑 #58）。先改回来（kernel.modprobe 被清空时下面加载 WiFi 模块也要靠它）
 	cfg.HostGuard = !*noHostGuard && os.Geteuid() == 0
 	if cfg.HostGuard {

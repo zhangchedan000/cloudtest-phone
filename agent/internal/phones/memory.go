@@ -79,11 +79,45 @@ func (s *Service) checkMemoryBudget(ctx context.Context, id string, mine int64) 
 		}
 		used += s.memLimitMB(byKey)
 	}
-	if used+mine > host-hostReserveMB {
-		return fmt.Errorf("%w：内存不够——正在运行的手机已占 %.1f GB，这台要 %.1f GB，这台机器能给手机用的一共 %.1f GB（总 %.1f GB，留 %.1f GB 给系统）。先关掉一台再开",
-			ErrBlocked, float64(used)/1024, float64(mine)/1024, float64(host-hostReserveMB)/1024, float64(host)/1024, float64(hostReserveMB)/1024)
+	factor := s.cfg.MemOvercommit
+	if factor < 1 {
+		factor = 1
+	}
+	budget := int64(float64(host-hostReserveMB) * factor)
+	if used+mine > budget {
+		extra := ""
+		if factor > 1 {
+			extra = fmt.Sprintf("（已按 %.1f 倍超卖算）", factor)
+		}
+		return fmt.Errorf("%w：内存不够——正在运行的手机上限加起来 %.1f GB，这台要 %.1f GB，这台机器能给手机用的一共 %.1f GB%s（总 %.1f GB，留 %.1f GB 给系统）。先关掉一台再开",
+			ErrBlocked, float64(used)/1024, float64(mine)/1024, float64(budget)/1024, extra, float64(host)/1024, float64(hostReserveMB)/1024)
+	}
+	// 超卖时上限加起来可以超过物理内存（手机平时只用 1~2GB），所以还要看机器实际还剩多少：
+	// 新开一台至少要留出 minFreeForStartMB，不够就不开，免得大家一起被内核杀进程。
+	if factor > 1 {
+		if avail := availableMB(); avail >= 0 && avail < minFreeForStartMB {
+			return fmt.Errorf("%w：内存不够——机器实际只剩 %.1f GB 可用（开一台至少要 %.1f GB）。先关掉一台再开", ErrBlocked, float64(avail)/1024, float64(minFreeForStartMB)/1024)
+		}
 	}
 	return nil
+}
+
+// minFreeForStartMB 超卖时新开一台手机前，机器至少还要剩这么多可用内存（开机过程要 1.5GB 左右，再留点余量）。
+const minFreeForStartMB = 3072
+
+// availableMB 机器实际可用内存（/proc/meminfo 的 MemAvailable）；读不到返回 -1。
+var availableMB = func() int64 {
+	b, err := os.ReadFile("/proc/meminfo")
+	if err != nil {
+		return -1
+	}
+	for _, l := range strings.Split(string(b), "\n") {
+		if f := strings.Fields(l); len(f) >= 2 && f[0] == "MemAvailable:" {
+			kb, _ := strconv.ParseInt(f[1], 10, 64)
+			return kb / 1024
+		}
+	}
+	return -1
 }
 
 // LxcfsAvailable 宿主机上 lxcfs 在运行吗（有它的 meminfo 文件）。
