@@ -17,7 +17,7 @@ base=${1:?用法：build-wifi-image.sh <redroid 镜像> [安卓版本]}
 ver=${2:-$(echo "$base" | grep -oE ':[0-9]+' | tr -d ':')}
 case "$ver" in
   14) emu=arm64-v8a-34_r04.zip ;;
-  15) emu=arm64-v8a-35_r09.zip ;;
+  15) emu=arm64-v8a-35_r02.zip ;;
   *) die "不认识的安卓版本 $ver（支持 14 / 15）" ;;
 esac
 here=$(cd "$(dirname "$0")" && pwd)
