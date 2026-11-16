@@ -37,7 +37,6 @@ func isLiveProp(key string) bool {
 }
 
 // batteryHealthCode 机型档案里的健康度 → Android BatteryManager 的 health 数值。
-var batteryHealthCode = map[string]int{"good": 2, "overheat": 3, "cold": 7}
 
 // applyBattery 开机后用 dumpsys battery 覆盖电池状态。dumpsys battery set 会让电池进入
 // 「人工覆盖」模式，值固定到下次重启或 reset；applySettings 每次开机都跑，所以每次开机重新覆盖。
@@ -81,12 +80,10 @@ func (s *Service) applyBattery(ctx context.Context, id, name string, v map[strin
 		// dumpsys battery 的温度单位是 0.1℃。
 		run("set", "temp", strconv.Itoa(int(t*10)))
 	}
-	// 健康度：档案填了按档案，没填默认 good（2）；真机极少报「未知」。
-	code := batteryHealthCode["good"]
-	if c, ok := batteryHealthCode[fmt.Sprint(v["batteryHealth"])]; ok {
-		code = c
-	}
-	run("set", "health", strconv.Itoa(code))
+	// 电池「在位」：Redroid 没有电池 HAL，默认 present=false（真机永远是 true）。
+	run("set", "present", "1")
+	// 健康度 / 电压 / 电池类型（technology）：安卓 14 的 dumpsys battery 不支持设置（会提示 Unknown set option
+	// 但仍返回成功），实测设不上，所以不发命令、不假装设过。要等镜像阶段补一个假的电池 HAL（踩坑 #47）。
 	return probs
 }
 

@@ -152,7 +152,7 @@ func TestBatterySinkAppliesViaDumpsys(t *testing.T) {
 		"dumpsys battery set usb 1",
 		"dumpsys battery set status 2",
 		"dumpsys battery set temp 325",
-		"dumpsys battery set health 2",
+		"dumpsys battery set present 1",
 	} {
 		if !strings.Contains(calls, want) {
 			t.Fatalf("缺少电池命令 %q：\n%s", want, calls)
