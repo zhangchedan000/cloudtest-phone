@@ -41,3 +41,16 @@ func TestNoInitHelperKeepsImageEntrypoint(t *testing.T) {
 		t.Fatalf("没配启动器时不该改入口：%v", spec.Entrypoint)
 	}
 }
+
+func TestPhoneCommandFallsBackToDockerExec(t *testing.T) {
+	svc, id := startForResume(t)
+	// 没开时间命名空间：docker exec
+	if c := svc.phoneCommand(context.Background(), id, "screenrecord"); !strings.HasSuffix(c.Path, "docker") || c.Args[1] != "exec" {
+		t.Fatalf("应该用 docker exec：%v", c.Args)
+	}
+	// 开了，但拿不到容器进程号（假 Docker 的 Pid 是 0）：也退回 docker exec，不会拼出坏命令
+	svc.cfg.InitHelper = "/x"
+	if c := svc.phoneCommand(context.Background(), id, "screenrecord"); c.Args[1] != "exec" {
+		t.Fatalf("拿不到 Pid 时应退回 docker exec：%v", c.Args)
+	}
+}

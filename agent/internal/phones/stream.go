@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"os/exec"
 	"strconv"
 	"sync"
 	"time"
@@ -126,7 +125,7 @@ func (s *Service) Stream(ctx context.Context, id string, opt StreamOptions, w io
 	name := containerName(id)
 	// 顶掉旧的一路：docker exec 的进程被杀不会连带杀掉容器里的 screenrecord，要进容器停。
 	_, _ = s.run.Run(ctx, "docker", "exec", name, "pkill", "-x", "screenrecord")
-	cmd := exec.CommandContext(ctx, "docker", append([]string{"exec", name}, streamArgs(opt)...)...)
+	cmd := s.phoneCommand(ctx, id, streamArgs(opt)...)
 	out, err := cmd.StdoutPipe()
 	if err != nil {
 		return fmt.Errorf("启动画面失败：%w", err)
