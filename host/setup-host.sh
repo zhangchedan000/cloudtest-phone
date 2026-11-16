@@ -52,6 +52,8 @@ echo "options mac80211_hwsim radios=0" > /etc/modprobe.d/prism-hwsim.conf
 printf 'mac80211_hwsim\nccm\n' > /etc/modules-load.d/prism-hwsim.conf
 modprobe ccm 2>/dev/null || true
 modprobe mac80211_hwsim radios=0 2>/dev/null || echo "内核没有 mac80211_hwsim：手机照旧用有线网（不影响其他功能）"
+# 每台手机自己的内核版本号（uname，踩坑 #64）：编译装上 pp_uts 内核模块；装不上不影响别的
+bash "$(dirname "$0")/build-kmod.sh" || echo "pp_uts 内核模块没装上：手机里 uname 还是宿主机内核（其他照常）"
 # 系统自带的 hostapd 服务不要开（每台手机自己的热点由管家在各自的命名空间里起）
 systemctl disable --now hostapd >/dev/null 2>&1 || true
 

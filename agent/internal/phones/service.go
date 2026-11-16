@@ -808,6 +808,7 @@ func (s *Service) Start(ctx context.Context, id string) error {
 	}
 	// 虚拟 WiFi 要在安卓的有线网管理启动之前把 eth0 换掉，所以容器一起来就同步做（wifi.go）
 	s.setupWifi(ctx, p.ID, image, byKey)
+	s.applyUname(ctx, p.ID, byKey)
 	if s.async {
 		go s.removeTraces(context.Background(), name)
 	} else {
