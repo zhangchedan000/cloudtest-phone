@@ -38,6 +38,13 @@ func TestATConversation(t *testing.T) {
 		"AT+CTEC?":    "ERROR",
 		"ATD*99***1#": "ERROR",
 		"AT+CMEE=1":   "OK",
+		// cuttlefish RIL 用多行方式发的查询必须带内容行，否则它读空指针崩溃（踩坑 #65）
+		`AT+CLCK="FD",2,"",7`:   "+CLCK: 0|OK",
+		`AT+CLCK="SC",2,""`:     "+CLCK: 0|OK",
+		`AT+CLCK="SC",1,"1234"`: "OK",
+		`AT+CPINR="SIM PIN2"`:   "+CPINR: SIM PIN2,3,3|OK",
+		"AT+CICCID":             m.spec.ICCID + "|OK",
+		"AT+CUSD=2":             "ERROR",
 	}
 	for cmd, want := range cases {
 		if got := strings.Join(m.Handle(cmd), "|"); got != want {

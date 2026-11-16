@@ -145,8 +145,38 @@ func (m *Modem) one(c string) (res []string, ok bool) {
 		return nil, true
 	case up == "+CSMS=1":
 		return []string{"+CSMS: 1,1,1"}, true
+	case up == "+CEREG?":
+		return []string{fmt.Sprintf("+CEREG: 2,1,\"%s\",\"%s\",7", s.LAC, s.CellID)}, true
 	case up == "+CGACT?", up == "+CGDCONT?", up == "+CLCC":
 		return nil, true
+	// 下面这些是 cuttlefish RIL（libcuttlefish-ril-2.so）会查的。它用「多行」方式发的命令（CLCK、CPINR），
+	// 只回 OK 不带内容行它会读空指针崩溃（踩坑 #65），所以必须回一行像样的答案。
+	case strings.HasPrefix(up, "+CLCK=") && clckMode(up) == "2":
+		return []string{"+CLCK: 0"}, true // SIM 锁、固定拨号都没开
+	case strings.HasPrefix(up, "+CPINR"):
+		pin := "SIM PIN"
+		if strings.Contains(up, "PIN2") {
+			pin = "SIM PIN2"
+		}
+		return []string{fmt.Sprintf("+CPINR: %s,3,3", pin)}, true
+	case up == "+CICCID":
+		return []string{s.ICCID}, true
+	case up == "+CCSS?":
+		return []string{"+CCSS: 0"}, true
+	case up == "+CLIP?":
+		return []string{"+CLIP: 1,1"}, true
+	case up == "+CLIR?":
+		return []string{"+CLIR: 0,4"}, true
+	case up == "+CMUT?":
+		return []string{"+CMUT: 0"}, true
+	case up == "+CSCA?":
+		return []string{"+CSCA: \"\",145"}, true
+	case up == "+CSCB?":
+		return []string{"+CSCB: 0,\"\",\"\""}, true
+	case strings.HasPrefix(up, "+CUSD"), strings.HasPrefix(up, "+CSIM"), strings.HasPrefix(up, "+CUSATD"),
+		strings.HasPrefix(up, "+CUSATE"), strings.HasPrefix(up, "+CUSATT"), strings.HasPrefix(up, "+CCFCU"):
+		// USSD、SIM 卡工具包、呼叫转移：没有
+		return []string{"ERROR"}, false
 	case strings.HasPrefix(up, "+CRSM="):
 		return m.simIO(strings.TrimPrefix(c, "+CRSM=")), true
 	case strings.HasPrefix(up, "+CTEC"), strings.HasPrefix(up, "+WRMP"), strings.HasPrefix(up, "+WPRL"), strings.HasPrefix(up, "+WNAM"),
@@ -168,4 +198,13 @@ func (m *Modem) copsAnswer() string {
 		return fmt.Sprintf("+COPS: 0,2,\"%s%s\",7", s.MCC, s.MNC)
 	}
 	return fmt.Sprintf("+COPS: 0,0,\"%s\",7", s.Long)
+}
+
+// clckMode AT+CLCK="设施",模式,... 里的模式（2 = 查询）。
+func clckMode(up string) string {
+	f := strings.Split(strings.TrimPrefix(up, "+CLCK="), ",")
+	if len(f) < 2 {
+		return ""
+	}
+	return strings.TrimSpace(f[1])
 }
