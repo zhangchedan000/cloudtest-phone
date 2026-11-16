@@ -782,7 +782,12 @@ func (s *Service) Start(ctx context.Context, id string) error {
 		entrypoint = withHardware(entrypoint, s.imageEntrypoint(ctx, image), hw)
 	}
 	if entrypoint != nil && s.cfg.Sensors && s.imageHasSensors(ctx, image) {
-		entrypoint = withSensors(entrypoint, sensorSpec(*p, st, s.resolvedValues(*p, st)))
+		byKey := s.resolvedValues(*p, st)
+		spec := sensorSpec(*p, st, byKey)
+		if s.imageLabel(ctx, image, "prism.ril") == "1" {
+			spec.Modem = simSpec(*p, st, byKey)
+		}
+		entrypoint = withSensors(entrypoint, spec)
 	}
 	if entrypoint != nil {
 		binds = append(binds, s.cfg.InitHelper+":"+initMount+":ro")

@@ -69,6 +69,10 @@ log "声明多点触控（手机里的虚拟触摸屏是 10 点触控，agent/in
 mkdir -p "$B/vendor/etc/permissions"
 cp "$here/touch/android.hardware.touchscreen.multitouch.jazzhand.xml" "$B/vendor/etc/permissions/"
 
+log "打开电话（rild 连小助手模拟的基带，踩坑 #65）"
+cp "$here/ril/init.radio.rc" "$B/vendor/etc/init/init.radio.rc"
+cp "$here/ril/android.hardware.telephony.xml" "$B/vendor/etc/permissions/"
+
 log "补齐 vendor 命名空间里缺的库（递归）"
 id=$(docker create "$base"); mkdir -p "$R"
 docker export "$id" | tar -x -C "$R" --wildcards 'vendor/lib64/*' 'system/apex/com.android.vndk.current/*' 2>/dev/null || true
@@ -103,7 +107,7 @@ COPY vendor/ /vendor/
 COPY --from=bb /bin/busybox /.ppbb/busybox
 COPY fixup.sh /.ppbb/fixup.sh
 RUN ["/.ppbb/busybox", "sh", "-c", "/.ppbb/busybox --install -s /.ppbb && PATH=/.ppbb sh /.ppbb/fixup.sh '$HWS' && /.ppbb/busybox rm -rf /.ppbb"]
-LABEL prism.wifi=1 prism.sensors=1 prism.touch=1 prism.hw="$HWS"
+LABEL prism.wifi=1 prism.sensors=1 prism.touch=1 prism.ril=1 prism.hw="$HWS"
 DF
 out="${base}-wifi"
 log "构建 $out"

@@ -32,5 +32,7 @@ rm -f redroid.legacy.rc init.redroid.rc
 [ -f $V/etc/permissions/redroid-removed-permissions.xml ] && mv $V/etc/permissions/redroid-removed-permissions.xml $V/etc/permissions/removed-permissions.xml
 rm -f $V/etc/hwdata/amdgpu.ids.redroid
 sed -i '/use_redroid_c2/d' $V/build.prop
+# 电话打开（踩坑 #65）：去掉 ro.radio.noril=yes
+sed -i '/ro.radio.noril/d' $V/build.prop
 echo "redroid 名字处理完：$HWS"
 find / -xdev -iname '*redroid*' 2>/dev/null | grep -v '^/proc' || true

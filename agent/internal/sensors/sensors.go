@@ -24,6 +24,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/zhangchedan000/prism-phone/agent/internal/modem"
 )
 
 // 传感器在模拟器协议里的编号（掩码的位）和名字（set: 命令用的）。
@@ -62,6 +64,8 @@ type Spec struct {
 	W         int    `json:"w,omitempty"`
 	H         int    `json:"h,omitempty"`
 	TouchName string `json:"touch,omitempty"`
+	// 基带和 SIM 卡（internal/modem，同一个小助手进程负责）；空就不模拟
+	Modem *modem.Spec `json:"modem,omitempty"`
 }
 
 // Encode / Decode 命令行参数格式。

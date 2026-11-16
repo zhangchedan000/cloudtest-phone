@@ -157,6 +157,10 @@ func (s *Service) applySettings(ctx context.Context, id string) {
 	if s.cfg.Sensors {
 		s.hideBootProps(ctx, id)
 	}
+	// 有模拟的 SIM 卡时移动数据关着（手机走 WiFi；reference-ril 拨数据连接会去配不存在的网卡）
+	if cur, _ := s.run.Run(ctx, "docker", "exec", containerName(id), "settings", "get", "global", "mobile_data"); strings.TrimSpace(cur) != "0" {
+		_, _ = s.run.Run(ctx, "docker", "exec", containerName(id), "settings", "put", "global", "mobile_data", "0")
+	}
 	st := s.store.Snapshot()
 	p, err := st.Phone(id)
 	if err != nil {

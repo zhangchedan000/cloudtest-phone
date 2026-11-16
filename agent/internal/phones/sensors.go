@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/zhangchedan000/prism-phone/agent/internal/modem"
 	"github.com/zhangchedan000/prism-phone/agent/internal/sensors"
 	"github.com/zhangchedan000/prism-phone/agent/internal/store"
 	"github.com/zhangchedan000/prism-phone/agent/internal/touch"
@@ -16,8 +17,36 @@ import (
 // 扮演模拟器给 HAL 发数据（internal/sensors）。数据按这台手机的种子、代理出口地区（地磁）和时区（室内光线）生成。
 
 func (s *Service) imageHasSensors(ctx context.Context, image string) bool {
-	out, err := s.run.Run(ctx, "docker", "image", "inspect", "-f", `{{index .Config.Labels "prism.sensors"}}`, image)
-	return err == nil && strings.TrimSpace(out) == "1"
+	return s.imageLabel(ctx, image, "prism.sensors") == "1"
+}
+
+// imageLabel 镜像标签的值（没有返回空）。
+func (s *Service) imageLabel(ctx context.Context, image, key string) string {
+	out, err := s.run.Run(ctx, "docker", "image", "inspect", "-f", `{{index .Config.Labels "`+key+`"}}`, image)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(out)
+}
+
+// simSpec 这台手机的 SIM 卡（踩坑 #65）：运营商按 SIM 国家（跟随代理出口）选，IMEI / IMSI / ICCID 按 androidId 播种
+// （一键新机换 androidId，就换卡）。
+func simSpec(p store.Phone, st store.State, byKey map[string]any) *modem.Spec {
+	country, _ := byKey["simCountry"].(string)
+	if country == "" {
+		if px := st.Proxy(p.ProxyID); px != nil && px.Check != nil {
+			country = px.Check.Country
+		}
+	}
+	seedSrc := str(byKey["androidId"])
+	if seedSrc == "" {
+		seedSrc = p.ID
+	}
+	h := fnv.New64a()
+	h.Write([]byte("sim:" + seedSrc))
+	tac, _ := byKey["imeiTac"].(string)
+	spec := modem.Pick(country, tac, int64(h.Sum64()>>1))
+	return &spec
 }
 
 // sensorSpec 这台手机的传感器配置。

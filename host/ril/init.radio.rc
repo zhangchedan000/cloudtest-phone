@@ -1,0 +1,4 @@
+# 电话（踩坑 #65）：安卓标准的 rild + reference-ril 连手机里小助手扮演的基带（/dev/ttyC0，AT 命令）。
+on early-init
+    setprop vendor.rild.libpath /vendor/lib64/libreference-ril.so
+    setprop vendor.rild.libargs "-d /dev/ttyC0"

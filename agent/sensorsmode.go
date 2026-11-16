@@ -7,7 +7,9 @@ import (
 	"os/exec"
 	"strings"
 	"syscall"
+	"time"
 
+	"github.com/zhangchedan000/prism-phone/agent/internal/modem"
 	"github.com/zhangchedan000/prism-phone/agent/internal/props"
 	"github.com/zhangchedan000/prism-phone/agent/internal/sensors"
 	"github.com/zhangchedan000/prism-phone/agent/internal/touch"
@@ -61,6 +63,21 @@ func runSensors() {
 		} else {
 			dev = d
 			go dev.KeepNode()
+		}
+	}
+	// 基带和 SIM 卡（踩坑 #65）：rild 连 /dev/ttyC0，这里扮演基带
+	if spec.Modem != nil {
+		if master, slave, err := sensors.SetupModem(); err != nil {
+			fmt.Fprintf(os.Stderr, "vendor.sensord：基带没配好：%v\n", err)
+		} else {
+			go func() {
+				defer slave.Close() // 一直开着：rild 重启时主端读写不会出错
+				m := modem.New(*spec.Modem, master)
+				for {
+					_ = m.Serve(master)
+					time.Sleep(time.Second)
+				}
+			}()
 		}
 	}
 	// 管家的命令通道：触摸 + 系统属性（开机后藏 ro.boot.redroid_* 等，踩坑 #63）

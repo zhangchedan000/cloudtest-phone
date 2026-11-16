@@ -145,3 +145,25 @@ func (c chanWriter) Write(p []byte) (int, error) {
 	}
 	return len(p), nil
 }
+
+// ModemPath 电话驱动（rild + reference-ril）连的基带设备（镜像里 init.radio.rc 配的，踩坑 #65）。
+const ModemPath = "/dev/ttyC0"
+
+// SetupModem 开一个伪终端绑到 ModemPath，属主 root:radio 0660（rild 以 radio 身份打开）。
+func SetupModem() (master, slave *os.File, err error) {
+	master, slave, err = OpenPTY()
+	if err != nil {
+		return nil, nil, fmt.Errorf("开伪终端：%w", err)
+	}
+	if f, err := os.OpenFile(ModemPath, os.O_CREATE|os.O_RDONLY, 0o660); err == nil {
+		f.Close()
+	}
+	if err := syscall.Mount(slave.Name(), ModemPath, "", syscall.MS_BIND, ""); err != nil {
+		master.Close()
+		slave.Close()
+		return nil, nil, fmt.Errorf("绑到 %s：%w", ModemPath, err)
+	}
+	_ = os.Chown(ModemPath, 0, 1001) // radio 组
+	_ = os.Chmod(ModemPath, 0o660)
+	return master, slave, nil
+}

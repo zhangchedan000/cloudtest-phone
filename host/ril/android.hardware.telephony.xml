@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 真手机都声明的电话能力（AOSP frameworks/native/data/etc 里 telephony.gsm 等文件的内容）。手机里的基带由小助手模拟（踩坑 #65）。 -->
+<permissions>
+    <feature name="android.hardware.telephony" />
+    <feature name="android.hardware.telephony.gsm" />
+    <feature name="android.hardware.telephony.radio.access" />
+    <feature name="android.hardware.telephony.subscription" />
+    <feature name="android.hardware.telephony.data" />
+    <feature name="android.hardware.telephony.calling" />
+    <feature name="android.hardware.telephony.messaging" />
+</permissions>
