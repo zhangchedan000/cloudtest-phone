@@ -52,6 +52,8 @@ echo mac80211_hwsim > /etc/modules-load.d/prism-hwsim.conf
 modprobe mac80211_hwsim radios=0 2>/dev/null || echo "内核没有 mac80211_hwsim：手机照旧用有线网（不影响其他功能）"
 # 系统自带的 hostapd 服务不要开（每台手机自己的热点由管家在各自的命名空间里起）
 systemctl disable --now hostapd >/dev/null 2>&1 || true
+# 系统自带 hostapd 2.10 在新内核上配不了 WPA2 热点，编译 2.11 装到 /usr/local/sbin（踩坑 #57）
+bash "$(dirname "$0")/build-hostapd.sh" || echo "hostapd 2.11 没装好：WiFi 加密热点会失败，手机照旧用有线网"
 
 # 4. 内核功能：binder（binderfs 模式，每个容器自己挂载，互不冲突）、PSI
 cfg="/boot/config-$(uname -r)"
