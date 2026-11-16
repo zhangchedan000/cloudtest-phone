@@ -92,7 +92,10 @@ cnt "uname() 系统调用返回宿主机内核 $unamer，fakefs 只改 /proc 文
 
 # /proc/mounts：overlay、docker、fakefs 自己的 bind mount 都会露
 mnt=$(ax 'cat /proc/mounts')
-echo "$mnt" | grep -qi overlay && cnt "/proc/mounts 有 overlay + containerd 路径（容器特征）。实测遮不住：/proc/mounts 是软链接→/proc/self/mounts，bind 会跟链接绑到当前 pid 的 proc 上、对别的进程无效，procfs 又不让改符号链接（踩坑见记录）。要靠拦系统调用或换容器运行方式（镜像阶段）"
+if echo "$mnt" | grep -qiE 'overlay|/opt/prism-phone|lxcfs|mqueue'; then
+  if [ -e /proc/pp_mnt ]; then now "/proc/mounts 还有容器痕迹（overlay / 宿主机路径 / lxcfs），但 pp_mnt 模块装了：这台手机可能是装模块之前开的，重启手机再看（踩坑 #68）"
+  else now "/proc/mounts 有 overlay + containerd 路径、宿主机路径（容器特征）：装内核模块 pp_mnt（bash host/build-kmod.sh pp_mnt）后重启手机（踩坑 #68）"; fi
+else hid "/proc/mounts 没有 overlay / 宿主机路径（pp_mnt 改写生效）"; fi
 echo "$mnt" | grep -qiE '/dev/null .* (cpuinfo|midr|version|osrelease)' && info "fakefs 的 bind mount 挂载点本身也在 /proc/mounts 里（遮了内容、露了手法）——同上，遮不住"
 bindcnt=$(echo "$mnt" | grep -cE 'cpuinfo|midr_el1|osrelease|/proc/version'); [ "$bindcnt" -gt 0 ] && info "可疑 bind mount 行数：$bindcnt"
 
