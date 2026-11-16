@@ -1,4 +1,4 @@
-import { App, Button, Input, Modal, Space, Typography } from 'antd'
+import { Alert, App, Button, Input, Modal, Space, Typography } from 'antd'
 import { useState } from 'react'
 import { authorizeAdbKey } from '@/data/api'
 
@@ -31,7 +31,7 @@ export function adbCommands(ip: string, hostname: string): { tunnel: string; con
   }
 }
 
-export function AdbDialog({ open, id, ip, name, host, running, onClose }: { open: boolean; id?: string; ip?: string; name: string; host?: string; running?: boolean; onClose: () => void }) {
+export function AdbDialog({ open, id, ip, name, host, running, adbOn = true, onEnable, onClose }: { open: boolean; id?: string; ip?: string; name: string; host?: string; running?: boolean; adbOn?: boolean; onEnable?: () => Promise<void>; onClose: () => void }) {
   const { message } = App.useApp()
   const [key, setKey] = useState('')
   const [saving, setSaving] = useState(false)
@@ -64,6 +64,9 @@ export function AdbDialog({ open, id, ip, name, host, running, onClose }: { open
         <p>还拿不到这台手机的内部地址（开机后才有）。</p>
       ) : (
         <>
+          {!adbOn && <Alert type="warning" showIcon style={{ marginBottom: 12 }} message="这台手机的 USB 调试是关着的，ADB 连不上"
+            description="平时关着更像真手机（App 能读到这个开关）。要用 ADB 就先打开，用完可以在「编辑 → 信息」里再关掉。"
+            action={onEnable && <Button size="small" type="primary" onClick={() => void onEnable().then(() => message.success('已打开 USB 调试'))}>打开</Button>} />}
           <p className="pp-small pp-muted">⓪ 第一次用这台电脑连时先授权：把电脑上 <Typography.Text code>adbkey.pub</Typography.Text> 的内容粘贴进来（Windows 在 <Typography.Text code>C:\Users\你的用户名\.android\adbkey.pub</Typography.Text>，Mac / Linux 在 <Typography.Text code>~/.android/adbkey.pub</Typography.Text>；没有这个文件就先随便运行一次 <Typography.Text code>adb devices</Typography.Text>）。重置手机后要重新授权。</p>
           <Space.Compact style={{ width: '100%', marginBottom: 12 }}>
             <Input.TextArea value={key} onChange={(e) => setKey(e.target.value)} placeholder="QAAAA…（一长串） 用户名@电脑名" autoSize={{ minRows: 2, maxRows: 4 }} />

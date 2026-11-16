@@ -41,6 +41,9 @@ type Phone struct {
 	// Gapps 带谷歌服务（GMS / Play 商店）：开机用谷歌服务镜像而不是干净 AOSP 镜像。
 	// 需要这台机器装了对应安卓版本的谷歌服务镜像（见 host/build-gapps-image.sh）。
 	Gapps bool `json:"gapps,omitempty"`
+	// Adb「开发者选项 → USB 调试」开着吗。默认关（真手机普通用户都是关的，App 能读到这个开关）；
+	// 要用 ADB 时在管理页打开（踩坑 #56）。
+	Adb bool `json:"adb,omitempty"`
 }
 
 type ProxyCheck struct {

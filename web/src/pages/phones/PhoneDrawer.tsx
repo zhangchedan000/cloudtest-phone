@@ -118,7 +118,7 @@ export function PhoneDrawer({ phone, mode = 'view', onClose, onEdit, bare = fals
           <p className="pp-muted pp-small pp-center">在画面上点一下 = 点击，按住拖动 = 滑动</p>
           <ClipboardDialog open={clipOpen} phoneId={live.id} onClose={() => setClipOpen(false)} />
         </div>}
-        <AdbDialog open={adbOpen} id={live.id} running={running} ip={live.ip} name={live.name} host={new URL(serverUrl(live.serverId)).hostname} onClose={() => setAdbOpen(false)} />
+        <AdbDialog open={adbOpen} id={live.id} running={running} adbOn={!!live.adb} onEnable={() => ws.assign([live.id], { adb: true })} ip={live.ip} name={live.name} host={new URL(serverUrl(live.serverId)).hostname} onClose={() => setAdbOpen(false)} />
         {mode === 'edit' && <div className="pp-detail-side">
           <Tabs
             items={[
@@ -132,6 +132,13 @@ export function PhoneDrawer({ phone, mode = 'view', onClose, onEdit, bare = fals
                     { label: '挂的代理（可多个）', children: <><ProxyListEditor phone={live} /><div className="pp-muted pp-small" style={{ marginTop: 4 }}>在手机窗口上方的下拉框里随时切换，开着的手机时区会马上跟着换</div></> },
                     { label: '出口 IP', children: ws.proxyOf(live)?.check?.exitIp ?? '—' },
                     { label: '所在机器', children: `${host?.name}（${host?.location}）` },
+                    {
+                      label: 'USB 调试（ADB）', children: <Space wrap>
+                        <Switch size="small" checked={!!live.adb} disabled={!liveMode}
+                          onChange={(on) => void ws.assign([live.id], { adb: on }).then(() => message.success(on ? '已打开 USB 调试' : '已关闭 USB 调试'))} />
+                        <span className="pp-muted pp-small">平时关着（真手机普通用户都是关的，App 能看到这个开关）；要用 ADB 时打开，开着的手机马上生效</span>
+                      </Space>
+                    },
                     { label: '内部 IP（ADB 用）', children: live.ip ? <Space>{live.ip}<Button size="small" onClick={() => setAdbOpen(true)}>ADB 连接命令</Button></Space> : '—' },
                     { label: '显卡', children: host?.gpu },
                     {

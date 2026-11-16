@@ -140,6 +140,10 @@ cpid=$(docker inspect -f '{{.State.Pid}}' "$C")
 if [ "$(readlink /proc/$cpid/ns/time 2>/dev/null)" != "$(readlink /proc/self/ns/time)" ]; then hid "安卓在自己的时间命名空间里（开机时长从 0 开始；注意 docker exec 读 /proc/uptime 仍是宿主机值，要用 adb shell 看）"
 else now "安卓和宿主机共用时钟：uptime 显示宿主机开了多久（管家 -no-timens？内核不支持 CONFIG_TIME_NS？见踩坑 #49）"; fi
 bpres=$(ax 'dumpsys battery 2>/dev/null' | grep -m1 'present:' | awk '{print $2}'); [ "$bpres" = false ] && now "电池 present=false（真机永远 true，开机设置应设 present 1）" || info "电池 present=${bpres:-?}"
+adbon=$(ax 'settings get global adb_enabled'); [ "$adbon" = 1 ] && info "USB 调试开着（adb_enabled=1，App 能读到）：这台在管理页打开了 ADB；平时用完关掉" || hid "USB 调试关着（adb_enabled=${adbon:-?}）"
+desc=$(gp ro.build.description); echo "$desc" | grep -qiE 'redroid|userdebug|test-keys' || hid "ro.build.description 已是真机格式：$desc"
+pb=$(docker exec -u 10100 "$C" sh -c 'cat /product/etc/build.prop /system_ext/etc/build.prop' 2>/dev/null | grep -ciE 'redroid|userdebug|test-keys')
+[ "${pb:-0}" -gt 0 ] && now "App 能直接读的 /product、/system_ext 的 build.prop 里还有 $pb 行 redroid / userdebug / test-keys（开机应按最终身份改写，踩坑 #55）" || hid "App 能读的 build.prop 文件里没有 redroid 痕迹"
 bton=$(ax 'settings get global bluetooth_on'); [ "$bton" = 1 ] && now "bluetooth_on=1：没有蓝牙硬件，每次开机蓝牙进程会连崩（踩坑 #48）" || info "bluetooth_on=${bton:-?}"
 crash=$(ax 'logcat -b crash -d 2>/dev/null' | grep -cE 'Fatal signal|FATAL EXCEPTION')
 [ "${crash:-0}" -gt 0 ] && { now "这次开机有 $crash 次崩溃（下面是崩的进程）"; ax 'logcat -b crash -d 2>/dev/null' | grep -oE 'Process: [a-z0-9._:]+|pid [0-9]+ \([^)]*\)' | sort | uniq -c | sort -rn | head -5 | sed 's/^/             /'; } || hid "这次开机没有崩溃"

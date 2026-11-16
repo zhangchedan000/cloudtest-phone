@@ -167,6 +167,8 @@ func (s *Service) applySettings(ctx context.Context, id string) {
 	for _, pkg := range aospOnlyPackages {
 		_, _ = s.run.Run(ctx, "docker", "exec", name, "pm", "uninstall", "--user", "0", pkg)
 	}
+	// USB 调试按手机的开关（默认关，adbtoggle.go）
+	s.applyAdb(ctx, id)
 	// 蓝牙默认关：安卓默认 bluetooth_on=1，开机自动开蓝牙；容器里没有蓝牙硬件，蓝牙 HAL 和
 	// com.android.bluetooth 会连崩几次才放弃（踩坑 #48）。设成 0 之后从下次开机起不再自动开、不再崩。
 	if cur, _ := s.run.Run(ctx, "docker", "exec", name, "settings", "get", "global", "bluetooth_on"); strings.TrimSpace(cur) != "0" {

@@ -33,7 +33,7 @@ interface Workspace {
   issuesOf: (phone: Phone) => Issue[]
   setStatus: (ids: string[], status: PhoneStatus) => Promise<void>
   saveFields: (id: string, fields: Record<string, FieldSetting>, patch?: Partial<Phone>) => Promise<void>
-  assign: (ids: string[], patch: { proxyId?: string; groupId?: string; gapps?: boolean }) => Promise<void>
+  assign: (ids: string[], patch: { proxyId?: string; groupId?: string; gapps?: boolean; adb?: boolean }) => Promise<void>
   addPhone: (phone: Phone) => Promise<void>
   removePhones: (ids: string[]) => Promise<void>
   resetPhones: (ids: string[], androidVersion?: number) => Promise<void>

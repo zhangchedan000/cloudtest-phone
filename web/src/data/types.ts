@@ -64,6 +64,7 @@ export interface Phone {
   note?: string
   /** 带谷歌服务（GMS / Play 商店）：开机用谷歌服务镜像，需要机器装了对应镜像。 */
   gapps?: boolean
+  adb?: boolean
   createdAt: string
   lastActiveAt?: string
   fields: Record<string, FieldSetting>

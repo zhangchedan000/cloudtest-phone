@@ -911,9 +911,22 @@ type SaveRequest struct {
 	Name     *string   `json:"name"`
 	Note     *string   `json:"note"`
 	Gapps    *bool     `json:"gapps"` // 切换带谷歌服务（下次开机生效）
+	Adb      *bool     `json:"adb"`   // 打开 / 关闭 USB 调试（开着的手机马上生效）
 }
 
 func (s *Service) Save(id string, req SaveRequest) error {
+	err := s.save(id, req)
+	if err == nil && req.Adb != nil {
+		if s.async {
+			go s.applyAdb(context.Background(), id)
+		} else {
+			s.applyAdb(context.Background(), id)
+		}
+	}
+	return err
+}
+
+func (s *Service) save(id string, req SaveRequest) error {
 	return s.store.Update(func(st *store.State) error {
 		p, err := st.Phone(id)
 		if err != nil {
@@ -958,6 +971,9 @@ func (s *Service) Save(id string, req SaveRequest) error {
 		}
 		if req.Note != nil {
 			p.Note = *req.Note
+		}
+		if req.Adb != nil {
+			p.Adb = *req.Adb
 		}
 		if req.Gapps != nil {
 			if *req.Gapps && s.cfg.GappsImages[p.AndroidVersion] == "" {
