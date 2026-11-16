@@ -11,7 +11,7 @@
 # 每项前面的标签：
 #   [已遮住]  管家程序的 fakefs 已经改了这项的读取结果，验证它有没有生效
 #   [现在可做] 纯软件 / 配置问题，这台甲骨文机器上就能改
-#   [容器改不了] 实测在容器里没有干净办法（如 /proc/mounts 软链接遮不住、uname 系统调用、wlan0 需 WiFi HAL），要拦系统调用或改镜像/容器运行方式
+#   [容器改不了] 实测在容器里没有干净办法（如 /proc/mounts 软链接遮不住、uname 系统调用），要拦系统调用或改镜像/容器运行方式
 #   [等板子]  硬件缺的（显卡、传感器、摄像头等），和显卡一个性质，要等 RK3588 板子
 set -u
 
@@ -114,10 +114,14 @@ vbs=$(gp ro.boot.verifiedbootstate); info "ro.boot.verifiedbootstate=${vbs:-空}
 # adb 状态
 adbp=$(gp service.adb.tcp.port); [ -n "$adbp" ] && info "service.adb.tcp.port=$adbp（内部用，别对外）"
 
-# 网卡：veth + 10.88 内网
+# 网卡：有 WiFi 镜像时手机里只有 lo + wlan0（踩坑 #57），否则是容器的 eth0 / 10.88 内网
 ifs=$(ax 'ip -o addr show 2>/dev/null || cat /proc/net/fib_trie 2>/dev/null | head')
-echo "$ifs" | grep -qE '10\.88\.|veth|eth0@' && cnt "网卡是容器虚拟网卡 eth0 / 10.88 内网段（真机是 wlan0 + 家庭/运营商 IP）。改名 wlan0 需要 WiFi HAL 才能被 Android 当 WiFi 管理，单纯改名会断网——归镜像/板子阶段（mac80211_hwsim）"
-echo "$ifs" | grep -qi wlan0 || cnt "没有 wlan0 无线网卡（真机一定有 WiFi 接口）。同上，容器里加不出能用的 WiFi 接口"
+if echo "$ifs" | grep -qE '10\.88\.|veth|eth0'; then
+  now "网卡是容器虚拟网卡 eth0 / 10.88 内网段，安卓看到的是「以太网」（真机是 WiFi）。换成带 WiFi 的镜像（host/build-wifi-image.sh，agent.env 里指过去）后管家自动配虚拟 WiFi"
+elif echo "$ifs" | grep -q wlan0; then
+  wst=$(ax 'cmd wifi status 2>/dev/null | grep -m1 "connected to"')
+  [ -n "$wst" ] && hid "手机走 WiFi（只有 wlan0，${wst#*Wifi is }），没有 eth0" || now "有 wlan0 但 WiFi 没连上（看管家日志里的 WiFi 行）"
+fi
 
 # 屏幕密度：和机型档案对不对得上（文档里标过待核实）
 den=$(ax 'wm density 2>/dev/null' | tr -dc '0-9 :a-zA-Z'); info "wm density：${den:-读不到}"
