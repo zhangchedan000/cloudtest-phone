@@ -11,7 +11,7 @@ out=/opt/prism-phone/soak/$(date +%Y%m%d-%H%M); mkdir -p "$out"
 T=$(sed -n 's/^PP_TOKEN=//p' /etc/prism-phone/agent.env)
 api() { curl -s -m 30 "http://127.0.0.1:8099/api$1" -H "Authorization: Bearer $T"; }
 log="$out/log.tsv"
-printf 'time\tphone\tstatus\tboot\twifi\tnet204\tmemMB\tcpu\tcrashes\tuptime_s\thost_avail_mb\tload1\tagent_restarts\n' > "$log"
+printf 'time\tphone\tstatus\tboot\twifi\tnet204\tmemMB\tcpu\tcrashes\tstarted\thost_avail_mb\tload1\tagent_restarts\n' > "$log"
 restarts0=$(systemctl show prism-phone-agent -p NRestarts --value 2>/dev/null || echo 0)
 pid0=$(systemctl show prism-phone-agent -p MainPID --value)
 agent_starts=0
@@ -36,7 +36,7 @@ for p in json.load(sys.stdin):
     w=$(docker exec "$C" sh -c '(printf "GET /generate_204 HTTP/1.1\r\nHost: connectivitycheck.gstatic.com\r\nConnection: close\r\n\r\n"; sleep 8) | nc connectivitycheck.gstatic.com 80 | head -1' 2>/dev/null)
     case "$w" in *" 204"*) n=1;; *) n=0;; esac
     cr=$(docker exec "$C" sh -c 'logcat -d -b crash 2>/dev/null | grep -c "FATAL EXCEPTION\|Fatal signal"' 2>/dev/null)
-    up=$(docker exec "$C" cut -d. -f1 /proc/uptime 2>/dev/null)
+    up=$(docker inspect -f '{{.State.StartedAt}}' "$C" 2>/dev/null | cut -c1-19)  # 容器启动时间：变了 = 中途重启过
     printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$now" "$id" "$st" "${boot:-?}" "$wifi" "$n" "$mem" "$cpu" "${cr:-?}" "${up:-?}" "$avail" "$load" "$agent_starts" >> "$log"
   done
   sleep $((every*60))
@@ -54,8 +54,8 @@ for pid,rs in by.items():
     bad_net=sum(r['net204']!='1' for r in rs); bad_wifi=sum(r['wifi']!='1' for r in rs)
     not_running=sum(r['status']!='running' or r['boot']!='1' for r in rs)
     mems=[int(r['memMB']) for r in rs if r['memMB'].isdigit()]
-    ups=[int(r['uptime_s']) for r in rs if r['uptime_s'].isdigit()]
-    reboots=sum(1 for a,b in zip(ups,ups[1:]) if b<a)
+    ups=[r['started'] for r in rs]
+    reboots=sum(1 for a,b in zip(ups,ups[1:]) if b!=a)
     crashes=[int(r['crashes']) for r in rs if r['crashes'].isdigit()]
     print(f"手机 {pid}：采样 {n} 次；不在运行 {not_running}；WiFi 没连 {bad_wifi}；上不了网 {bad_net}；"
           f"中途重启 {reboots}；内存 {min(mems) if mems else '?'}–{max(mems) if mems else '?'} MB；"
@@ -64,3 +64,4 @@ av=[int(r['host_avail_mb']) for r in rows if r['host_avail_mb'].isdigit()]
 if av: print(f"宿主机可用内存：最低 {min(av)} MB，最高 {max(av)} MB")
 PY
 } | tee -a "$out/summary.txt"
+  echo "宿主机内核设置（应为 /sbin/modprobe 0 10）：$(cat /proc/sys/kernel/modprobe) $(cat /proc/sys/kernel/panic_on_oops) $(cat /proc/sys/vm/watermark_scale_factor)" | tee -a "$out/summary.txt"
