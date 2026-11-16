@@ -68,6 +68,44 @@ func (s *Service) teardownWifi(ctx context.Context, id string) {
 	}
 }
 
+// EnsureWifi 所有走 WiFi 的运行中手机：热点 / DHCP 没在跑就补起来（上网检查前顺带做）。
+func (s *Service) EnsureWifi(ctx context.Context) {
+	if !s.cfg.Wifi {
+		return
+	}
+	for _, p := range s.store.Snapshot().Phones {
+		if s.wifiActive(p.ID) && s.isRunning(ctx, p.ID) {
+			s.ensureWifi(ctx, p.ID)
+		}
+	}
+}
+
+// ensureWifi 一台手机的热点 / DHCP 没在跑就重新拉起来（手机会自己重连）。
+func (s *Service) ensureWifi(ctx context.Context, id string) {
+	if !s.wifiActive(id) {
+		return
+	}
+	// dnsmasq 的固定地址要手机的真 MAC：从这台的配置里取
+	st := s.store.Snapshot()
+	var p wifi.Plan
+	for _, ph := range st.Phones {
+		if ph.ID == id {
+			var err error
+			if p, err = s.wifiPlan(id, s.resolvedValues(ph, st)); err != nil {
+				return
+			}
+		}
+	}
+	if p.Netns == "" {
+		return
+	}
+	if fixed, err := wifi.EnsureDaemons(ctx, s.run, p); err != nil {
+		log.Printf("手机 %s：WiFi 热点补起来失败：%v", id, err)
+	} else if fixed {
+		log.Printf("手机 %s：WiFi 热点没在跑，已重新拉起", id)
+	}
+}
+
 // wifiActive 这台手机现在走 WiFi 吗（路由器命名空间在）。
 func (s *Service) wifiActive(id string) bool {
 	_, err := os.Stat("/run/netns/ppr-" + id)

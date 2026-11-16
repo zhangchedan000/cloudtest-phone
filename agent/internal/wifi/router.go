@@ -5,9 +5,11 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -188,18 +190,10 @@ func Setup(ctx context.Context, run Runner, newRadio NewRadioFunc, p Plan, conta
 	if err := step("路由器 wlan1 启用", "ip", in("ip", "link", "set", "wlan1", "up")...); err != nil {
 		return err
 	}
-	conf := filepath.Join(p.Dir, "hostapd.conf")
-	if err := os.WriteFile(conf, []byte(p.HostapdConf()), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(p.Dir, "hostapd.conf"), []byte(p.HostapdConf()), 0o600); err != nil {
 		return err
 	}
-	if err := step("热点（hostapd）", "ip", in("hostapd", "-B", "-P", filepath.Join(p.Dir, "hostapd.pid"), "-f", filepath.Join(p.Dir, "hostapd.log"), conf)...); err != nil {
-		return err
-	}
-	if err := step("DHCP（dnsmasq）", "ip", in("dnsmasq", "--interface=wlan1", "--bind-interfaces", "--except-interface=lo",
-		fmt.Sprintf("--dhcp-range=192.168.%d.100,192.168.%d.199,12h", p.Subnet, p.Subnet),
-		fmt.Sprintf("--dhcp-host=%s,%s", macString(p.StaMAC), p.PhoneIP()),
-		"--dhcp-option=6,"+p.RouterIP(), "--port=0",
-		"--pid-file="+filepath.Join(p.Dir, "dnsmasq.pid"), "--dhcp-leasefile="+filepath.Join(p.Dir, "leases"))...); err != nil {
+	if err := startDaemons(ctx, run, p); err != nil {
 		return err
 	}
 	if err := step("路由器转发", "ip", in("sysctl", "-qw", "net.ipv4.ip_forward=1")...); err != nil {
@@ -259,6 +253,125 @@ func Setup(ctx context.Context, run Runner, newRadio NewRadioFunc, p Plan, conta
 	return nil
 }
 
+// 热点和 DHCP 程序：有 systemd 时各起一个临时服务（systemd-run）。
+// 不能当管家的子进程跑：管家一重启（自动更新），systemd 会把管家服务里的进程全杀掉，手机就断 WiFi 了（踩坑 #57）。
+// 临时服务不受管家重启影响，挂了还会自动拉起来。没有 systemd 就退回后台进程（-B），靠 EnsureDaemons 补。
+
+// useSystemd 宿主机用 systemd 吗（测试时换掉）。
+var useSystemd = func() bool {
+	if _, err := os.Stat("/run/systemd/system"); err != nil {
+		return false
+	}
+	_, err := exec.LookPath("systemd-run")
+	return err == nil
+}
+
+func unitName(p Plan, what string) string {
+	return "ppwifi-" + strings.TrimPrefix(p.Netns, "ppr-") + "-" + what
+}
+
+func hostapdArgs(p Plan, background bool) []string {
+	a := []string{"hostapd"}
+	if background {
+		a = append(a, "-B", "-P", filepath.Join(p.Dir, "hostapd.pid"))
+	}
+	return append(a, "-f", filepath.Join(p.Dir, "hostapd.log"), filepath.Join(p.Dir, "hostapd.conf"))
+}
+
+func dnsmasqArgs(p Plan, foreground bool) []string {
+	a := []string{"dnsmasq", "--interface=wlan1", "--bind-interfaces", "--except-interface=lo",
+		fmt.Sprintf("--dhcp-range=192.168.%d.100,192.168.%d.199,12h", p.Subnet, p.Subnet),
+		fmt.Sprintf("--dhcp-host=%s,%s", macString(p.StaMAC), p.PhoneIP()),
+		"--dhcp-option=6," + p.RouterIP(), "--port=0",
+		"--pid-file=" + filepath.Join(p.Dir, "dnsmasq.pid"), "--dhcp-leasefile=" + filepath.Join(p.Dir, "leases")}
+	if foreground {
+		a = append(a, "--keep-in-foreground")
+	}
+	return a
+}
+
+// startDaemons 起热点和 DHCP（已在跑的先停掉）。
+func startDaemons(ctx context.Context, run Runner, p Plan) error {
+	in := func(args ...string) []string { return append([]string{"netns", "exec", p.Netns}, args...) }
+	sd := useSystemd()
+	for _, d := range []struct {
+		what, name string
+		args       []string
+	}{
+		{"热点（hostapd）", "hostapd", hostapdArgs(p, !sd)},
+		{"DHCP（dnsmasq）", "dnsmasq", dnsmasqArgs(p, sd)},
+	} {
+		var out string
+		var err error
+		if sd {
+			u := unitName(p, d.name)
+			_, _ = run.Run(ctx, "systemctl", "stop", u)
+			_, _ = run.Run(ctx, "systemctl", "reset-failed", u)
+			full := append([]string{"--unit=" + u, "--collect", "--quiet", "-p", "Restart=always", "-p", "RestartSec=2",
+				"--description=prism-phone 手机 WiFi " + d.name, "ip"}, in(d.args...)...)
+			out, err = run.Run(ctx, "systemd-run", full...)
+		} else {
+			out, err = run.Run(ctx, "ip", in(d.args...)...)
+		}
+		if err != nil {
+			return fmt.Errorf("%s：%v %s", d.what, err, strings.TrimSpace(out))
+		}
+	}
+	if sd {
+		// 前台跑的 hostapd 配置错了会马上退出：等一下确认还在
+		time.Sleep(1500 * time.Millisecond)
+		if out, err := run.Run(ctx, "systemctl", "is-active", unitName(p, "hostapd")); err != nil || strings.TrimSpace(out) != "active" {
+			log, _ := os.ReadFile(filepath.Join(p.Dir, "hostapd.log"))
+			return fmt.Errorf("热点（hostapd）没起来：%s", lastLines(string(log), 3))
+		}
+	}
+	return nil
+}
+
+// EnsureDaemons 路由器还在、但热点或 DHCP 没在跑（比如以前的版本随管家重启被杀了）就重新拉起来。返回是否补过。
+func EnsureDaemons(ctx context.Context, run Runner, p Plan) (bool, error) {
+	if _, err := os.Stat("/run/netns/" + p.Netns); err != nil {
+		return false, nil
+	}
+	if alive(ctx, run, p, "hostapd") && alive(ctx, run, p, "dnsmasq") {
+		return false, nil
+	}
+	for _, f := range []string{"hostapd.pid", "dnsmasq.pid"} {
+		if b, err := os.ReadFile(filepath.Join(p.Dir, f)); err == nil {
+			if pid := strings.TrimSpace(string(b)); pid != "" {
+				_, _ = run.Run(ctx, "kill", pid)
+			}
+		}
+	}
+	return true, startDaemons(ctx, run, p)
+}
+
+func alive(ctx context.Context, run Runner, p Plan, name string) bool {
+	if useSystemd() {
+		out, err := run.Run(ctx, "systemctl", "is-active", unitName(p, name))
+		if err == nil && strings.TrimSpace(out) == "active" {
+			return true
+		}
+	}
+	b, err := os.ReadFile(filepath.Join(p.Dir, name+".pid"))
+	if err != nil {
+		return false
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(string(b)))
+	if err != nil || pid <= 0 {
+		return false
+	}
+	return syscall.Kill(pid, 0) == nil
+}
+
+func lastLines(s string, n int) string {
+	l := strings.Split(strings.TrimSpace(s), "\n")
+	if len(l) > n {
+		l = l[len(l)-n:]
+	}
+	return strings.Join(l, " | ")
+}
+
 // DelRadioFunc 删 hwsim 网卡（测试时换成假的）。
 var DelRadioFunc = DelRadioInNetns
 
@@ -272,6 +385,9 @@ func Teardown(ctx context.Context, run Runner, p Plan) error {
 	}
 	if p.StaPhy != "" {
 		_ = DelRadioFunc("", p.StaPhy)
+	}
+	if useSystemd() {
+		_, _ = run.Run(ctx, "systemctl", "stop", unitName(p, "hostapd"), unitName(p, "dnsmasq"))
 	}
 	for _, f := range []string{"hostapd.pid", "dnsmasq.pid"} {
 		if b, err := os.ReadFile(filepath.Join(p.Dir, f)); err == nil {

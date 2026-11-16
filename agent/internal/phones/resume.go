@@ -27,6 +27,7 @@ func (s *Service) ResumeRunning(ctx context.Context) int {
 		id := p.ID
 		work := func() {
 			s.removeTraces(ctx, containerName(id))
+			s.ensureWifi(ctx, id)
 			s.applySettings(ctx, id)
 			s.resumeFakes(ctx, id)
 		}

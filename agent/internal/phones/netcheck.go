@@ -70,6 +70,7 @@ func (s *Service) SampleInternet(ctx context.Context) {
 // RunInternetChecker 一直检查，直到 ctx 结束。
 func (s *Service) RunInternetChecker(ctx context.Context, every time.Duration) {
 	for {
+		s.EnsureWifi(ctx)
 		s.SampleInternet(ctx)
 		select {
 		case <-ctx.Done():

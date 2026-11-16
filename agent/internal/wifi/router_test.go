@@ -48,6 +48,7 @@ func (f *fakeRun) Run(_ context.Context, name string, args ...string) (string, e
 
 func TestSetupOrderAndCommands(t *testing.T) {
 	DelRadioFunc = func(string, string) error { return nil }
+	useSystemd = func() bool { return false }
 	dir := t.TempDir()
 	p, _ := PlanFor("378ad10f54b8", "64:a2:00:3c:5e:71", dir)
 	r := &fakeRun{}
@@ -78,5 +79,49 @@ func TestSetupOrderAndCommands(t *testing.T) {
 	nft, _ := os.ReadFile(filepath.Join(p.Dir, "nft.conf"))
 	if !strings.Contains(string(nft), "snat to 10.88.1.4") || !strings.Contains(string(nft), "dnat to 10.88.0.1:1053") || !strings.Contains(string(nft), "dport 5555 dnat to "+p.PhoneIP()) {
 		t.Fatalf("NAT 规则不对：\n%s", nft)
+	}
+}
+
+// 有 systemd 时热点 / DHCP 作为临时服务跑（不随管家重启被杀），关机时停掉服务。
+type sdRun struct{ fakeRun }
+
+func (f *sdRun) Run(ctx context.Context, name string, args ...string) (string, error) {
+	out, err := f.fakeRun.Run(ctx, name, args...)
+	if name == "systemctl" && len(args) > 0 && args[0] == "is-active" {
+		return "active\n", nil
+	}
+	return out, err
+}
+
+func TestSetupWithSystemd(t *testing.T) {
+	DelRadioFunc = func(string, string) error { return nil }
+	useSystemd = func() bool { return true }
+	defer func() { useSystemd = func() bool { return false } }()
+	p, _ := PlanFor("378ad10f54b8", "64:a2:00:3c:5e:71", t.TempDir())
+	r := &sdRun{}
+	if err := Setup(context.Background(), r, func(string, string, [6]byte) (int, error) { return 1, nil }, p, 4242, "10.88.0.1", "10.88.0.1:1053"); err != nil {
+		t.Fatal(err)
+	}
+	j := strings.Join(r.calls, "\n")
+	for _, want := range []string{"systemd-run --unit=ppwifi-378ad10f54b8-hostapd", "-p Restart=always", "ip netns exec ppr-378ad10f54b8 hostapd -f", "systemd-run --unit=ppwifi-378ad10f54b8-dnsmasq", "--keep-in-foreground"} {
+		if !strings.Contains(j, want) {
+			t.Errorf("缺 %q：\n%s", want, j)
+		}
+	}
+	if strings.Contains(j, "hostapd -B") {
+		t.Error("systemd 管的 hostapd 不能 -B（会被当成已退出）")
+	}
+	r.calls = nil
+	_ = Teardown(context.Background(), r, p)
+	if !strings.Contains(strings.Join(r.calls, "\n"), "systemctl stop ppwifi-378ad10f54b8-hostapd ppwifi-378ad10f54b8-dnsmasq") {
+		t.Errorf("关机要停掉服务：%v", r.calls)
+	}
+	// 服务在跑就不动
+	r.calls = nil
+	if _, err := os.Stat("/run/netns/" + p.Netns); err == nil {
+		t.Skip("这台机器上真有这个命名空间")
+	}
+	if fixed, _ := EnsureDaemons(context.Background(), r, p); fixed {
+		t.Error("路由器不在时不该补")
 	}
 }
