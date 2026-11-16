@@ -1,0 +1,76 @@
+// 用户态测试 pp_mnt 的改写规则（和内核模块同一份 rewrite.h）：bash host/kmod/pp_mnt/test.sh
+// 样本是 2026-11-16 从甲骨文上一台云手机的 /proc/self/mountinfo、/proc/mounts 里抄的。
+#include <stdio.h>
+#include <string.h>
+#include "rewrite.h"
+
+static int fails;
+
+static void check(int mi, const char *in, const char *want)
+{
+	static const struct pp_cfg c = { "/opt/prism-phone/data/phones/378ad10f54b8/data", "/dev/sda1" };
+	char out[2048];
+	int n = pp_rewrite(in, (int)strlen(in), out, sizeof(out), mi, &c);
+	const char *got = n < 0 ? in : (n == 0 ? "" : (out[n] = 0, out));
+
+	if (strcmp(got, want) != 0) {
+		fails++;
+		printf("FAIL\n  in:   %s  got:  %s  want: %s", in, got[0] ? got : "(删掉)\n", want[0] ? want : "(删掉)\n");
+	}
+}
+
+#define OVL "overlay overlay rw,lowerdir=/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/522/fs:/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/492/fs,upperdir=/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/523/fs,workdir=/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/523/work"
+#define SDA "ext4 /dev/sda1 rw,discard,errors=remount-ro,commit=30"
+#define P "/opt/prism-phone/data/phones/378ad10f54b8"
+
+int main(void)
+{
+	/* mountinfo */
+	check(1, "482 156 0:53 / / rw,relatime shared:404 - " OVL "\n",
+	      "482 156 253:0 / / ro,relatime shared:404 - ext4 /dev/block/dm-0 ro,seclabel,relatime\n");
+	check(1, "537 197 0:53 /system/apex/com.android.art /apex/com.android.art rw,relatime shared:404 - " OVL "\n",
+	      "537 197 253:0 /system/apex/com.android.art /apex/com.android.art ro,relatime shared:404 - ext4 /dev/block/dm-0 ro,seclabel,relatime\n");
+	check(1, "495 482 8:1 " P "/data /data rw,relatime shared:524 - " SDA "\n",
+	      "495 482 253:34 / /data rw,relatime shared:524 - ext4 /dev/block/dm-34 rw,seclabel,nosuid,nodev,noatime,resgid=1065,errors=panic\n");
+	check(1, "642 641 8:1 " P "/data/user /data_mirror/data_ce/null rw,relatime shared:524 - " SDA "\n",
+	      "642 641 253:34 /user /data_mirror/data_ce/null rw,relatime shared:524 - ext4 /dev/block/dm-34 rw,seclabel,nosuid,nodev,noatime,resgid=1065,errors=panic\n");
+	check(1, "498 482 8:1 " P "/buildprop/0.prop /system/build.prop ro,relatime shared:555 - " SDA "\n", "");
+	check(1, "499 482 8:1 /var/lib/docker/containers/95c0/resolv.conf /etc/resolv.conf rw,relatime shared:556 - " SDA "\n", "");
+	check(1, "620 194 8:1 " P "/data/.empty /proc/vmallocinfo rw,relatime shared:524 - " SDA "\n", "");
+	check(1, "490 485 0:69 / /dev/mqueue rw,nosuid,nodev,noexec,relatime shared:489 - mqueue mqueue rw\n", "");
+	check(1, "493 485 0:75 / /dev/shm rw,nosuid,nodev,noexec,relatime shared:490 - tmpfs shm rw,size=65536k,inode64\n", "");
+	check(1, "153 485 0:73 /0 /dev/goldfish_pipe_dprctd rw,nosuid,noexec,relatime shared:491 - devpts devpts rw,gid=5,mode=620,ptmxmode=666\n", "");
+	check(1, "155 486 0:55 / /dev/pts rw,relatime shared:488 - devpts devpts rw,mode=600,ptmxmode=000\n",
+	      "155 486 0:55 / /dev/pts rw,relatime shared:488 - devpts devpts rw,mode=600,ptmxmode=000\n");
+	check(1, "194 484 0:56 / /proc rw,relatime shared:464 - proc proc rw,gid=3009,hidepid=invisible\n",
+	      "194 484 0:56 / /proc rw,relatime shared:464 - proc proc rw,gid=3009,hidepid=invisible\n");
+	/* 别的手机的目录（前缀相同开头但不是它）不能当成自己的 /data */
+	check(1, "700 482 8:1 " P "/data2 /x rw,relatime - " SDA "\n", "");
+	/* 没有可选字段 */
+	check(1, "197 482 0:68 / /apex rw,nosuid,nodev,noexec,relatime - tmpfs tmpfs rw,mode=755,inode64\n",
+	      "197 482 0:68 / /apex rw,nosuid,nodev,noexec,relatime - tmpfs tmpfs rw,mode=755,inode64\n");
+
+	/* /proc/mounts */
+	check(0, OVL " 0 0\n", OVL " 0 0\n");  /* 挂载点不是路径的怪行（第 3 列不是 overlay）：原样 */
+	check(0, "overlay / " "overlay rw,relatime,lowerdir=/var/lib/containerd/a:/b 0 0\n", "/dev/block/dm-0 / ext4 ro,seclabel,relatime 0 0\n");
+	check(0, "/dev/sda1 /data ext4 rw,relatime,discard 0 0\n", "/dev/block/dm-34 /data ext4 rw,seclabel,nosuid,nodev,noatime,resgid=1065,errors=panic 0 0\n");
+	check(0, "/dev/sda1 /data_mirror/data_de/null ext4 rw,relatime 0 0\n", "/dev/block/dm-34 /data_mirror/data_de/null ext4 rw,seclabel,nosuid,nodev,noatime,resgid=1065,errors=panic 0 0\n");
+	check(0, "/dev/sda1 /system/build.prop ext4 ro,relatime 0 0\n", "");
+	check(0, "/dev/sda1 /etc/hosts ext4 rw,relatime 0 0\n", "");
+	check(0, "/dev/sda1 /proc/vmallocinfo ext4 rw,relatime 0 0\n", "");
+	check(0, "shm /dev/shm tmpfs rw,nosuid 0 0\n", "");
+	check(0, "proc /proc proc rw,relatime 0 0\n", "proc /proc proc rw,relatime 0 0\n");
+
+	/* 输出放不下：原样（不截断） */
+	{
+		static const struct pp_cfg c = { P "/data", "/dev/sda1" };
+		const char *in = "482 156 0:53 / / rw,relatime shared:404 - " OVL "\n";
+		char small[20];
+		if (pp_rewrite(in, (int)strlen(in), small, sizeof(small), 1, &c) != -1) {
+			fails++;
+			printf("FAIL 放不下时应该原样\n");
+		}
+	}
+	printf(fails ? "%d 项失败\n" : "全部通过\n", fails);
+	return fails != 0;
+}
