@@ -1,4 +1,4 @@
-import { ApiOutlined, BulbOutlined, CloudServerOutlined, MobileOutlined, ProfileOutlined } from '@ant-design/icons'
+import { ApiOutlined, BulbOutlined, CloudServerOutlined, DesktopOutlined, MobileOutlined, ProfileOutlined } from '@ant-design/icons'
 import { Button, Input, Spin, Tooltip } from 'antd'
 import { useEffect, useState, type ReactNode } from 'react'
 import { applyTheme, useTheme } from '@/theme'
@@ -6,6 +6,7 @@ import { HostsPage } from '@/pages/other/HostsPage'
 import { ModelsPage } from '@/pages/other/ModelsPage'
 import { ProxiesPage } from '@/pages/other/ProxiesPage'
 import { PhonesPage } from '@/pages/phones/PhonesPage'
+import { ConsolePage } from '@/pages/phones/ConsolePage'
 import { useWorkspace } from '@/data/store'
 import { PhoneDrawer } from '@/pages/phones/PhoneDrawer'
 import { windowPhoneId } from '@/pages/phones/phoneWindow'
@@ -13,6 +14,7 @@ import { windowPhoneId } from '@/pages/phones/phoneWindow'
 /** 页面登记表：侧边栏和标题都从这里读（同 Prism 的 registry）。 */
 const PAGES: { key: string; label: string; icon: ReactNode; render: () => ReactNode }[] = [
   { key: 'phones', label: '云手机', icon: <MobileOutlined />, render: () => <PhonesPage /> },
+  { key: 'console', label: '控制台', icon: <DesktopOutlined />, render: () => <ConsolePage /> },
   { key: 'proxies', label: '代理 IP', icon: <ApiOutlined />, render: () => <ProxiesPage /> },
   { key: 'models', label: '机型库', icon: <ProfileOutlined />, render: () => <ModelsPage /> },
   { key: 'hosts', label: '机器', icon: <CloudServerOutlined />, render: () => <HostsPage /> }

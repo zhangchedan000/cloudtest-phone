@@ -130,3 +130,24 @@ body { background: var(--fb-bg); color: var(--fb-text); font-family: Inter, ui-s
 .pp-window .pp-detail-screen { position: relative; }
 .pp-window .pp-phone-large .pp-phone-screen { height: calc(100vh - 190px); width: calc((100vh - 190px) * 0.47); max-width: calc(100vw - 90px); }
 .pp-proxy-switch { width: 300px; max-width: 100%; margin-bottom: 4px; }
+
+/* 控制台（仿魔云腾客户端布局） */
+.pp-console { display: flex; gap: 0; height: calc(100vh - 110px); min-height: 520px; border: 1px solid var(--fb-line); border-radius: 12px; overflow: hidden; background: var(--fb-surface); }
+.pp-console-side { width: 270px; flex: none; display: flex; flex-direction: column; gap: 10px; padding: 12px; border-right: 1px solid var(--fb-line); }
+.pp-console-side-title { font-weight: 600; }
+.pp-console-tree { flex: 1; overflow: auto; display: flex; flex-direction: column; gap: 2px; }
+.pp-tree-row { display: flex; align-items: center; gap: 6px; padding: 5px 8px; border-radius: 6px; cursor: pointer; font-size: 13px; }
+.pp-tree-row:hover { background: var(--fb-chip); }
+.pp-tree-active { background: var(--fb-chip); font-weight: 600; }
+.pp-tree-phone { padding-left: 26px; }
+.pp-tree-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pp-tree-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.pp-console-main { flex: 1; min-width: 0; display: flex; flex-direction: column; padding: 12px 14px; overflow: auto; }
+.pp-console-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.pp-console-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 12px; }
+.pp-console-tile { display: flex; flex-direction: column; gap: 6px; padding: 6px; border-radius: 10px; border: 1px solid transparent; }
+.pp-console-tile-on { border-color: var(--fb-accent); }
+.pp-console-screen { cursor: pointer; display: flex; justify-content: center; }
+.pp-console-tile-foot { display: flex; align-items: center; gap: 4px; font-size: 13px; }
+.pp-stop-square { display: inline-block; width: 10px; height: 10px; background: currentColor; border-radius: 2px; }
+@media (max-width: 760px) { .pp-console { flex-direction: column; height: auto; } .pp-console-side { width: auto; border-right: 0; border-bottom: 1px solid var(--fb-line); max-height: 320px; } }
