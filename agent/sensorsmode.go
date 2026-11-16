@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"syscall"
+	"unsafe"
 
 	"github.com/zhangchedan000/prism-phone/agent/internal/sensors"
 )
@@ -29,6 +30,9 @@ func startSensors(spec string) {
 
 // runSensors 喂数据进程（不返回）。
 func runSensors(arg string) {
+	// 进程名别叫 exe（只有 root 看得见，App 看不到别的进程，但还是起个像样的名字）
+	name := []byte("vendor.sensord\x00")
+	_, _, _ = syscall.RawSyscall(syscall.SYS_PRCTL, syscall.PR_SET_NAME, uintptr(unsafe.Pointer(&name[0])), 0)
 	spec, err := sensors.Decode(arg)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "pp-sensors：参数不对：%v\n", err)

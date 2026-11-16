@@ -3,6 +3,8 @@
 # 它连模拟器只走 vsock（宿主 CID 2 端口 5000），失败就放弃；容器里 vsock 连到的是云厂商的虚拟机管理程序，没法接管。
 # 把 qemu_pipe_open_ns 里「走 vsock」那条分支的第一条指令（mov w0,#0x1388）改成跳到「打开 /dev/goldfish_pipe_dprctd」那段。
 # 按指令特征找位置（不写死地址），找不到或不唯一就报错退出，不会乱改。
+# 另外把模拟器的传感器名字（Goldfish ...）和厂商（The Android Open Source Project）原地换成普通名字（只能等长或更短，后面补 0）。
+# 注意：各机型真实的传感器芯片名要真机 dump 才知道，这里先用不带模拟器痕迹的通用名字（踩坑 #59）。
 # 用法：python3 patch-ranchu.py <so 文件>
 import struct, sys
 
@@ -42,6 +44,32 @@ for off, va, fs in segs:
             d = (x & 0x3ffffff) * 4
             if 0 < d < 0x100 and is_adrp_x0(ins(o + d)) and is_add_x0_x0(ins(o + d + 4)):
                 already += 1
+NAMES = {
+    'Goldfish 3-axis Accelerometer': 'Accelerometer',
+    'Goldfish 3-axis Accelerometer Uncalibrated': 'Accelerometer Uncalibrated',
+    'Goldfish 3-axis Gyroscope': 'Gyroscope',
+    'Goldfish 3-axis Gyroscope (uncalibrated)': 'Gyroscope Uncalibrated',
+    'Goldfish 3-axis Magnetic field sensor': 'Magnetometer',
+    'Goldfish 3-axis Magnetic field sensor (uncalibrated)': 'Magnetometer Uncalibrated',
+    'Goldfish Proximity sensor': 'Proximity Sensor',
+    'Goldfish Light sensor': 'Light Sensor',
+    'Goldfish Ambient Temperature sensor': 'Ambient Temperature',
+    'Goldfish Pressure sensor': 'Pressure Sensor',
+    'Goldfish Humidity sensor': 'Humidity Sensor',
+    'Goldfish Orientation sensor': 'Orientation',
+    'The Android Open Source Project': 'MTK',
+}
+renamed = 0
+for old, new in NAMES.items():
+    assert len(new) <= len(old)
+    pat = b'\0' + old.encode() + b'\0'
+    i = b.find(pat)
+    if i >= 0 and b.find(pat, i + 1) < 0:
+        b[i + 1:i + 1 + len(old)] = new.encode() + b'\0' * (len(old) - len(new))
+        renamed += 1
+if renamed:
+    open(p, 'wb').write(b)
+    print('改了 %d 个名字' % renamed)
 if not cands and already == 1:
     print('已经打过补丁'); sys.exit(0)
 if len(cands) != 1:
