@@ -100,9 +100,9 @@ cat > "$B/Dockerfile" <<DF
 FROM busybox:1.36.1-musl AS bb
 FROM $base
 COPY vendor/ /vendor/
-COPY --from=bb /bin/busybox /pp-bb
-COPY fixup.sh /pp-fixup.sh
-RUN ["/pp-bb", "sh", "-c", "/pp-bb sh /pp-fixup.sh '$HWS' && /pp-bb rm -f /pp-fixup.sh /pp-bb"]
+COPY --from=bb /bin/busybox /.ppbb/busybox
+COPY fixup.sh /.ppbb/fixup.sh
+RUN ["/.ppbb/busybox", "sh", "-c", "/.ppbb/busybox --install -s /.ppbb && PATH=/.ppbb sh /.ppbb/fixup.sh '$HWS' && /.ppbb/busybox rm -rf /.ppbb"]
 LABEL prism.wifi=1 prism.sensors=1 prism.touch=1 prism.hw="$HWS"
 DF
 out="${base}-wifi"
