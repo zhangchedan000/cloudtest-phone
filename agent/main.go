@@ -50,6 +50,7 @@ func main() {
 	maxRunning := flag.Int("max-running", 4, "同时最多运行几台")
 	devHost := flag.Bool("dev-host", false, "开发机：允许「直连（仅开发）」代理")
 	noTimens := flag.Bool("no-timens", false, "不让云手机的开机时长归零（出问题时临时关掉用）")
+	noDataImages := flag.Bool("no-data-images", false, "新手机不用按机型容量的磁盘镜像，/data 直接用宿主机目录")
 	dockerSock := flag.String("docker", "/var/run/docker.sock", "Docker socket")
 	mihomoAPI := flag.String("mihomo-api", "", "网络模块：mihomo 控制接口地址（例如 127.0.0.1:9090）；空 = 不开网络模块（只适合开发测试）")
 	tproxyPort := flag.Int("tproxy-port", 7893, "网络模块：mihomo 透明代理端口")
@@ -90,6 +91,7 @@ func main() {
 		Images: imgs, GappsImages: gappsImgs, DataDir: *dataDir, Network: *network, Subnet: *subnet, MemoryMB: *memMB, CPUs: *cpus,
 		MaxRunning: *maxRunning, DevHost: *devHost,
 	}
+	cfg.DataImages = !*noDataImages && phones.DataImagesSupported()
 	// 开机时长归零：内核支持时间命名空间就用管家程序自己当容器启动器（timens 包）
 	if !*noTimens && timens.Supported() {
 		if exe, err := os.Executable(); err == nil {

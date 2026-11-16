@@ -36,13 +36,25 @@ func (s *Service) Reset(ctx context.Context, id string, req ResetRequest) error 
 	if err := s.docker.RemoveContainer(ctx, containerName(id)); err != nil {
 		return fmt.Errorf("停掉旧容器：%w", err)
 	}
-	dataDir := filepath.Join(s.cfg.DataDir, "phones", p.ID, "data")
-	if _, err := os.Stat(dataDir); err == nil {
-		trash := filepath.Join(s.cfg.DataDir, "trash")
-		if err := os.MkdirAll(trash, 0o755); err != nil {
+	if err := s.releaseData(ctx, p.ID); err != nil {
+		return err
+	}
+	dataDir := s.dataDir(p.ID)
+	dest := filepath.Join(s.cfg.DataDir, "trash", p.ID+"-reset-"+s.now().Format("20060102-150405"))
+	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
+		return err
+	}
+	if _, err := os.Stat(s.dataImage(p.ID)); err == nil {
+		// 用磁盘镜像的手机：镜像整个挪进回收站（下次开机按机型容量建新的），空的挂载点删掉
+		if err := os.MkdirAll(dest, 0o755); err != nil {
 			return err
 		}
-		if err := os.Rename(dataDir, filepath.Join(trash, p.ID+"-reset-"+s.now().Format("20060102-150405"))); err != nil {
+		if err := os.Rename(s.dataImage(p.ID), filepath.Join(dest, "data.img")); err != nil {
+			return fmt.Errorf("旧数据挪到回收站：%w", err)
+		}
+		_ = os.Remove(dataDir)
+	} else if _, err := os.Stat(dataDir); err == nil {
+		if err := os.Rename(dataDir, dest); err != nil {
 			return fmt.Errorf("旧数据挪到回收站：%w", err)
 		}
 	}

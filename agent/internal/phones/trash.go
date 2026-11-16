@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"syscall"
 	"time"
 )
 
@@ -57,7 +58,12 @@ func dirSizeMB(dir string) float64 {
 	_ = filepath.WalkDir(dir, func(_ string, d fs.DirEntry, err error) error {
 		if err == nil && !d.IsDir() {
 			if info, err := d.Info(); err == nil {
-				total += info.Size()
+				// 按实际占的磁盘块算：手机存储镜像是稀疏文件，表面大小 256GB，实际可能只有几百 MB
+				if st, ok := info.Sys().(*syscall.Stat_t); ok {
+					total += st.Blocks * 512
+				} else {
+					total += info.Size()
+				}
 			}
 		}
 		return nil

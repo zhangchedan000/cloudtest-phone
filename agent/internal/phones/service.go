@@ -42,6 +42,8 @@ type Config struct {
 	MaxRunning  int            // 同时最多运行几台
 	// DevHost 开发机：允许「直连（仅开发）」代理，方便没代理时测试。正式机器必须是 false。
 	DevHost bool
+	// DataImages 新手机的 /data 用按机型容量建的 ext4 磁盘镜像（手机里看到的总容量对得上机型，storage.go）。
+	DataImages bool
 	// InitHelper 开机时长归零的启动器（管家程序自己的路径，见 timens 包）；空 = 不用（内核不支持时间命名空间）。
 	InitHelper string
 	// HostCPUs 宿主机核数（0 = 自动）；BootTimeout / PollEvery 等开机的超时和间隔（0 = 默认）。
@@ -678,8 +680,12 @@ func (s *Service) Start(ctx context.Context, id string) error {
 	if err := s.docker.EnsureNetwork(ctx, s.cfg.Network, s.cfg.Subnet, s.gateway()); err != nil {
 		return fmt.Errorf("准备网络：%w", err)
 	}
-	dataDir := filepath.Join(s.cfg.DataDir, "phones", p.ID, "data")
-	if err := os.MkdirAll(dataDir, 0o755); err != nil {
+	byKey := map[string]any{}
+	for _, r := range s.resolve(*p, st) {
+		byKey[r.Key] = r.Value
+	}
+	dataDir, err := s.prepareData(ctx, p.ID, byKey)
+	if err != nil {
 		return err
 	}
 	binds := []string{dataDir + ":/data"}
@@ -775,6 +781,9 @@ func (s *Service) Stop(ctx context.Context, id string) error {
 // Delete 删除云手机。数据不直接删，挪到 DataDir/trash 下（误删还能找回），确认没问题再手动清。
 func (s *Service) Delete(ctx context.Context, id string) error {
 	if err := s.docker.RemoveContainer(ctx, containerName(id)); err != nil {
+		return err
+	}
+	if err := s.releaseData(ctx, id); err != nil {
 		return err
 	}
 	src := filepath.Join(s.cfg.DataDir, "phones", id)
