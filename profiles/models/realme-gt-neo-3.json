@@ -60,6 +60,7 @@
       "ro.bootimage.build.type": "user",
       "ro.bootimage.build.version.incremental": "S.1728d2e_1-79553",
       "ro.build.date.utc": "1711079005",
+      "ro.build.description": "sys_mssi_64_cn_armv82-user 14 UKQ1.230924.001 1711079005598 release-keys",
       "ro.build.display.id": "RMX3563_14.0.0.524(EX01)",
       "ro.build.fingerprint": "realme/RMX3563/RED8BEL1:14/UKQ1.230924.001/S.1728d2e_1-79553:user/release-keys",
       "ro.build.flavor": "sys_mssi_64_cn_armv82-user",

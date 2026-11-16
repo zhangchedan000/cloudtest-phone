@@ -21,7 +21,7 @@ product 分区是 miproduct_xxx/missi，odm 分区的指纹还停在安卓 12（
     各分区 ro.product.* 的 brand / device / manufacturer / model / name / marketname，display.id 等）。
     不碰 sdk / release / abi 这类能力字段（要和实际跑的镜像一致）；安全补丁日期也不碰：比镜像旧的话
     密钥库会认为补丁回退，已有手机存的密钥可能失效（踩坑 #52）。
-  - 值带空格的跳过（启动参数遇空格截断，踩坑 #43），空值跳过。
+  - 值带空格的也保留（市场名、ro.build.description……启动参数传不了，管家改写 build.prop 文件带进去，踩坑 #55），空值跳过。
 """
 import json
 import os
@@ -32,7 +32,7 @@ PARTS = "system|vendor|odm|product|system_ext|vendor_dlkm|odm_dlkm|system_dlkm|b
 KEEP = [
     re.compile(rf"^ro\.(({PARTS})\.)?build\.(fingerprint|id|tags|type|version\.incremental|date\.utc)$"),
     re.compile(rf"^ro\.product\.(({PARTS})\.)?(brand|device|manufacturer|model|name|marketname)$"),
-    re.compile(r"^ro\.build\.(display\.id|flavor|product|host|user)$"),
+    re.compile(r"^ro\.build\.(display\.id|flavor|product|host|user|description)$"),
 ]
 
 # 文件名前缀 → 加载先后（数字小的先读）
@@ -95,9 +95,7 @@ def extract(d, sku=None, region=None):
             if v == "":
                 continue
             if " " in v:
-                skipped[k] = v
-                props.pop(k, None)
-                continue
+                skipped[k] = v  # 带空格的也留着：启动参数传不了，管家改由 build.prop 文件带进去（踩坑 #55）
             props[k] = v
     return dict(sorted(props.items())), skipped
 
@@ -116,9 +114,9 @@ def main():
         with open(path, "w", encoding="utf-8") as fh:
             json.dump(m, fh, ensure_ascii=False, indent=2)
             fh.write("\n")
-        print(f"写进 {path} 的 buildProps[{ver}]：{len(props)} 项（带空格跳过 {len(skipped)} 项）")
+        print(f"写进 {path} 的 buildProps[{ver}]：{len(props)} 项（其中带空格 {len(skipped)} 项，走 build.prop 文件）")
     else:
-        print(json.dumps({"props": props, "skippedWithSpaces": skipped}, ensure_ascii=False, indent=1))
+        print(json.dumps({"props": props, "withSpaces": skipped}, ensure_ascii=False, indent=1))
 
 
 if __name__ == "__main__":

@@ -42,6 +42,7 @@
       "ro.bootimage.build.type": "user",
       "ro.bootimage.build.version.incremental": "2407012308",
       "ro.build.date.utc": "1719846494",
+      "ro.build.description": "sys_mssi_64_ww_armv82-user 14 UP1A.231005.007 2407012308 release-keys",
       "ro.build.display.id": "U2.6-240701-2308",
       "ro.build.flavor": "sys_mssi_64_ww_armv82-user",
       "ro.build.host": "NTSV-J900D1VX",
@@ -147,6 +148,7 @@
     },
     "15": {
       "ro.build.date.utc": "1730379915",
+      "ro.build.description": "sys_mssi_64_ww_armv82-user 15 AP3A.240905.015.A2 2410312105 release-keys",
       "ro.build.display.id": "V3.0-241031-2105",
       "ro.build.flavor": "sys_mssi_64_ww_armv82-user",
       "ro.build.host": "NTSV-J900XHX3",

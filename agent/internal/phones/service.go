@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"net/netip"
 	"os"
 	"path/filepath"
@@ -282,8 +283,10 @@ func (s *Service) resolve(p store.Phone, st store.State) []ResolvedField {
 		case f.Sink.Kind == "prop" && !allReadOnlyProps(f.Sink.Names):
 			rf.Reason = "开机后设置（这个字段还没实现）"
 		case f.Sink.Kind == "prop" && strings.ContainsAny(fmt.Sprint(value), " \t"):
-			// 实测：Redroid 启动参数里的值遇到空格会被截断（「POCO X4 GT」变成「POCO」），截断比不改更糟。
-			rf.Reason = "值里有空格，启动参数传不了（待改用 build.prop 写入）"
+			// 实测：Redroid 启动参数里的值遇到空格会被截断（「POCO X4 GT」变成「POCO」），
+			// 所以不走启动参数，改由开机前挂进去的 /system/build.prop 带进去（buildprop.go，踩坑 #55）。
+			rf.Applied = true
+			rf.Reason = "写进 build.prop（值里有空格，启动参数传不了）"
 		case f.Sink.Kind == "prop":
 			rf.Applied = true
 		case f.Sink.Kind == "setting":
@@ -331,6 +334,14 @@ func localeFor(country string) string {
 // BootArgs 把设备参数变成 Redroid 的启动参数（androidboot.* 和 ro.* 属性）。
 // 每次开机都重新生成，所以「重启生效」的字段改完重启就生效。
 func (s *Service) BootArgs(p store.Phone, st store.State) []string {
+	args, _ := s.bootProps(p, st)
+	return args
+}
+
+// bootProps 启动参数 + 带空格、启动参数传不了的属性（spaced：市场名、ro.build.description……，
+// 改由开机前挂进去的 build.prop 文件带进去，见 buildprop.go）。
+func (s *Service) bootProps(p store.Phone, st store.State) ([]string, map[string]string) {
+	spaced := map[string]string{}
 	args := []string{
 		"androidboot.redroid_gpu_mode=" + s.cfg.GPUMode,
 		"androidboot.use_memfd=true",
@@ -374,6 +385,10 @@ func (s *Service) BootArgs(p store.Phone, st store.State) []string {
 			if _, real := realBP[name]; real {
 				continue // 真机数据里有这个分区属性，用真机的
 			}
+			if strings.ContainsAny(val, " \t") {
+				spaced[name] = val // 带空格（如市场名 Xiaomi 13T）：启动参数会截断，走 build.prop 文件
+				continue
+			}
 			props = append(props, name+"="+val)
 		}
 	}
@@ -388,7 +403,25 @@ func (s *Service) BootArgs(p store.Phone, st store.State) []string {
 	} else if m := s.model(p.ModelID); m != nil {
 		realFP = m.Fingerprints[fmt.Sprintf("%d", p.AndroidVersion)]
 	}
-	return withBuildProps(append(args, fingerprintProps(byKey, realFP, p.AndroidVersion)...), realBP)
+	args = withBuildProps(append(args, fingerprintProps(byKey, realFP, p.AndroidVersion)...), realBP)
+	for k, v := range realBP {
+		if strings.HasPrefix(k, "ro.") && strings.ContainsAny(v, " \t") && !strings.Contains(k, "security_patch") {
+			spaced[k] = v
+		}
+	}
+	// ro.build.description（flavor release id incremental tags，带空格）：真机数据里有就用，没有按最终值拼
+	if _, ok := spaced["ro.build.description"]; !ok {
+		final := map[string]string{}
+		for _, a := range args {
+			if k, v, ok := strings.Cut(a, "="); ok {
+				final[k] = v
+			}
+		}
+		if final["ro.build.flavor"] != "" && final["ro.build.id"] != "" && final["ro.build.version.incremental"] != "" {
+			spaced["ro.build.description"] = fmt.Sprintf("%s %d %s %s release-keys", final["ro.build.flavor"], p.AndroidVersion, final["ro.build.id"], final["ro.build.version.incremental"])
+		}
+	}
+	return args, spaced
 }
 
 // withBuildProps 用真机的分区属性替换兜底值：fingerprintProps 里同名的去掉，真机的整套加在后面；
@@ -717,6 +750,12 @@ func (s *Service) Start(ctx context.Context, id string) error {
 	if err != nil {
 		return err
 	}
+	bootArgs, spaced := s.bootProps(*p, st)
+	if bpBinds, err := s.prepareBuildProps(ctx, p.ID, image, bootArgs, spaced); err != nil {
+		log.Printf("手机 %s：build.prop 没改写（照镜像原样开机）：%v", p.ID, err)
+	} else {
+		binds = append(binds, bpBinds...)
+	}
 	entrypoint := s.initEntrypoint(ctx, image)
 	if entrypoint != nil {
 		binds = append(binds, s.cfg.InitHelper+":"+initMount+":ro")
@@ -725,7 +764,7 @@ func (s *Service) Start(ctx context.Context, id string) error {
 		Entrypoint: entrypoint,
 		Name:       name,
 		Image:      image,
-		Cmd:        s.BootArgs(*p, st),
+		Cmd:        bootArgs,
 		Labels:     map[string]string{"prism-phone": "1", "prism-phone.id": p.ID},
 		Binds:      binds,
 		MemoryMB:   memLimit,
