@@ -75,6 +75,8 @@ log "打开电话（rild 连小助手模拟的基带，踩坑 #65）"
 if [ -f "$V/bin/hw/libgoldfish-rild" ]; then
   cp -a "$V/bin/hw/libgoldfish-rild" "$B/vendor/bin/hw/"
   cp -a "$V/lib64/libril-modem-lib.so" "$V/lib64/libreference-ril.so" "$B/vendor/lib64/"
+  # 安卓 15 的模拟器 rild 直接按名字加载 libcuttlefish-ril-2.so（也是 reference-ril 的一种，支持 -d 串口）
+  [ -f "$V/lib64/libcuttlefish-ril-2.so" ] && cp -a "$V/lib64/libcuttlefish-ril-2.so" "$B/vendor/lib64/"
   [ -f "$V/lib64/hw/android.hardware.radio-library.compat.so" ] && cp -a "$V/lib64/hw/android.hardware.radio-library.compat.so" "$B/vendor/lib64/hw/"
   cp -a "$V/etc/init/rild_goldfish.rc" "$B/vendor/etc/init/"
   # 电话服务的 VINTF 声明：从模拟器的 vendor manifest.xml 里摘出 radio 相关的 <hal>
