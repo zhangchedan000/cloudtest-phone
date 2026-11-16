@@ -2,7 +2,7 @@ import {
   AppstoreAddOutlined, ArrowLeftOutlined, BorderOutlined, CameraOutlined, CodeOutlined, CopyOutlined, EditOutlined, HomeOutlined, MoreOutlined,
   PoweroffOutlined, RedoOutlined, RotateRightOutlined, SoundOutlined, UploadOutlined
 } from '@ant-design/icons'
-import { App, Button, Descriptions, Drawer, Dropdown, Input, Modal, Space, Tabs, Tooltip } from 'antd'
+import { App, Button, Descriptions, Drawer, Dropdown, Input, Modal, Space, Switch, Tabs, Tooltip } from 'antd'
 import { getClipboard, openRawScreenshot, serverUrl, setClipboard, upload, type InputRequest } from '@/data/api'
 import { useRef, useState } from 'react'
 import { PhoneScreen } from '@/components/PhoneScreen'
@@ -134,6 +134,13 @@ export function PhoneDrawer({ phone, mode = 'view', onClose, onEdit, bare = fals
                     { label: '所在机器', children: `${host?.name}（${host?.location}）` },
                     { label: '内部 IP（ADB 用）', children: live.ip ? <Space>{live.ip}<Button size="small" onClick={() => setAdbOpen(true)}>ADB 连接命令</Button></Space> : '—' },
                     { label: '显卡', children: host?.gpu },
+                    {
+                      label: '谷歌服务', children: <Space wrap>
+                        <Switch size="small" checked={!!live.gapps} disabled={!liveMode || (!live.gapps && !host?.gappsVersions?.includes(live.androidVersion))}
+                          onChange={(on) => void ws.assign([live.id], { gapps: on }).then(() => message.success(running ? '已切换，重启这台手机后生效' : '已切换，下次开机生效'))} />
+                        <span className="pp-muted pp-small">{host?.gappsVersions?.includes(live.androidVersion) ? 'GMS / Play 商店，下次开机生效' : '这台机器没装这个安卓版本的谷歌服务镜像'}</span>
+                      </Space>
+                    },
                     { label: '时区 / 语言', children: !live.settings ? '—' : live.settings.state === 'pending' ? '等开机完成后设置…' : live.settings.state === 'applied' ? '已设置' : `设置失败：${live.settings.error ?? ''}` },
                     { label: '创建时间', children: live.createdAt.slice(0, 16).replace('T', ' ') },
                     { label: '备注', children: live.note ?? '—' }

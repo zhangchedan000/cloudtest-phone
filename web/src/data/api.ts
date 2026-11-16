@@ -100,7 +100,7 @@ export const api = {
   host: (sid?: string) => call<HostInfo>('GET', '/host', undefined, sid),
   phones: (sid?: string) => call<PhoneView[]>('GET', '/phones', undefined, sid),
   createPhone: (req: { name: string; modelId: string; androidVersion: number; proxyId: string; groupId: string; note?: string; gapps?: boolean }, sid?: string) => call<Phone>('POST', '/phones', req, sid),
-  savePhone: (id: string, req: { fields?: Record<string, FieldSetting>; modelId?: string; proxyId?: string; proxyIds?: string[]; groupId?: string; name?: string; note?: string }) => call('PUT', `/phones/${id}`, req),
+  savePhone: (id: string, req: { fields?: Record<string, FieldSetting>; modelId?: string; proxyId?: string; proxyIds?: string[]; groupId?: string; name?: string; note?: string; gapps?: boolean }) => call('PUT', `/phones/${id}`, req),
   /** 切换这台当前用的代理（开着的手机时区马上跟着换）。 */
   switchProxy: (id: string, proxyId: string) => call<{ proxyId: string; timezone?: string; warning?: string }>('POST', `/phones/${id}/proxy`, { proxyId }),
   importParams: (id: string, dump: string, sid?: string) => call<{ imported: string[]; missing: string[] }>('POST', `/phones/${id}/import-params`, { dump }, sid),
