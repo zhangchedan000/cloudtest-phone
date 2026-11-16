@@ -62,7 +62,8 @@ cp -a "$V/lib64/hw/android.hardware.sensors@2.1-impl.ranchu.so" "$B/vendor/lib64
 cp -a "$V/etc/sensors/hals.conf" "$B/vendor/etc/sensors/"
 for f in "$V"/etc/vintf/manifest/android.hardware.sensors*.xml; do [ -f "$f" ] && cp -a "$f" "$B/vendor/etc/vintf/manifest/"; done
 for f in "$V"/etc/init/android.hardware.sensors*multihal*.rc; do [ -f "$f" ] && cp -a "$f" "$B/vendor/etc/init/"; done
-python3 "$here/sensors/patch-ranchu.py" "$B/vendor/lib64/hw/android.hardware.sensors@2.1-impl.ranchu.so"
+python3 "$here/sensors/patch-ranchu.py" "$B/vendor/lib64/hw/android.hardware.sensors@2.1-impl.ranchu.so" \
+  || log "传感器补丁没打上（这一版代码不一样）：照样构建，开机后看 dumpsys sensorservice 有没有传感器，没有就要对这一版重新分析（踩坑 #59）"
 
 log "声明多点触控（手机里的虚拟触摸屏是 10 点触控，agent/internal/touch）"
 mkdir -p "$B/vendor/etc/permissions"
