@@ -6,6 +6,7 @@ import { App, Button, Descriptions, Drawer, Dropdown, Input, Modal, Space, Switc
 import { getClipboard, openRawScreenshot, serverUrl, setClipboard, upload, type InputRequest } from '@/data/api'
 import { useRef, useState } from 'react'
 import { PhoneScreen } from '@/components/PhoneScreen'
+import { KeyboardInput } from '@/components/KeyboardInput'
 import { ProxyCell, StatusDot } from '@/components/bits'
 import { blocksStart } from '@/data/consistency'
 import { useWorkspace } from '@/data/store'
@@ -101,7 +102,9 @@ export function PhoneDrawer({ phone, mode = 'view', onClose, onEdit, bare = fals
       <div className="pp-detail">
         {mode === 'view' && <div className="pp-detail-screen">
           <ProxySwitcher phone={live} />
-          <PhoneScreen id={live.id} status={live.status} name={`${String(model?.values.marketName ?? '')} · Android ${live.androidVersion}`} size="large" seed={live.name.length + live.id.charCodeAt(5)} />
+          <KeyboardInput id={live.id} enabled={running && liveMode}>
+            <PhoneScreen id={live.id} status={live.status} name={`${String(model?.values.marketName ?? '')} · Android ${live.androidVersion}`} size="large" seed={live.name.length + live.id.charCodeAt(5)} />
+          </KeyboardInput>
           <div className="pp-detail-controls">
             {controls.map((c) => <Tooltip key={c.tip} title={c.tip} placement="left"><Button disabled={!running} icon={c.icon} onClick={c.onClick} /></Tooltip>)}
           </div>
@@ -111,11 +114,11 @@ export function PhoneDrawer({ phone, mode = 'view', onClose, onEdit, bare = fals
           <Input.Search
             className="pp-send-text"
             disabled={!running || !liveMode}
-            placeholder="发送文字到手机输入框（中文、英文都可以）"
+            placeholder="长段文字也可以贴在这里一次发过去"
             enterButton="发送"
             onSearch={(text, _event, info) => { if (text && info?.source !== 'clear') void ws.input(live.id, { kind: 'text', text }) }}
           />
-          <p className="pp-muted pp-small pp-center">在画面上点一下 = 点击，按住拖动 = 滑动</p>
+          <p className="pp-muted pp-small pp-center">在画面上点一下 = 点击，按住拖动 = 滑动；剪贴板自动互通（电脑复制的 Ctrl+V 粘进手机，手机里复制的自动到电脑）</p>
           <ClipboardDialog open={clipOpen} phoneId={live.id} onClose={() => setClipOpen(false)} />
         </div>}
         <AdbDialog open={adbOpen} id={live.id} running={running} adbOn={!!live.adb} onEnable={() => ws.assign([live.id], { adb: true })} ip={live.ip} name={live.name} host={new URL(serverUrl(live.serverId)).hostname} onClose={() => setAdbOpen(false)} />

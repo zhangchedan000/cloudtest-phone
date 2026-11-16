@@ -22,6 +22,10 @@ func TestInputArgs(t *testing.T) {
 		{InputRequest{Kind: "swipe", X: 1, Y: 2, X2: 3, Y2: 4, Duration: 99999}, "swipe 1 2 3 4 5000"},
 		{InputRequest{Kind: "text", Text: "hi there's"}, `text 'hi%sthere'\''s'`},
 		{InputRequest{Kind: "key", Key: "back"}, "keyevent KEYCODE_BACK"},
+		{InputRequest{Kind: "key", Key: "tab"}, "keyevent KEYCODE_TAB"},
+		{InputRequest{Kind: "key", Key: "left"}, "keyevent KEYCODE_DPAD_LEFT"},
+		{InputRequest{Kind: "key", Key: "select_all"}, "keycombination KEYCODE_CTRL_LEFT KEYCODE_A"},
+		{InputRequest{Kind: "key", Key: "copy"}, "keycombination KEYCODE_CTRL_LEFT KEYCODE_C"},
 	}
 	for _, c := range cases {
 		got, err := inputArgs(c.req)

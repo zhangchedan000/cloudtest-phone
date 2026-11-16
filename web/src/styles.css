@@ -151,3 +151,8 @@ body { background: var(--fb-bg); color: var(--fb-text); font-family: Inter, ui-s
 .pp-console-tile-foot { display: flex; align-items: center; gap: 4px; font-size: 13px; }
 .pp-stop-square { display: inline-block; width: 10px; height: 10px; background: currentColor; border-radius: 2px; }
 @media (max-width: 760px) { .pp-console { flex-direction: column; height: auto; } .pp-console-side { width: auto; border-right: 0; border-bottom: 1px solid var(--fb-line); max-height: 320px; } }
+
+/* 电脑键盘直接打字进手机（KeyboardInput） */
+.pp-kbd { position: relative; }
+.pp-kbd-box { position: absolute; left: 50%; bottom: 40px; width: 1px; height: 1px; opacity: 0; resize: none; border: 0; padding: 0; pointer-events: none; }
+.pp-kbd-on { color: var(--ant-color-success, #52c41a); }

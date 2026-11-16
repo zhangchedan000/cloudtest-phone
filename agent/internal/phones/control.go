@@ -143,12 +143,21 @@ type InputRequest struct {
 	Y2       int    `json:"y2"`
 	Duration int    `json:"durationMs"`
 	Text     string `json:"text"`
-	Key      string `json:"key"` // back / home / recents / power / enter / delete / volume_up / volume_down
+	Key      string `json:"key"` // back / home / recents / power / enter / delete / volume_up / volume_down / tab / up … / select_all / copy …
 }
 
 var keyCodes = map[string]string{
 	"back": "KEYCODE_BACK", "home": "KEYCODE_HOME", "recents": "KEYCODE_APP_SWITCH", "power": "KEYCODE_POWER",
 	"enter": "KEYCODE_ENTER", "delete": "KEYCODE_DEL", "volume_up": "KEYCODE_VOLUME_UP", "volume_down": "KEYCODE_VOLUME_DOWN",
+	// 电脑键盘直接打字用（2026-11-16 用户要求）
+	"forward_delete": "KEYCODE_FORWARD_DEL", "tab": "KEYCODE_TAB", "escape": "KEYCODE_ESCAPE",
+	"up": "KEYCODE_DPAD_UP", "down": "KEYCODE_DPAD_DOWN", "left": "KEYCODE_DPAD_LEFT", "right": "KEYCODE_DPAD_RIGHT",
+	"move_home": "KEYCODE_MOVE_HOME", "move_end": "KEYCODE_MOVE_END", "page_up": "KEYCODE_PAGE_UP", "page_down": "KEYCODE_PAGE_DOWN",
+}
+
+// keyCombos Ctrl+字母组合键（input keycombination，安卓 13 起有）。
+var keyCombos = map[string]string{
+	"select_all": "KEYCODE_A", "copy": "KEYCODE_C", "cut": "KEYCODE_X", "undo": "KEYCODE_Z", "redo": "KEYCODE_Y",
 }
 
 // inputArgs 把一次操作变成 `input …` 的参数；参数不对返回 ErrInvalid。
@@ -188,6 +197,9 @@ func inputArgs(req InputRequest) ([]string, error) {
 		// input text 把空格写成 %s；其余特殊字符交给 shell 前要整体加引号。
 		return []string{"text", shellQuote(strings.ReplaceAll(req.Text, " ", "%s"))}, nil
 	case "key":
+		if letter, ok := keyCombos[req.Key]; ok {
+			return []string{"keycombination", "KEYCODE_CTRL_LEFT", letter}, nil
+		}
 		code, ok := keyCodes[req.Key]
 		if !ok {
 			return nil, fmt.Errorf("%w：不认识的按键 %q", ErrInvalid, req.Key)
