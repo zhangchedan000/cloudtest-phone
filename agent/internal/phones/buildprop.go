@@ -59,8 +59,10 @@ func (s *Service) imageBuildProps(ctx context.Context, image string) (string, er
 	return dir, os.WriteFile(filepath.Join(dir, "done"), nil, 0o644)
 }
 
-// rewriteBuildProp 把原文件里出现的属性改成最终值；extra（带空格的）里原文件没有的追加在末尾。
-func rewriteBuildProp(orig string, final, extra map[string]string) string {
+// rewriteBuildProp 把原文件里出现的属性改成最终值（final 和带空格的 extra 都算）；
+// appendMissing 时 extra 里原文件没有的追加在末尾（只对 /system/build.prop）。
+// 注意：同一个属性在后加载的文件里出现会覆盖前面的（system_ext 比 system 晚），所以每个文件里出现的都要改。
+func rewriteBuildProp(orig string, final, extra map[string]string, appendMissing bool) string {
 	var b strings.Builder
 	seen := map[string]bool{}
 	for _, line := range strings.Split(strings.TrimRight(orig, "\n"), "\n") {
@@ -74,6 +76,9 @@ func rewriteBuildProp(orig string, final, extra map[string]string) string {
 			}
 		}
 		b.WriteString(line + "\n")
+	}
+	if !appendMissing {
+		return b.String()
 	}
 	keys := make([]string, 0, len(extra))
 	for k := range extra {
@@ -111,12 +116,8 @@ func (s *Service) prepareBuildProps(ctx context.Context, id, image string, args 
 		if err != nil {
 			continue
 		}
-		extra := map[string]string{}
-		if f.takeSpaced {
-			extra = spaced
-		}
 		out := filepath.Join(dir, fmt.Sprint(i)+".prop")
-		if err := os.WriteFile(out, []byte(rewriteBuildProp(string(orig), final, extra)), f.mode); err != nil {
+		if err := os.WriteFile(out, []byte(rewriteBuildProp(string(orig), final, spaced, f.takeSpaced)), f.mode); err != nil {
 			return nil, err
 		}
 		_ = os.Chmod(out, f.mode)
