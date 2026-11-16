@@ -17,12 +17,19 @@ func (s *Service) applyAdb(ctx context.Context, id string) {
 	if err != nil || !s.isRunning(ctx, id) {
 		return
 	}
-	want := "0"
+	want, usb := "0", "mtp"
 	if p.Adb {
-		want = "1"
+		want, usb = "1", "mtp,adb"
 	}
 	name := containerName(id)
 	if cur, _ := s.run.Run(ctx, "docker", "exec", name, "settings", "get", "global", "adb_enabled"); strings.TrimSpace(cur) != want {
 		_, _ = s.run.Run(ctx, "docker", "exec", name, "settings", "put", "global", "adb_enabled", want)
+	}
+	// USB 模式属性跟着开关走：真手机关调试时是 mtp、开着是 mtp,adb；Redroid 默认一直是 adb。
+	// 实测（踩坑 #56）：三个都改不影响 adbd 的启停（由 adb_enabled 决定），重启后开关照常生效。
+	for _, prop := range []string{"persist.sys.usb.config", "sys.usb.config", "sys.usb.state"} {
+		if cur, _ := s.run.Run(ctx, "docker", "exec", name, "getprop", prop); strings.TrimSpace(cur) != usb {
+			_, _ = s.run.Run(ctx, "docker", "exec", name, "setprop", prop, usb)
+		}
 	}
 }

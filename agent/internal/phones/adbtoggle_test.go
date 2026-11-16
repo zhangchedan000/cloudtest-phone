@@ -12,7 +12,7 @@ func TestAdbOffByDefaultAndToggle(t *testing.T) {
 	r := &fakeRunner{}
 	svc.run = r
 	svc.applySettings(context.Background(), id)
-	if !strings.Contains(strings.Join(r.calls, "\n"), "settings put global adb_enabled 0") {
+	if j := strings.Join(r.calls, "\n"); !strings.Contains(j, "settings put global adb_enabled 0") || !strings.Contains(j, "setprop persist.sys.usb.config mtp") || !strings.Contains(j, "setprop sys.usb.state mtp") {
 		t.Fatalf("默认应关掉 USB 调试：\n%s", strings.Join(r.calls, "\n"))
 	}
 	on := true
@@ -26,7 +26,7 @@ func TestAdbOffByDefaultAndToggle(t *testing.T) {
 	}
 	// 开着的手机：保存后马上（后台）打开
 	deadline := time.Now().Add(2 * time.Second)
-	for !strings.Contains(strings.Join(r.calls, "\n"), "settings put global adb_enabled 1") {
+	for !strings.Contains(strings.Join(r.calls, "\n"), "settings put global adb_enabled 1") || !strings.Contains(strings.Join(r.calls, "\n"), "setprop persist.sys.usb.config mtp,adb") {
 		if time.Now().After(deadline) {
 			t.Fatalf("打开开关后应马上设 adb_enabled=1：\n%s", strings.Join(r.calls, "\n"))
 		}
