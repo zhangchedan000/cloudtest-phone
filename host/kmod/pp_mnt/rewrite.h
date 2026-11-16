@@ -12,7 +12,9 @@
  *     → 去掉宿主机前缀，设备改成 /dev/block/dm-34；
  *   - Docker 塞的 /etc/resolv.conf、hostname、hosts，管家塞的 build.prop、.empty（遮 /proc/vmallocinfo 等），
  *     小助手绑的伪终端（/dev/goldfish_pipe*、/dev/ttyC0），mqueue、/dev/shm（安卓没有）→ 删掉；
- *     判断办法：和 /data 同一块宿主机磁盘、但不在这台手机 /data 目录下的 bind，一律删。
+ *     判断办法：来源是宿主机磁盘（/dev/ 开头、不是 /dev/block/）、但不是这台手机 /data 的，一律删。
+ * cfg 由管家从这台手机自己的挂载表里读出来：/data 那一行的来源（/dev/sda1 或磁盘镜像的 /dev/loopN）和 root
+ * （宿主机目录，或磁盘镜像时是 /）。
  * 宿主机自己的进程不受影响（模块只改登记过的手机 PID 命名空间里的进程读到的内容）。
  */
 #ifndef PP_MNT_REWRITE_H
@@ -23,8 +25,8 @@
 #define PP_MAX_TOK 40
 
 struct pp_cfg {
-	char prefix[PP_PREFIX_MAX]; /* 这台手机 /data 在宿主机上的目录，如 /opt/prism-phone/data/phones/<id>/data */
-	char src[PP_SRC_MAX];       /* 那块宿主机磁盘在挂载表里的名字，如 /dev/sda1 */
+	char prefix[PP_PREFIX_MAX]; /* 这台手机 /data 在那块盘上的路径，如 /opt/prism-phone/data/phones/<id>/data；磁盘镜像是 / */
+	char src[PP_SRC_MAX];       /* /data 那块盘在挂载表里的名字，如 /dev/sda1、/dev/loop5 */
 };
 
 struct pp_tok {
@@ -86,6 +88,8 @@ static int pp_under(struct pp_tok t, const char *prefix)
 {
 	int n = (int)strlen(prefix);
 
+	if (n == 1 && prefix[0] == '/')
+		return t.n; /* /data 是整块盘（磁盘镜像）：root 原样 */
 	if (n == 0 || t.n < n || memcmp(t.p, prefix, n) != 0)
 		return -1;
 	if (t.n == n)
@@ -121,10 +125,16 @@ static void pp_putt(struct pp_out *o, struct pp_tok t)
 	pp_put(o, t.p, t.n);
 }
 
-/* 不管哪种格式都删的：mqueue、/dev/shm、不在 /dev/pts 的 devpts（小助手绑的伪终端）、Docker 塞的 /etc 文件 */
+/* 来源是宿主机的块设备（/dev/sda1、/dev/loop3、/dev/nvme0n1p2…，容器里不该有）：真机的是 /dev/block/... */
+static int pp_host_dev(struct pp_tok src)
+{
+	return pp_starts(src, "/dev/") && !pp_starts(src, "/dev/block/") && !pp_eq(src, "/dev/fuse"); /* 真机 /storage 也是 /dev/fuse */
+}
+
+/* 不管哪种格式都删的：mqueue、lxcfs（遮 /proc/meminfo 等）、/dev/shm、不在 /dev/pts 的 devpts（小助手绑的伪终端）、Docker 塞的 /etc 文件 */
 static int pp_always_drop(struct pp_tok fstype, struct pp_tok mnt)
 {
-	return pp_eq(fstype, "mqueue") || pp_eq(mnt, "/dev/shm") ||
+	return pp_eq(fstype, "mqueue") || pp_eq(fstype, "fuse.lxcfs") || pp_eq(mnt, "/dev/shm") ||
 	       (pp_eq(fstype, "devpts") && !pp_eq(mnt, "/dev/pts")) ||
 	       pp_eq(mnt, "/etc/resolv.conf") || pp_eq(mnt, "/etc/hostname") || pp_eq(mnt, "/etc/hosts");
 }
@@ -187,6 +197,8 @@ static int pp_rewrite_mountinfo(const char *in, int len, char *out, int max, con
 		pp_puts(&o, " " PP_DATA_DEV " " PP_DATA_OPTS "\n");
 		return o.bad ? -1 : o.n;
 	}
+	if (pp_host_dev(t[dash + 2]))
+		return 0; /* 宿主机别的盘 bind 进来的（build.prop 等） */
 	return -1;
 }
 
@@ -208,7 +220,10 @@ static int pp_rewrite_mounts(const char *in, int len, char *out, int max, const 
 		return o.bad ? -1 : o.n;
 	}
 	if (c->src[0] && pp_eq(t[0], c->src)) {
-		if (!(pp_eq(t[1], "/data") || pp_starts(t[1], "/data/") || pp_starts(t[1], "/data_mirror/")))
+		/* 同一块盘上挂到系统目录的是管家伪造的文件（cpuinfo、build.prop…）：删；其余是 /data 的各种 bind（/storage 等）：改 */
+		if (pp_starts(t[1], "/proc/") || pp_starts(t[1], "/sys/") || pp_starts(t[1], "/system/") ||
+		    pp_starts(t[1], "/etc/") || pp_starts(t[1], "/vendor/") || pp_starts(t[1], "/dev/") ||
+		    pp_starts(t[1], "/product/") || pp_starts(t[1], "/odm/"))
 			return 0;
 		pp_puts(&o, PP_DATA_DEV " ");
 		pp_putt(&o, t[1]);
@@ -217,6 +232,8 @@ static int pp_rewrite_mounts(const char *in, int len, char *out, int max, const 
 		pp_puts(&o, " " PP_DATA_OPTS " 0 0\n");
 		return o.bad ? -1 : o.n;
 	}
+	if (pp_host_dev(t[0]))
+		return 0;
 	return -1;
 }
 

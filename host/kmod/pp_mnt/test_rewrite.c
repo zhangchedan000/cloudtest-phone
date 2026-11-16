@@ -50,7 +50,22 @@ int main(void)
 	check(1, "197 482 0:68 / /apex rw,nosuid,nodev,noexec,relatime - tmpfs tmpfs rw,mode=755,inode64\n",
 	      "197 482 0:68 / /apex rw,nosuid,nodev,noexec,relatime - tmpfs tmpfs rw,mode=755,inode64\n");
 
+	check(1, "1903 623 0:131 / /storage/emulated rw,nosuid,nodev,noexec,noatime master:494 - fuse /dev/fuse rw,lazytime,user_id=0,group_id=0,allow_other\n",
+	      "1903 623 0:131 / /storage/emulated rw,nosuid,nodev,noexec,noatime master:494 - fuse /dev/fuse rw,lazytime,user_id=0,group_id=0,allow_other\n");
+	check(1, "5442 194 0:119 /proc/meminfo /proc/meminfo ro,nosuid,nodev,relatime shared:541 - fuse.lxcfs lxcfs rw,user_id=0,group_id=0,allow_other\n", "");
+	check(1, "4450 194 8:1 " P "/fake/cpuinfo /proc/cpuinfo ro,relatime shared:549 - " SDA "\n", "");
+	check(1, "2100 195 8:1 " P "/data/media /mnt/pass_through/0/emulated rw,relatime shared:524 - " SDA "\n",
+	      "2100 195 253:34 /media /mnt/pass_through/0/emulated rw,relatime shared:524 - ext4 /dev/block/dm-34 rw,seclabel,nosuid,nodev,noatime,resgid=1065,errors=panic\n");
+
 	/* /proc/mounts */
+	check(0, "/dev/fuse /storage/emulated fuse rw,lazytime,nosuid 0 0\n", "/dev/fuse /storage/emulated fuse rw,lazytime,nosuid 0 0\n");
+	check(0, "lxcfs /proc/meminfo fuse.lxcfs ro,nosuid 0 0\n", "");
+	check(0, "/dev/sda1 /proc/cpuinfo ext4 ro,relatime 0 0\n", "");
+	check(0, "/dev/sda1 /mnt/pass_through/0/emulated ext4 rw,relatime 0 0\n",
+	      "/dev/block/dm-34 /mnt/pass_through/0/emulated ext4 rw,seclabel,nosuid,nodev,noatime,resgid=1065,errors=panic 0 0\n");
+	check(0, "/dev/sda1 /storage/emulated/0/Android/data ext4 rw,relatime 0 0\n",
+	      "/dev/block/dm-34 /storage/emulated/0/Android/data ext4 rw,seclabel,nosuid,nodev,noatime,resgid=1065,errors=panic 0 0\n");
+	check(0, "/dev/sda1 /sys/devices/system/cpu/cpu0/regs/identification/midr_el1 ext4 ro 0 0\n", "");
 	check(0, OVL " 0 0\n", OVL " 0 0\n");  /* 挂载点不是路径的怪行（第 3 列不是 overlay）：原样 */
 	check(0, "overlay / " "overlay rw,relatime,lowerdir=/var/lib/containerd/a:/b 0 0\n", "/dev/block/dm-0 / ext4 ro,seclabel,relatime 0 0\n");
 	check(0, "/dev/sda1 /data ext4 rw,relatime,discard 0 0\n", "/dev/block/dm-34 /data ext4 rw,seclabel,nosuid,nodev,noatime,resgid=1065,errors=panic 0 0\n");
@@ -60,6 +75,31 @@ int main(void)
 	check(0, "/dev/sda1 /proc/vmallocinfo ext4 rw,relatime 0 0\n", "");
 	check(0, "shm /dev/shm tmpfs rw,nosuid 0 0\n", "");
 	check(0, "proc /proc proc rw,relatime 0 0\n", "proc /proc proc rw,relatime 0 0\n");
+
+	/* 磁盘镜像的手机：/data 是整块 /dev/loop5，build.prop 在另一块盘 /dev/sda1 */
+	{
+		static const struct pp_cfg c = { "/", "/dev/loop5" };
+		const struct { const char *in, *want; int mi; } cases[] = {
+			{ "495 482 7:5 / /data rw,noatime shared:524 - ext4 /dev/loop5 rw\n",
+			  "495 482 253:34 / /data rw,noatime shared:524 - ext4 /dev/block/dm-34 rw,seclabel,nosuid,nodev,noatime,resgid=1065,errors=panic\n", 1 },
+			{ "642 641 7:5 /user /data_mirror/data_ce/null rw,noatime - ext4 /dev/loop5 rw\n",
+			  "642 641 253:34 /user /data_mirror/data_ce/null rw,noatime - ext4 /dev/block/dm-34 rw,seclabel,nosuid,nodev,noatime,resgid=1065,errors=panic\n", 1 },
+			{ "620 194 7:5 /.empty /proc/vmallocinfo rw,noatime - ext4 /dev/loop5 rw\n", "", 1 },
+			{ "498 482 8:1 " P "/buildprop/0.prop /system/build.prop ro,relatime - " SDA "\n", "", 1 },
+			{ "501 482 8:1 /some/other/host/file /x ro,relatime - " SDA "\n", "", 1 },
+			{ "/dev/sda1 /system/build.prop ext4 ro,relatime 0 0\n", "", 0 },
+			{ "/dev/loop5 /data ext4 rw,noatime 0 0\n", "/dev/block/dm-34 /data ext4 rw,seclabel,nosuid,nodev,noatime,resgid=1065,errors=panic 0 0\n", 0 },
+		};
+		for (unsigned i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+			char out[2048];
+			int n = pp_rewrite(cases[i].in, (int)strlen(cases[i].in), out, sizeof(out), cases[i].mi, &c);
+			const char *got = n < 0 ? cases[i].in : (n == 0 ? "" : (out[n] = 0, out));
+			if (strcmp(got, cases[i].want) != 0) {
+				fails++;
+				printf("FAIL 磁盘镜像 #%u\n  got:  %s\n  want: %s\n", i, got, cases[i].want);
+			}
+		}
+	}
 
 	/* 输出放不下：原样（不截断） */
 	{
