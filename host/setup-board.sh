@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# RK3588 板子（魔云腾 / Orange Pi 5 / Radxa Rock 5 等）部署预检 + 接管脚本。
+# RK3588 板子（魔云腾 Q1 / C1 / R1S、Orange Pi 5、Radxa Rock 5 等）部署预检 + 接管脚本。
+# 魔云腾：直接用官方 Ubuntu 22.04 固件，不刷第三方系统（资料和适配清单见 docs/调研/魔云腾适配.md）。
 #
 # 用途：买了 RK3588 云手机盒子 / 开发板，刷了开源 Ubuntu/Armbian 固件后，在上面跑
 #       cnflysky/redroid-rk3588（真 Mali-G610 GPU + GApps + 假WiFi）+ 我们的 prism-phone 管家。
@@ -60,13 +61,26 @@ else note "PSI" "没有 /proc/pressure（CONFIG_PSI）。部分 redroid 功能/l
 if command -v docker >/dev/null && docker info >/dev/null 2>&1; then good "Docker" "已装并在运行"
 else fail "Docker" "没装或没运行。装 docker-ce 或 docker.io"; fi
 
-# 8. 内存（算能开几台）
+# 8. 内存（算能开几台）：每台按机型上限 8GB，板子上默认 2.5 倍超卖（手机平时只用 1~2GB）
 memg=$(awk '/MemTotal/{printf "%.0f", $2/1024/1024}' /proc/meminfo 2>/dev/null)
-[ -n "$memg" ] && note "内存" "${memg}G（约可开 $((memg*10/15)) 台，按每台 1.5G 估）"
+[ -n "$memg" ] && note "内存" "${memg}G：按 8GB 机型、超卖 2.5 倍，约可同时开 $(( (memg-3)*25/80 )) 台（官方 Q1 说开 8 台稳）"
+
+# 9. 我们自己的功能要的内核项（缺了对应功能自动退回，不影响开机）
+[ -e /proc/self/ns/time ] && good "时间命名空间" "有（开机时长从 0 开始）" || note "时间命名空间" "没有 CONFIG_TIME_NS：手机里开机时长会是板子的开机时长"
+if modprobe -n mac80211_hwsim >/dev/null 2>&1 || [ -d /sys/module/mac80211_hwsim ]; then good "虚拟 WiFi" "mac80211_hwsim 模块有"
+else note "虚拟 WiFi" "没有 mac80211_hwsim 模块：手机照旧用有线网（要 WiFi 得用同版本内核源码单独编这个模块）"; fi
+[ -e /dev/uinput ] && good "虚拟触摸屏" "/dev/uinput 在" || note "虚拟触摸屏" "没有 /dev/uinput（CONFIG_INPUT_UINPUT）：点击滑动退回 input 命令"
+
+# 10. 魔云腾官方系统的痕迹
+if docker ps -a --format '{{.Image}}' 2>/dev/null | grep -q dobox; then note "魔云腾云机" "板子上有官方的 dobox 云机容器（不影响我们，它们占内存；不用的话在官方客户端里删掉）"; fi
+if ss -ltn 2>/dev/null | grep -qE ':2375\b'; then fail "Docker 2375 端口" "开着而且没有密码：同一个网络里谁都能控制所有手机。--install 时会挡掉（只许本机访问）"
+else good "Docker 2375 端口" "没对外开"; fi
 
 echo
 echo "===== 预检结果：$ok 项通过 · $warn 项提醒 · $bad 项不达标 ====="
-if [ "$bad" -gt 0 ]; then
+# 2375 端口开着算 ❌，但 --install 自己会挡掉，不拦安装
+bad_hard=$bad; ss -ltn 2>/dev/null | grep -qE ':2375\b' && bad_hard=$((bad-1))
+if [ "$bad_hard" -gt 0 ]; then
   echo "有 ❌ 项，先按提示补齐（通常是 Mali 驱动 / binderfs / Docker）。参考 github.com/CNflysky/redroid-rk3588 的 envcheck.sh 和 README。"
   [ "$install" = 1 ] && echo "环境没齐，不执行安装。"
   exit 1
@@ -80,27 +94,68 @@ if [ "$install" != 1 ]; then
 fi
 
 # ---------- 预检通过，开始接管 ----------
+ROOT=$(cd "$(dirname "$0")/.." && pwd)
+
 echo
-echo "===== 拉取 RK3588 redroid 镜像 ====="
+echo "===== 挡掉没密码的 Docker 2375 端口（只许本机访问，重启后也生效） ====="
+cat > /etc/systemd/system/prism-block-docker-tcp.service <<'UNIT'
+[Unit]
+Description=prism-phone：Docker 远程接口（2375/2376）只许本机访问
+After=network-pre.target docker.service
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/sbin/nft -f /etc/prism-phone/block-docker-tcp.nft
+[Install]
+WantedBy=multi-user.target
+UNIT
+mkdir -p /etc/prism-phone
+cat > /etc/prism-phone/block-docker-tcp.nft <<'NFT'
+table inet ppdockerguard
+delete table inet ppdockerguard
+table inet ppdockerguard {
+  chain input {
+    type filter hook input priority -10; policy accept;
+    iifname "lo" accept
+    tcp dport { 2375, 2376 } drop
+  }
+}
+NFT
+systemctl daemon-reload && systemctl enable --now prism-block-docker-tcp.service && echo "已挡掉（魔云腾官方客户端从此连不上这台，要用官方客户端时：systemctl disable --now prism-block-docker-tcp）"
+
+echo
+echo "===== 宿主机准备（lxcfs、WiFi 工具、内核设置守护等，复用 setup-host.sh） ====="
+bash "$ROOT/host/setup-host.sh" || echo "setup-host.sh 有报错，看上面；不影响继续"
+
+echo
+echo "===== 拉取 RK3588 能用 Mali 显卡的安卓镜像 ====="
 IMG=${PP_REDROID_IMAGE:-cnflysky/redroid-rk3588:lineage-20}
-echo "镜像：$IMG（可用环境变量 PP_REDROID_IMAGE 覆盖，比如换成魔云腾的 A16 镜像）"
+VER=${PP_ANDROID_VERSION:-13}
+echo "镜像：$IMG（安卓 $VER；可用环境变量 PP_REDROID_IMAGE / PP_ANDROID_VERSION 换）"
 docker pull "$IMG" || { echo "拉取失败，检查网络/镜像名"; exit 1; }
+echo "叠上我们的 WiFi / 传感器 / 触摸层（host/build-wifi-image.sh）"
+if bash "$ROOT/host/build-wifi-image.sh" "$IMG" "$VER"; then IMG="$IMG-wifi"; else echo "叠层失败：先用原镜像（没有虚拟 WiFi / 传感器 / 触摸），把上面的报错发给开发"; fi
+
+echo
+echo "===== 写板子用的管家参数 ====="
+ENVF=/etc/prism-phone/agent.env
+[ -f "$ENVF" ] && cp "$ENVF" "$ENVF.bak-$(date +%Y%m%d-%H%M%S)"
+TOKEN=$(sed -n 's/^PP_TOKEN=//p' "$ENVF" 2>/dev/null); [ -n "$TOKEN" ] || TOKEN=$(head -c 24 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 30)
+cat > "$ENVF" <<ENV
+# 管家程序参数（setup-board.sh 写的；改完执行 systemctl restart prism-phone-agent）
+# 板子：真 Mali-G610 显卡（gpu-mode host）、内存超卖 2.5 倍、不开「直连（仅开发）」
+AGENT_ARGS=-listen 127.0.0.1:8099 -data /opt/prism-phone/data -host-name $(hostname) -gpu-family Mali-G610 -gpu-mode host -mem-overcommit 2.5 -mihomo-api 127.0.0.1:9090 -images $VER=$IMG
+PP_TOKEN=$TOKEN
+ENV
+chmod 600 "$ENVF"
+echo "已写 $ENVF（旧的备份在同目录 .bak-*）。管理页口令：在这个文件里 PP_TOKEN= 后面"
 
 echo
 echo "===== 安装 prism-phone 管家（复用 install-agent.sh） ====="
-echo "注意：prism-phone 用 -images 指定 redroid 镜像。板子上请把 agent.env 的 AGENT_ARGS 里"
-echo "     -images 指到上面拉的镜像（并去掉 -dev-host），例如："
-echo "     -images 13=$IMG"
-echo
-ROOT=$(cd "$(dirname "$0")/.." && pwd)
-if [ -x "$ROOT/host/install-agent.sh" ]; then
-  echo "现在运行 install-agent.sh 装管家（它会编译并起服务）..."
-  bash "$ROOT/host/install-agent.sh"
-else
-  echo "没找到 install-agent.sh，手动装：cd $ROOT && bash host/install-agent.sh"
-fi
+bash "$ROOT/host/install-agent.sh"
 
 echo
 echo "===== 完成 ====="
-echo "之后：打开 prism-phone 管理页 → 新建手机（选 Mali-G610 机型）→ 导入真参 → 分配住宅代理 → 开机。"
-echo "真实度自检：bash host/check-tells.sh <容器名>（板子上 ro.hardware/GPU/传感器这些应比云上干净很多）。"
+echo "之后：打开 prism-phone 管理页 → 新建手机（选 Mali-G610 机型）→ 分配住宅代理 → 开机。"
+echo "真实度自检：bash host/check-tells.sh <手机ID>（显卡、uname、SELinux 这些应比云上干净很多）。"
+echo "到货后的核实结果写进 docs/调研/魔云腾适配.md。"

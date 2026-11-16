@@ -72,6 +72,8 @@ if renamed:
     print('改了 %d 个名字' % renamed)
 if not cands and already == 1:
     print('已经打过补丁'); sys.exit(0)
+if not cands and b'vsock' not in b:
+    print('这一版不走 vsock（老版本直接开管道文件），不用打补丁'); sys.exit(0)
 if len(cands) != 1:
     sys.exit('找到 %d 处，不是正好 1 处，不改' % len(cands))
 o, t = cands[0]

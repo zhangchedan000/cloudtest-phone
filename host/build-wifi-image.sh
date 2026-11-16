@@ -17,9 +17,10 @@ die() { printf '[wifi] 错误：%s\n' "$*" >&2; exit 1; }
 base=${1:?用法：build-wifi-image.sh <redroid 镜像> [安卓版本]}
 ver=${2:-$(echo "$base" | grep -oE ':[0-9]+' | tr -d ':')}
 case "$ver" in
+  13) emu=arm64-v8a-33_r02.zip ;;   # RK3588 板子能用 Mali 的开源镜像（cnflysky lineage-20）是安卓 13
   14) emu=arm64-v8a-34_r04.zip ;;
   15) emu=arm64-v8a-35_r02.zip ;;
-  *) die "不认识的安卓版本 $ver（支持 14 / 15）" ;;
+  *) die "不认识的安卓版本 $ver（支持 13 / 14 / 15）" ;;
 esac
 here=$(cd "$(dirname "$0")" && pwd)
 for c in docker gcc readelf unzip losetup python3; do command -v $c >/dev/null || die "缺 $c（apt-get install -y docker.io gcc binutils unzip util-linux）"; done
@@ -38,23 +39,29 @@ mount -o ro "${L}p1" "$V" 2>/dev/null || mount -o ro "$L" "$V"
 
 log "拷 WiFi 相关文件"
 mkdir -p "$B/vendor/bin/hw" "$B/vendor/lib64" "$B/vendor/etc/vintf/manifest" "$B/vendor/etc/init" "$B/vendor/etc/wifi"
-for f in android.hardware.wifi-service wpa_supplicant hostapd; do cp -a "$V/bin/hw/$f" "$B/vendor/bin/hw/"; done
+# WiFi HAL：安卓 14 起是 AIDL 的 android.hardware.wifi-service；安卓 13 是 HIDL 的 android.hardware.wifi@1.0-service
+wifisvc=""
+for f in android.hardware.wifi-service android.hardware.wifi@1.0-service; do [ -f "$V/bin/hw/$f" ] && wifisvc=$f && break; done
+[ -n "$wifisvc" ] || die "模拟器 vendor 里没找到 WiFi HAL"
+for f in "$wifisvc" wpa_supplicant hostapd; do cp -a "$V/bin/hw/$f" "$B/vendor/bin/hw/"; done
 for f in libwifi-hal.so android.hardware.wifi-V1-ndk.so android.hardware.wifi.supplicant-V2-ndk.so android.hardware.wifi.hostapd-V1-ndk.so libkeystore-engine-wifi-hidl.so; do
   [ -f "$V/lib64/$f" ] && cp -a "$V/lib64/$f" "$B/vendor/lib64/"
 done
 for f in "$V"/etc/vintf/manifest/android.hardware.wifi*.xml; do cp -a "$f" "$B/vendor/etc/vintf/manifest/"; done
-cp -a "$V/etc/init/android.hardware.wifi-service.rc" "$B/vendor/etc/init/"
+for f in "$V"/etc/init/android.hardware.wifi*service*.rc; do cp -a "$f" "$B/vendor/etc/init/"; done
 [ -f "$V/etc/init/hostapd.android.rc" ] && cp -a "$V/etc/init/hostapd.android.rc" "$B/vendor/etc/init/"
 cp -a "$V/etc/wifi/wpa_supplicant.conf" "$B/vendor/etc/wifi/"
 cp "$here/wifi/wifi-supplicant.rc" "$B/vendor/etc/init/wifi-supplicant.rc"
 
 log "拷传感器 HAL"
 mkdir -p "$B/vendor/lib64/hw" "$B/vendor/etc/sensors"
-cp -a "$V/bin/hw/android.hardware.sensors-service.multihal" "$B/vendor/bin/hw/"
+# 名字各版本不一样（安卓 14 起 AIDL 的 sensors-service.multihal；更早是 HIDL 的 sensors@2.1-service.multihal），按通配拷
+n=0; for f in "$V"/bin/hw/android.hardware.sensors*multihal*; do [ -f "$f" ] && cp -a "$f" "$B/vendor/bin/hw/" && n=$((n+1)); done
+[ "$n" -gt 0 ] || die "模拟器 vendor 里没找到传感器 HAL"
 cp -a "$V/lib64/hw/android.hardware.sensors@2.1-impl.ranchu.so" "$B/vendor/lib64/hw/"
 cp -a "$V/etc/sensors/hals.conf" "$B/vendor/etc/sensors/"
-cp -a "$V/etc/vintf/manifest/android.hardware.sensors-multihal.xml" "$B/vendor/etc/vintf/manifest/"
-cp -a "$V/etc/init/android.hardware.sensors-service-multihal.rc" "$B/vendor/etc/init/"
+for f in "$V"/etc/vintf/manifest/android.hardware.sensors*.xml; do [ -f "$f" ] && cp -a "$f" "$B/vendor/etc/vintf/manifest/"; done
+for f in "$V"/etc/init/android.hardware.sensors*multihal*.rc; do [ -f "$f" ] && cp -a "$f" "$B/vendor/etc/init/"; done
 python3 "$here/sensors/patch-ranchu.py" "$B/vendor/lib64/hw/android.hardware.sensors@2.1-impl.ranchu.so"
 
 log "声明多点触控（手机里的虚拟触摸屏是 10 点触控，agent/internal/touch）"
