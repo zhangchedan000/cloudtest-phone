@@ -35,7 +35,16 @@ var version = "dev"
 func main() {
 	// 容器里的启动器模式（开机时长归零，见 timens 包）：不跑管家，建好时间命名空间就 exec 安卓 init。
 	if len(os.Args) > 2 && os.Args[1] == "pp-init" {
-		timens.Run(os.Args[2:])
+		args := os.Args[2:]
+		if len(args) > 0 && strings.HasPrefix(args[0], "--sensors=") {
+			startSensors(strings.TrimPrefix(args[0], "--sensors="))
+			args = args[1:]
+		}
+		timens.Run(args)
+	}
+	// 容器里的传感器喂数据进程（pp-init 开机前起的，见 internal/sensors）
+	if len(os.Args) > 2 && os.Args[1] == "pp-sensors" {
+		runSensors(os.Args[2])
 	}
 	listen := flag.String("listen", "127.0.0.1:8099", "监听地址（默认只监听本机，外部访问走 HTTPS 反向代理或 SSH 隧道）")
 	dataDir := flag.String("data", "/opt/prism-phone/data", "数据目录")
@@ -52,6 +61,7 @@ func main() {
 	maxRunning := flag.Int("max-running", 4, "同时最多运行几台")
 	devHost := flag.Bool("dev-host", false, "开发机：允许「直连（仅开发）」代理")
 	noHostGuard := flag.Bool("no-host-guard", false, "不守宿主机内核设置（默认守：手机开机会改宿主机的 kernel.* / vm.*，踩坑 #58）")
+	noSensors := flag.Bool("no-sensors", false, "不给手机喂传感器数据（镜像带传感器 HAL 时默认喂，踩坑 #59）")
 	noTimens := flag.Bool("no-timens", false, "不让云手机的开机时长归零（出问题时临时关掉用）")
 	noWifi := flag.Bool("no-wifi", false, "不给手机配虚拟 WiFi（手机照旧用有线 eth0）")
 	memFollow := flag.Bool("mem-follow-model", true, "每台手机的内存上限按机型（例如 8GB）；false 时用固定的 -mem-mb")
@@ -115,6 +125,7 @@ func main() {
 		}
 	}
 	cfg.Lxcfs = phones.LxcfsAvailable()
+	cfg.Sensors = !*noSensors
 	// 开机时长归零：内核支持时间命名空间就用管家程序自己当容器启动器（timens 包）
 	if !*noTimens && timens.Supported() {
 		if exe, err := os.Executable(); err == nil {

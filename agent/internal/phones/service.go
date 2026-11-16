@@ -51,6 +51,8 @@ type Config struct {
 	Lxcfs     bool
 	// Wifi 宿主机能做虚拟 WiFi（hwsim、hostapd、dnsmasq 都在）；WifiDNS 手机 WiFi 里的 DNS 转到哪（mihomo DNS）。
 	Wifi bool
+	// Sensors 镜像带传感器 HAL 时给手机喂传感器数据（踩坑 #59）
+	Sensors bool
 	// HostGuard 手机开机后把被改掉的宿主机内核设置改回来（hostguard，踩坑 #58）
 	HostGuard bool
 	WifiDNS   string
@@ -765,6 +767,9 @@ func (s *Service) Start(ctx context.Context, id string) error {
 		binds = append(binds, bpBinds...)
 	}
 	entrypoint := s.initEntrypoint(ctx, image)
+	if entrypoint != nil && s.cfg.Sensors && s.imageHasSensors(ctx, image) {
+		entrypoint = withSensors(entrypoint, sensorSpec(*p, st))
+	}
 	if entrypoint != nil {
 		binds = append(binds, s.cfg.InitHelper+":"+initMount+":ro")
 	}
