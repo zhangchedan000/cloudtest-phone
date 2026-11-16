@@ -15,11 +15,11 @@ import (
 // SocketName 小助手在手机网络命名空间里监听的抽象 unix socket（不落文件；App 读不到 /proc/net/unix）。
 const SocketName = "@vendor.sensord"
 
-// Serve 接收管家发来的触摸命令（一行一条，做完回 ok）：
+// Serve 接收管家发来的命令（一行一条，做完回 ok），交给 handle：
 //
-//	tap X Y
-//	swipe X1 Y1 X2 Y2 毫秒
-func Serve(d *Device, logf func(string)) error {
+//	tap X Y / swipe X1 Y1 X2 Y2 毫秒（触摸屏）
+//	prop hide 名字 / prop set 名字 值（系统属性，见 internal/props）
+func Serve(handle func(cmd string) error, logf func(string)) error {
 	ln, err := net.Listen("unix", SocketName)
 	if err != nil {
 		return err
@@ -37,8 +37,8 @@ func Serve(d *Device, logf func(string)) error {
 			if err != nil {
 				return
 			}
-			if err := d.Do(strings.TrimSpace(line)); err != nil {
-				logf("触摸：" + err.Error())
+			if err := handle(strings.TrimSpace(line)); err != nil {
+				logf(err.Error())
 				fmt.Fprintf(c, "err %v\n", err)
 				return
 			}

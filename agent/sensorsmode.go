@@ -5,8 +5,10 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"strings"
 	"syscall"
 
+	"github.com/zhangchedan000/prism-phone/agent/internal/props"
 	"github.com/zhangchedan000/prism-phone/agent/internal/sensors"
 	"github.com/zhangchedan000/prism-phone/agent/internal/touch"
 )
@@ -51,13 +53,40 @@ func runSensors() {
 		os.Exit(2)
 	}
 	// 虚拟触摸屏（踩坑 #61）：建不起来不影响传感器，管家那边会退回 input 命令
+	var dev *touch.Device
 	if spec.W > 0 && spec.H > 0 {
-		if dev, err := touch.Create(touch.Config{W: spec.W, H: spec.H, Name: spec.TouchName}, "/dev/input", spec.Seed); err != nil {
+		d, err := touch.Create(touch.Config{W: spec.W, H: spec.H, Name: spec.TouchName}, "/dev/input", spec.Seed)
+		if err != nil {
 			fmt.Fprintf(os.Stderr, "vendor.sensord：触摸屏没建起来：%v\n", err)
 		} else {
+			dev = d
 			go dev.KeepNode()
-			go func() { _ = touch.Serve(dev, func(string) {}) }()
 		}
 	}
+	// 管家的命令通道：触摸 + 系统属性（开机后藏 ro.boot.redroid_* 等，踩坑 #63）
+	go func() { _ = touch.Serve(func(cmd string) error { return helperCommand(dev, cmd) }, func(string) {}) }()
 	sensors.Serve(spec, os.NewFile(3, "ptmx"), os.NewFile(4, "pts"), func(string) {})
+}
+
+// helperCommand 小助手执行一条管家的命令。
+func helperCommand(dev *touch.Device, cmd string) error {
+	f := strings.Fields(cmd)
+	if len(f) >= 3 && f[0] == "prop" {
+		switch {
+		case f[1] == "hide" && len(f) == 3:
+			_, err := props.Hide(f[2])
+			return err
+		case f[1] == "set" && len(f) >= 3:
+			ok, err := props.Set(f[2], strings.Join(f[3:], " "))
+			if err == nil && !ok {
+				err = fmt.Errorf("没有属性 %s", f[2])
+			}
+			return err
+		}
+		return fmt.Errorf("不认识的命令：%q", cmd)
+	}
+	if dev == nil {
+		return fmt.Errorf("没有触摸屏")
+	}
+	return dev.Do(cmd)
 }

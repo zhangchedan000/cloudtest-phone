@@ -24,12 +24,27 @@ type buildPropFile struct {
 	path       string
 	mode       os.FileMode
 	takeSpaced bool
+	// dropRedroid 改完以后去掉还带 redroid 字样的行（/vendor/build.prop 里 Redroid 自己的注释和属性，踩坑 #63）
+	dropRedroid bool
 }
 
 var buildPropFiles = []buildPropFile{
-	{"/system/build.prop", 0o600, true},
-	{"/system/product/etc/build.prop", 0o644, false},
-	{"/system/system_ext/etc/build.prop", 0o644, false},
+	{"/system/build.prop", 0o600, true, false},
+	{"/system/product/etc/build.prop", 0o644, false, false},
+	{"/system/system_ext/etc/build.prop", 0o644, false, false},
+	// vendor 的 build.prop 0644，App 能直接读：原来满是 redroid（品牌、型号、指纹、ro.hardware）
+	{"/vendor/build.prop", 0o644, false, true},
+}
+
+// dropRedroidLines 去掉带 redroid 字样的行。
+func dropRedroidLines(s string) string {
+	var b strings.Builder
+	for _, line := range strings.SplitAfter(s, "\n") {
+		if !strings.Contains(strings.ToLower(line), "redroid") {
+			b.WriteString(line)
+		}
+	}
+	return b.String()
 }
 
 // imageBuildProps 镜像里原来的 build.prop（按镜像 ID 缓存在 DataDir/cache/buildprop/<ID>/）。
@@ -38,7 +53,7 @@ func (s *Service) imageBuildProps(ctx context.Context, image string) (string, er
 	if err != nil || id == "" {
 		return "", fmt.Errorf("读镜像 ID：%v %s", err, id)
 	}
-	dir := filepath.Join(s.cfg.DataDir, "cache", "buildprop", strings.TrimPrefix(strings.TrimSpace(id), "sha256:"))
+	dir := filepath.Join(s.cfg.DataDir, "cache", "buildprop2", strings.TrimPrefix(strings.TrimSpace(id), "sha256:"))
 	if _, err := os.Stat(filepath.Join(dir, "done")); err == nil {
 		return dir, nil
 	}
@@ -52,7 +67,7 @@ func (s *Service) imageBuildProps(ctx context.Context, image string) (string, er
 	}
 	defer s.run.Run(context.Background(), "docker", "rm", "-f", tmp)
 	for i, f := range buildPropFiles {
-		if out, err := s.run.Run(ctx, "docker", "cp", tmp+":"+f.path, filepath.Join(dir, fmt.Sprint(i))); err != nil {
+		if out, err := s.run.Run(ctx, "docker", "cp", tmp+":"+f.path, filepath.Join(dir, fmt.Sprint(i))); err != nil && !f.dropRedroid {
 			return "", fmt.Errorf("取镜像 %s：%v %s", f.path, err, out)
 		}
 	}
@@ -117,7 +132,11 @@ func (s *Service) prepareBuildProps(ctx context.Context, id, image string, args 
 			continue
 		}
 		out := filepath.Join(dir, fmt.Sprint(i)+".prop")
-		if err := os.WriteFile(out, []byte(rewriteBuildProp(string(orig), final, spaced, f.takeSpaced)), f.mode); err != nil {
+		text := rewriteBuildProp(string(orig), final, spaced, f.takeSpaced)
+		if f.dropRedroid {
+			text = dropRedroidLines(text)
+		}
+		if err := os.WriteFile(out, []byte(text), f.mode); err != nil {
 			return nil, err
 		}
 		_ = os.Chmod(out, f.mode)

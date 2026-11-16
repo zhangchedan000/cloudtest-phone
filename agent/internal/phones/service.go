@@ -765,12 +765,22 @@ func (s *Service) Start(ctx context.Context, id string) error {
 		return err
 	}
 	bootArgs, spaced := s.bootProps(*p, st)
-	if bpBinds, err := s.prepareBuildProps(ctx, p.ID, image, bootArgs, spaced); err != nil {
+	// 硬件名（ro.hardware）：镜像里按芯片名放好了显卡驱动（标签 prism.hw）就用机型的芯片名，不再是 redroid（踩坑 #63）。
+	// 启动参数在入口里改（withHardware）；这里只给改 build.prop 用。
+	hw := s.hardwareName(ctx, image, s.resolvedValues(*p, st))
+	propArgs := bootArgs
+	if hw != "" {
+		propArgs = append(append([]string{}, bootArgs...), "ro.hardware="+hw)
+	}
+	if bpBinds, err := s.prepareBuildProps(ctx, p.ID, image, propArgs, spaced); err != nil {
 		log.Printf("手机 %s：build.prop 没改写（照镜像原样开机）：%v", p.ID, err)
 	} else {
 		binds = append(binds, bpBinds...)
 	}
 	entrypoint := s.initEntrypoint(ctx, image)
+	if hw != "" {
+		entrypoint = withHardware(entrypoint, s.imageEntrypoint(ctx, image), hw)
+	}
 	if entrypoint != nil && s.cfg.Sensors && s.imageHasSensors(ctx, image) {
 		entrypoint = withSensors(entrypoint, sensorSpec(*p, st, s.resolvedValues(*p, st)))
 	}

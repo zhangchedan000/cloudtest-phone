@@ -92,10 +92,18 @@ gcc -shared -fPIC -nostdlib -O2 -Wl,-z,max-page-size=16384 -Wl,--hash-style=both
   -o "$B/vendor/lib64/libppclock.so" "$here/wifi/ppclock.c"
 chmod 644 "$B/vendor/lib64/libppclock.so"
 
+# 去掉 Redroid 名字（踩坑 #63）：显卡驱动按机型库里的芯片名各放一份，管家开机用 androidboot.hardware=<芯片名>
+HWS=$(python3 -c 'import json,glob,sys; print(" ".join(sorted({json.load(open(f)).get("values",{}).get("socModel","").lower() for f in glob.glob(sys.argv[1]+"/*.json")} - {""})))' "$here/../profiles/models")
+[ -n "$HWS" ] || die "机型库里没读到芯片名"
+cp "$here/image/fixup-redroid-names.sh" "$B/fixup.sh"
 cat > "$B/Dockerfile" <<DF
+FROM busybox:1.36.1-musl AS bb
 FROM $base
 COPY vendor/ /vendor/
-LABEL prism.wifi=1 prism.sensors=1 prism.touch=1
+COPY --from=bb /bin/busybox /pp-bb
+COPY fixup.sh /pp-fixup.sh
+RUN ["/pp-bb", "sh", "-c", "/pp-bb sh /pp-fixup.sh '$HWS' && /pp-bb rm -f /pp-fixup.sh /pp-bb"]
+LABEL prism.wifi=1 prism.sensors=1 prism.touch=1 prism.hw="$HWS"
 DF
 out="${base}-wifi"
 log "构建 $out"

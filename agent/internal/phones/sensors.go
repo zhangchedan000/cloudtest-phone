@@ -75,3 +75,80 @@ func (s *Service) touchInput(ctx context.Context, id string, req InputRequest) e
 	}
 	return fmt.Errorf("不是触摸操作")
 }
+
+// bootOnlyProps 只在开机时有用、带 Redroid 痕迹的属性：开机后藏起来（踩坑 #63）。
+// Redroid 的显示 / 显卡驱动只在启动时读一次它们；SurfaceFlinger 万一重启会按默认值来（极少见）。
+var bootOnlyProps = []string{
+	"ro.boot.redroid_width", "ro.boot.redroid_height", "ro.boot.redroid_dpi", "ro.boot.redroid_fps",
+	"ro.boot.redroid_gpu_mode", "ro.boot.redroid_gpu_node", "ro.boot.use_redroid_c2", "ro.boot.use_memfd",
+	"ro.boot.redroid_net_ndns", "ro.boot.redroid_net_dns1",
+}
+
+// hideBootProps 开机完成后让手机里的小助手把 bootOnlyProps 藏起来（小助手不在就算了）。
+func (s *Service) hideBootProps(ctx context.Context, id string) {
+	info, err := s.docker.InspectContainer(ctx, containerName(id))
+	if err != nil || info.State.Pid <= 0 {
+		return
+	}
+	ns := fmt.Sprintf("/proc/%d/ns/net", info.State.Pid)
+	for _, p := range bootOnlyProps {
+		if err := touch.Send(ns, "prop hide "+p, 3*time.Second); err != nil {
+			return // 老镜像 / 小助手没起来：不藏，照常用
+		}
+	}
+}
+
+// hardwareName 这台手机该用的硬件名：镜像标签 prism.hw 里有机型芯片名（小写，如 mt6895）就用它；
+// 镜像没处理过 redroid 名字（老镜像）返回空，照旧用 redroid（不然找不到显卡驱动开不了机）。
+func (s *Service) hardwareName(ctx context.Context, image string, byKey map[string]any) string {
+	soc, _ := byKey["socModel"].(string)
+	soc = strings.ToLower(strings.TrimSpace(soc))
+	if soc == "" {
+		return ""
+	}
+	out, err := s.run.Run(ctx, "docker", "image", "inspect", "-f", `{{index .Config.Labels "prism.hw"}}`, image)
+	if err != nil {
+		return ""
+	}
+	for _, h := range strings.Fields(out) {
+		if h == soc {
+			return soc
+		}
+	}
+	return ""
+}
+
+// imageEntrypoint 镜像原来的入口（没有返回 nil）。
+func (s *Service) imageEntrypoint(ctx context.Context, image string) []string {
+	ii, ok := s.docker.(imageInspector)
+	if !ok {
+		return nil
+	}
+	ep, err := ii.ImageEntrypoint(ctx, image)
+	if err != nil {
+		return nil
+	}
+	return ep
+}
+
+// withHardware 把入口里的 androidboot.hardware=redroid 换成芯片名。entrypoint 为空（没用启动器）时改镜像原入口。
+func withHardware(entrypoint, imageEP []string, hw string) []string {
+	ep := entrypoint
+	if ep == nil {
+		ep = imageEP
+	}
+	if ep == nil {
+		return entrypoint
+	}
+	out := append([]string{}, ep...)
+	changed := false
+	for i, a := range out {
+		if strings.HasPrefix(a, "androidboot.hardware=") {
+			out[i], changed = "androidboot.hardware="+hw, true
+		}
+	}
+	if !changed {
+		return entrypoint
+	}
+	return out
+}

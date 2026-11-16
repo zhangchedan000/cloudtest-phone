@@ -154,6 +154,9 @@ func (s *Service) applySettings(ctx context.Context, id string) {
 	if s.cfg.HostGuard {
 		hostguard.Fix() // 安卓开机刚改过宿主机的 kernel.* / vm.*（踩坑 #58），马上改回
 	}
+	if s.cfg.Sensors {
+		s.hideBootProps(ctx, id)
+	}
 	st := s.store.Snapshot()
 	p, err := st.Phone(id)
 	if err != nil {
