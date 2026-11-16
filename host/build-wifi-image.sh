@@ -72,7 +72,9 @@ cp "$here/touch/android.hardware.touchscreen.multitouch.jazzhand.xml" "$B/vendor
 log "打开电话（rild 连小助手模拟的基带，踩坑 #65）"
 # Redroid 自带的 rild 只有电话接口 1.1，安卓 13 起只认 1.4 以上（「IRadio <1.4 is no longer supported」）。
 # 换成模拟器的新版：libgoldfish-rild + libril-modem-lib（1.6 + AIDL 兼容层）+ 它自己的 reference-ril（支持 -d 串口）。
-if [ -f "$V/bin/hw/libgoldfish-rild" ]; then
+# 实验中（踩坑 #65）：模拟器新版 rild 和 Redroid 的库 / reference-ril 的数据结构对不上（安卓 14 rild 空指针崩、15 缺库），
+# 默认不用，照旧用 Redroid 自带的 rild（安卓 13 起框架不认它的 1.1 接口 → 手机像「没插 SIM 卡」）。PP_EMU_RIL=1 才试。
+if [ "${PP_EMU_RIL:-0}" = 1 ] && [ -f "$V/bin/hw/libgoldfish-rild" ]; then
   cp -a "$V/bin/hw/libgoldfish-rild" "$B/vendor/bin/hw/"
   cp -a "$V/lib64/libril-modem-lib.so" "$V/lib64/libreference-ril.so" "$B/vendor/lib64/"
   # 模拟器的 rild 按名字加载 libcuttlefish-ril-2.so，但那个版本只认 vsock 连模拟器的基带（连不上就死循环狂打日志）。
@@ -88,8 +90,6 @@ hals = [h for h in re.findall(r'<hal\b.*?</hal>', src, re.S) if 'android.hardwar
 open(sys.argv[2], 'w').write('<manifest version="1.0" type="device">\n' + '\n'.join(hals) + '\n</manifest>\n')
 print('电话服务声明：%d 段' % len(hals))
 PY
-else
-  log "这一版模拟器没有 libgoldfish-rild：电话用镜像自带的 rild（安卓 13 起不认，手机里会显示无服务）"
 fi
 cp "$here/ril/init.radio.rc" "$B/vendor/etc/init/init.radio.rc"
 cp "$here/ril/android.hardware.telephony.xml" "$B/vendor/etc/permissions/"
