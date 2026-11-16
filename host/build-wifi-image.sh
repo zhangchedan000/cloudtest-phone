@@ -70,6 +70,24 @@ mkdir -p "$B/vendor/etc/permissions"
 cp "$here/touch/android.hardware.touchscreen.multitouch.jazzhand.xml" "$B/vendor/etc/permissions/"
 
 log "打开电话（rild 连小助手模拟的基带，踩坑 #65）"
+# Redroid 自带的 rild 只有电话接口 1.1，安卓 13 起只认 1.4 以上（「IRadio <1.4 is no longer supported」）。
+# 换成模拟器的新版：libgoldfish-rild + libril-modem-lib（1.6 + AIDL 兼容层）+ 它自己的 reference-ril（支持 -d 串口）。
+if [ -f "$V/bin/hw/libgoldfish-rild" ]; then
+  cp -a "$V/bin/hw/libgoldfish-rild" "$B/vendor/bin/hw/"
+  cp -a "$V/lib64/libril-modem-lib.so" "$V/lib64/libreference-ril.so" "$B/vendor/lib64/"
+  [ -f "$V/lib64/hw/android.hardware.radio-library.compat.so" ] && cp -a "$V/lib64/hw/android.hardware.radio-library.compat.so" "$B/vendor/lib64/hw/"
+  cp -a "$V/etc/init/rild_goldfish.rc" "$B/vendor/etc/init/"
+  # 电话服务的 VINTF 声明：从模拟器的 vendor manifest.xml 里摘出 radio 相关的 <hal>
+  python3 - "$V/etc/vintf/manifest.xml" "$B/vendor/etc/vintf/manifest/android.hardware.radio.prism.xml" <<'PY'
+import re, sys
+src = open(sys.argv[1]).read()
+hals = [h for h in re.findall(r'<hal\b.*?</hal>', src, re.S) if 'android.hardware.radio' in h]
+open(sys.argv[2], 'w').write('<manifest version="1.0" type="device">\n' + '\n'.join(hals) + '\n</manifest>\n')
+print('电话服务声明：%d 段' % len(hals))
+PY
+else
+  log "这一版模拟器没有 libgoldfish-rild：电话用镜像自带的 rild（安卓 13 起不认，手机里会显示无服务）"
+fi
 cp "$here/ril/init.radio.rc" "$B/vendor/etc/init/init.radio.rc"
 cp "$here/ril/android.hardware.telephony.xml" "$B/vendor/etc/permissions/"
 

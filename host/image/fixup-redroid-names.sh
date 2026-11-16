@@ -32,7 +32,8 @@ rm -f redroid.legacy.rc init.redroid.rc
 [ -f $V/etc/permissions/redroid-removed-permissions.xml ] && mv $V/etc/permissions/redroid-removed-permissions.xml $V/etc/permissions/removed-permissions.xml
 rm -f $V/etc/hwdata/amdgpu.ids.redroid
 sed -i '/use_redroid_c2/d' $V/build.prop
-# 电话打开（踩坑 #65）：去掉 ro.radio.noril=yes
+# 电话打开（踩坑 #65）：去掉 ro.radio.noril=yes；有模拟器的新版 rild 就去掉 Redroid 自带的老 rild（服务同名会冲突）
 sed -i '/ro.radio.noril/d' $V/build.prop
+if [ -f $V/etc/init/rild_goldfish.rc ]; then rm -f $V/etc/init/rild.rc $V/bin/hw/rild; fi
 echo "redroid 名字处理完：$HWS"
 find / -xdev -iname '*redroid*' 2>/dev/null | grep -v '^/proc' || true
