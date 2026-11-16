@@ -494,6 +494,10 @@ func disguiseProps() []string {
 		"ro.secure=1",
 		// 设备类型：Redroid 是 default（模拟器 / 通用），手机出厂多是 nosdcard。
 		"ro.build.characteristics=nosdcard",
+		// CPU 类型：Redroid 是 generic（模拟器 / 通用编译），真机写具体核心。开发机 Neoverse N1 和板子 RK3588
+		// 都是 Cortex-A76 一类，指令集一致（dotprod / fp16），ART 按 a76 编译不会出错。
+		"dalvik.vm.isa.arm64.variant=cortex-a76",
+		"ro.bionic.cpu_variant=cortex-a76",
 	}
 }
 

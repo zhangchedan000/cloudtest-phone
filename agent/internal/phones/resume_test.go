@@ -115,3 +115,22 @@ func TestBusyWhilePending(t *testing.T) {
 		t.Fatal("设置进行中应 busy")
 	}
 }
+
+// gmsRunner 让 pm path com.google.android.gms 返回数据分区里的 GMS（以前开过谷歌服务留下的）。
+type gmsRunner struct{ fakeRunner }
+
+func (r *gmsRunner) Run(ctx context.Context, name string, args ...string) (string, error) {
+	if len(args) >= 5 && args[2] == "pm" && args[3] == "path" && args[4] == "com.google.android.gms" {
+		return "package:/data/app/~~x==/com.google.android.gms-y==/base.apk", nil
+	}
+	return r.fakeRunner.Run(ctx, name, args...)
+}
+
+func TestWarnLeftoverGMSWithoutGapps(t *testing.T) {
+	svc, id := startForResume(t)
+	svc.run = &gmsRunner{}
+	svc.applySettings(context.Background(), id)
+	if st := svc.settings.get(id); st == nil || !strings.Contains(st.Error, "GMS") {
+		t.Fatalf("没开谷歌服务但留着 GMS 应提示：%+v", st)
+	}
+}

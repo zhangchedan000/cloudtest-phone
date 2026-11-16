@@ -162,6 +162,13 @@ func (s *Service) applySettings(ctx context.Context, id string) {
 	for _, pkg := range aospOnlyPackages {
 		_, _ = s.run.Run(ctx, "docker", "exec", name, "pm", "uninstall", "--user", "0", pkg)
 	}
+	// 关着谷歌服务、数据里却留着 GMS（以前开过谷歌服务，或手动装过）：镜像里没有 GSF，GMS 会反复崩溃（踩坑 #46）。
+	// 不自动删（可能有账号数据），提示用户。
+	if !p.Gapps {
+		if out, _ := s.run.Run(ctx, "docker", "exec", name, "pm", "path", "com.google.android.gms"); strings.Contains(out, "/data/app/") {
+			problems = append(problems, "没开谷歌服务，但数据里还留着谷歌服务（GMS），会反复崩溃：在「信息」里打开谷歌服务，或者重置这台手机")
+		}
+	}
 	for _, r := range s.resolve(*p, st) {
 		def, ok := liveProps[r.Key]
 		if !ok || r.Value == nil {
