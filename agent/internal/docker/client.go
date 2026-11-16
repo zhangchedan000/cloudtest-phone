@@ -93,6 +93,8 @@ type ContainerSpec struct {
 	Network    string
 	IPv4       string
 	Privileged bool
+	// Entrypoint 不为空时替换镜像的入口（开机时长归零的启动器用，见 timens 包）。
+	Entrypoint []string
 }
 
 func (c *Client) CreateContainer(ctx context.Context, spec ContainerSpec) (string, error) {
@@ -114,6 +116,9 @@ func (c *Client) CreateContainer(ctx context.Context, spec ContainerSpec) (strin
 				spec.Network: map[string]any{"IPAMConfig": map[string]any{"IPv4Address": spec.IPv4}},
 			},
 		},
+	}
+	if len(spec.Entrypoint) > 0 {
+		body["Entrypoint"] = spec.Entrypoint
 	}
 	var out struct {
 		ID string `json:"Id"`
@@ -161,6 +166,19 @@ func (c *Client) InspectContainer(ctx context.Context, name string) (*ContainerI
 		return nil, err
 	}
 	return &out, nil
+}
+
+// ImageEntrypoint 镜像原来的入口（Redroid 是 /init + 几个参数），换成启动器时要原样接在后面。
+func (c *Client) ImageEntrypoint(ctx context.Context, image string) ([]string, error) {
+	var out struct {
+		Config struct {
+			Entrypoint []string `json:"Entrypoint"`
+		} `json:"Config"`
+	}
+	if err := c.do(ctx, http.MethodGet, "/images/"+image+"/json", nil, nil, &out); err != nil {
+		return nil, err
+	}
+	return out.Config.Entrypoint, nil
 }
 
 // EnsureNetwork 确保有一个固定网段的桥接网络（每台云手机在里面有固定 IP）。

@@ -42,6 +42,8 @@ type Config struct {
 	MaxRunning  int            // 同时最多运行几台
 	// DevHost 开发机：允许「直连（仅开发）」代理，方便没代理时测试。正式机器必须是 false。
 	DevHost bool
+	// InitHelper 开机时长归零的启动器（管家程序自己的路径，见 timens 包）；空 = 不用（内核不支持时间命名空间）。
+	InitHelper string
 	// HostCPUs 宿主机核数（0 = 自动）；BootTimeout / PollEvery 等开机的超时和间隔（0 = 默认）。
 	HostCPUs    int
 	BootTimeout time.Duration
@@ -660,7 +662,12 @@ func (s *Service) Start(ctx context.Context, id string) error {
 	if err != nil {
 		return err
 	}
+	entrypoint := s.initEntrypoint(ctx, image)
+	if entrypoint != nil {
+		binds = append(binds, s.cfg.InitHelper+":"+initMount+":ro")
+	}
 	_, err = s.docker.CreateContainer(ctx, docker.ContainerSpec{
+		Entrypoint: entrypoint,
 		Name:       name,
 		Image:      image,
 		Cmd:        s.BootArgs(*p, st),
@@ -943,7 +950,8 @@ func redroidFPS(v any) int {
 func (s *Service) removeTraces(ctx context.Context, name string) {
 	deadline := time.Now().Add(s.bootTimeout())
 	for {
-		if _, err := s.run.Run(ctx, "docker", "exec", name, "rm", "-f", "/system/xbin/su", "/.dockerenv"); err == nil {
+		// 启动器（/pp-init）开机后用不着了：卸掉挂载再删掉挂载点留下的空文件。
+		if _, err := s.run.Run(ctx, "docker", "exec", name, "sh", "-c", "umount "+initMount+" 2>/dev/null; rm -f "+initMount+" /system/xbin/su /.dockerenv"); err == nil {
 			return
 		}
 		if time.Now().After(deadline) || ctx.Err() != nil {
@@ -958,3 +966,27 @@ const cpuVariant = "cortex-a76"
 
 // cpuVariantProps 开机后用 setprop 改的 CPU 类型属性（只改系统里本来就有的：64 位镜像没有 arm 32 位那个）。
 var cpuVariantProps = []string{"dalvik.vm.isa.arm64.variant", "dalvik.vm.isa.arm.variant"}
+
+// initMount 启动器在容器里的路径（开机后 removeTraces 卸掉删除）。
+const initMount = "/pp-init"
+
+type imageInspector interface {
+	ImageEntrypoint(ctx context.Context, image string) ([]string, error)
+}
+
+// initEntrypoint 用启动器包住镜像原来的入口，让安卓看到的开机时长从 0 开始（timens 包、踩坑 #49）。
+// 没配启动器、读不到镜像入口时返回 nil（照旧用镜像入口开机，绝不因此开不了机）。
+func (s *Service) initEntrypoint(ctx context.Context, image string) []string {
+	if s.cfg.InitHelper == "" {
+		return nil
+	}
+	ii, ok := s.docker.(imageInspector)
+	if !ok {
+		return nil
+	}
+	ep, err := ii.ImageEntrypoint(ctx, image)
+	if err != nil || len(ep) == 0 {
+		return nil
+	}
+	return append([]string{initMount, "pp-init", "0"}, ep...)
+}

@@ -25,11 +25,16 @@ import (
 	"github.com/zhangchedan000/prism-phone/agent/internal/phones"
 	"github.com/zhangchedan000/prism-phone/agent/internal/selfcheck"
 	"github.com/zhangchedan000/prism-phone/agent/internal/store"
+	"github.com/zhangchedan000/prism-phone/agent/internal/timens"
 )
 
 var version = "dev"
 
 func main() {
+	// 容器里的启动器模式（开机时长归零，见 timens 包）：不跑管家，建好时间命名空间就 exec 安卓 init。
+	if len(os.Args) > 2 && os.Args[1] == "pp-init" {
+		timens.Run(os.Args[2:])
+	}
 	listen := flag.String("listen", "127.0.0.1:8099", "监听地址（默认只监听本机，外部访问走 HTTPS 反向代理或 SSH 隧道）")
 	dataDir := flag.String("data", "/opt/prism-phone/data", "数据目录")
 	hostID := flag.String("host-id", hostname(), "机器标识")
@@ -44,6 +49,7 @@ func main() {
 	cpus := flag.Float64("cpus", 2, "每台容器 CPU 上限")
 	maxRunning := flag.Int("max-running", 4, "同时最多运行几台")
 	devHost := flag.Bool("dev-host", false, "开发机：允许「直连（仅开发）」代理")
+	noTimens := flag.Bool("no-timens", false, "不让云手机的开机时长归零（出问题时临时关掉用）")
 	dockerSock := flag.String("docker", "/var/run/docker.sock", "Docker socket")
 	mihomoAPI := flag.String("mihomo-api", "", "网络模块：mihomo 控制接口地址（例如 127.0.0.1:9090）；空 = 不开网络模块（只适合开发测试）")
 	tproxyPort := flag.Int("tproxy-port", 7893, "网络模块：mihomo 透明代理端口")
@@ -83,6 +89,14 @@ func main() {
 		HostID: *hostID, HostName: firstNonEmpty(*hostName, *hostID), GPUFamily: *gpuFamily, GPUMode: *gpuMode,
 		Images: imgs, GappsImages: gappsImgs, DataDir: *dataDir, Network: *network, Subnet: *subnet, MemoryMB: *memMB, CPUs: *cpus,
 		MaxRunning: *maxRunning, DevHost: *devHost,
+	}
+	// 开机时长归零：内核支持时间命名空间就用管家程序自己当容器启动器（timens 包）
+	if !*noTimens && timens.Supported() {
+		if exe, err := os.Executable(); err == nil {
+			if real, err := filepath.EvalSymlinks(exe); err == nil {
+				cfg.InitHelper = real
+			}
+		}
 	}
 	svc := phones.NewService(cfg, dc, st, cat, models)
 	var net *netcfg.Syncer
