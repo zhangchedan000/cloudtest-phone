@@ -232,7 +232,10 @@ func TestParseFingerprint(t *testing.T) {
 }
 
 func TestFingerprintPropsConsistent(t *testing.T) {
+	// 测兜底：没有真机分区数据（buildProps）、只有真实主指纹时，各分区统一盖成这个指纹，不漏 redroid 默认值。
+	// （有真机分区数据的机型照搬真机，见 TestBuildPropsUseRealPartitionLayout）
 	svc, _, _ := newTestService(t, true, "software")
+	svc.model("poco-x4-gt").BuildProps = nil
 	p, _ := svc.Create(CreateRequest{Name: "A", ModelID: "poco-x4-gt", AndroidVersion: 14, ProxyID: DirectDevProxyID})
 	args := svc.BootArgs(*mustPhone(t, svc, p.ID), svc.store.Snapshot())
 	joined := strings.Join(args, " ")
