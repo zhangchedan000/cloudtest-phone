@@ -77,11 +77,13 @@ export function PhoneDrawer({ phone, mode = 'view', onClose, onEdit, bare = fals
             menu={{
               items: [
                 ...(running || live.status === 'starting' ? [{ key: 'restart', label: '重启', icon: <RedoOutlined /> }, { type: 'divider' as const }] : []),
+                { key: 'renew', label: '一键新机（重新随机身份，保留机型和数据）' },
                 { key: 'reset', label: '一键重置（清空数据，恢复出厂）' },
                 ...(host?.androidVersions ?? []).filter((v) => v !== live.androidVersion).map((v) => ({ key: `flash-${v}`, label: `刷机：换成 Android ${v}（清空数据）` }))
               ],
               onClick: ({ key }) => {
                 if (key === 'restart') { void ws.setStatus([live.id], 'stopped').then(() => ws.setStatus([live.id], 'running')); return }
+                if (key === 'renew') { Modal.confirm({ title: `一键新机 ${live.name}？`, content: '序列号、WiFi/蓝牙 MAC、Android ID、广告 ID 等「随机」身份重新生成一遍，机型、App 数据、代理都保留。重启后生效。', onOk: () => ws.renewPhones([live.id]) }); return }
                 const version = key.startsWith('flash-') ? Number(key.slice(6)) : undefined
                 Modal.confirm({
                   title: version ? `把 ${live.name} 刷成 Android ${version}？` : `重置 ${live.name}？`,

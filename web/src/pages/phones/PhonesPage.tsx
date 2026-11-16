@@ -87,7 +87,7 @@ export function PhonesPage() {
   const batch = [
     { key: 'start', label: '开机', icon: <PoweroffOutlined />, onClick: () => start(selected) },
     { key: 'stop', label: '关机', icon: <PoweroffOutlined />, onClick: () => ws.setStatus(selected, 'stopped') },
-    { key: 'renew', label: '一键新机（重新随机，保留机型）', icon: <ReloadOutlined />, onClick: () => message.info('这个功能还没开放') },
+    { key: 'renew', label: '一键新机（重新随机身份，保留机型和数据）', icon: <ReloadOutlined />, onClick: () => Modal.confirm({ title: `一键新机 ${selected.length} 台？`, content: '把序列号、WiFi/蓝牙 MAC、Android ID、广告 ID 等「随机」身份重新生成一遍（锁定的字段不变），机型、App 数据、代理都保留。重启这些手机后生效。', onOk: () => ws.renewPhones(selected) }) },
     { key: 'reset', label: '一键重置（清空数据，恢复出厂）', icon: <ReloadOutlined />, onClick: () => Modal.confirm({ title: `重置 ${selected.length} 台云手机？`, content: '手机里的 App、账号登录、相册全部清空，恢复成刚创建的样子。旧数据挪到服务器的回收站，误操作还能找回。参数和代理不变。', okButtonProps: { danger: true }, onOk: () => ws.resetPhones(selected) }) },
     { type: 'divider' as const },
     { key: 'apk', label: '安装 APK（选中的每台，只上传一次）', icon: <AppstoreAddOutlined />, onClick: () => apkInput.current?.click() },

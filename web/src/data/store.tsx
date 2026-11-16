@@ -37,6 +37,7 @@ interface Workspace {
   addPhone: (phone: Phone) => Promise<void>
   removePhones: (ids: string[]) => Promise<void>
   resetPhones: (ids: string[], androidVersion?: number) => Promise<void>
+  renewPhones: (ids: string[]) => Promise<void>
   addProxy: (proxy: Proxy) => Promise<void>
   checkProxies: (ids: string[], serverId?: string) => Promise<void>
   removeProxy: (id: string, serverId?: string) => Promise<void>
@@ -188,6 +189,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       resetPhones: async (ids, androidVersion) => {
         if (!live) { message.info('预览模式：接上管家程序后可用'); return }
         await each(ids, androidVersion ? '刷机' : '重置', (id) => api.reset(id, androidVersion), true)
+      },
+      renewPhones: async (ids) => {
+        if (!live) { message.info('预览模式：接上管家程序后可用'); return }
+        await each(ids, '一键新机', (id) => api.renew(id))
       },
       removePhones: async (ids) => {
         if (!live) { setPhones((list) => list.filter((p) => !ids.includes(p.id))); return }

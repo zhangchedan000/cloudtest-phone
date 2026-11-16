@@ -108,6 +108,7 @@ export const api = {
   start: (id: string) => call('POST', `/phones/${id}/start`),
   stop: (id: string) => call('POST', `/phones/${id}/stop`),
   reset: (id: string, androidVersion?: number) => call('POST', `/phones/${id}/reset`, { renew: false, androidVersion: androidVersion ?? 0 }),
+  renew: (id: string) => call('POST', `/phones/${id}/renew`),
   input: (id: string, req: InputRequest) => call('POST', `/phones/${id}/input`, req),
   proxies: (sid?: string) => call<Proxy[]>('GET', '/proxies', undefined, sid),
   createProxy: (proxy: Omit<Proxy, 'id'>, sid?: string) => call<Proxy>('POST', '/proxies', proxy, sid),
