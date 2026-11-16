@@ -138,7 +138,7 @@ export function PhoneDrawer({ phone, mode = 'view', onClose, onEdit, bare = fals
                       label: '谷歌服务', children: <Space wrap>
                         <Switch size="small" checked={!!live.gapps} disabled={!liveMode || (!live.gapps && !host?.gappsVersions?.includes(live.androidVersion))}
                           onChange={(on) => void ws.assign([live.id], { gapps: on }).then(() => message.success(running ? '已切换，重启这台手机后生效' : '已切换，下次开机生效'))} />
-                        <span className="pp-muted pp-small">{host?.gappsVersions?.includes(live.androidVersion) ? 'GMS / Play 商店，下次开机生效' : '这台机器没装这个安卓版本的谷歌服务镜像'}</span>
+                        <span className="pp-muted pp-small">{host?.gappsVersions?.includes(live.androidVersion) ? 'GMS / Play 商店，下次开机生效。来回切换后若有 App 一直崩，是另一套系统留下的数据，重置这台手机即可' : '这台机器没装这个安卓版本的谷歌服务镜像'}</span>
                       </Space>
                     },
                     { label: '时区 / 语言', children: !live.settings ? '—' : live.settings.state === 'pending' ? '等开机完成后设置…' : live.settings.state === 'applied' ? '已设置' : `设置失败：${live.settings.error ?? ''}` },
