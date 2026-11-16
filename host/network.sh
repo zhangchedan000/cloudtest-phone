@@ -116,6 +116,9 @@ table ip prism_phone {
     ip saddr != $SUBNET return
     # 发给网关本身的（DNS、管家程序）不代理
     ip daddr $GATEWAY return
+    # DNS 不走透明代理：mangle 比 dstnat 先执行，不放行的话 53 端口会被 tproxy 截走、当普通 UDP 发给代理节点，
+    # 节点不支持 UDP（很多住宅 / 机场节点都不支持）时所有域名都解析不了（踩坑 #51）。放行后由上面的 pp_dns 交给 mihomo。
+    meta l4proto { tcp, udp } th dport 53 return
     meta l4proto tcp tproxy to 127.0.0.1:$TPROXY_PORT meta mark set $MARK accept
     meta l4proto udp tproxy to 127.0.0.1:$TPROXY_PORT meta mark set $MARK accept
   }
