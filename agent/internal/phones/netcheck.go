@@ -21,7 +21,10 @@ type NetStatus struct {
 	At    time.Time `json:"at"`
 }
 
-const netProbe = `printf 'GET /generate_204 HTTP/1.1\r\nHost: connectivitycheck.gstatic.com\r\nConnection: close\r\n\r\n' | nc -w 10 connectivitycheck.gstatic.com 80 2>&1 | head -1`
+// netProbe 发完请求后让输入再保持 10 秒：toybox nc 读到输入结束就断开，不等回应（-q 参数在这个版本里不起作用，
+// 实测 50 毫秒就退出）。直连时回应来得快碰巧能收到，走高延迟代理（香港节点约 1 秒）就一直是空的，
+// 被误报成「上不了外网」（踩坑 #51）。代价是每次检查固定约 10 秒，后台最多 4 台并发，没关系。
+const netProbe = `(printf 'GET /generate_204 HTTP/1.1\r\nHost: connectivitycheck.gstatic.com\r\nConnection: close\r\n\r\n'; sleep 10) | nc -w 10 connectivitycheck.gstatic.com 80 2>&1 | head -1`
 
 // CheckInternet 从这台手机里试连外网。设备没在运行返回 nil。
 func (s *Service) CheckInternet(ctx context.Context, id string) *NetStatus {
@@ -52,7 +55,7 @@ func (s *Service) SampleInternet(ctx context.Context) {
 			defer wg.Done()
 			sem <- struct{}{}
 			defer func() { <-sem }()
-			c, cancel := context.WithTimeout(ctx, 20*time.Second)
+			c, cancel := context.WithTimeout(ctx, 30*time.Second)
 			defer cancel()
 			if st := s.CheckInternet(c, id); st != nil {
 				s.netStat.put(id, *st)
