@@ -269,5 +269,17 @@ func (c *Client) ContainerUsage(ctx context.Context, name string) (Usage, error)
 	if err := c.do(ctx, http.MethodGet, "/containers/"+name+"/stats", url.Values{"stream": {"false"}}, nil, &raw); err != nil {
 		return Usage{}, err
 	}
-	return UsageFromStats(raw)
+	u, err := UsageFromStats(raw)
+	if err == nil && u.MemLimitMB == 0 {
+		// 手机走虚拟 WiFi 时 eth0 被搬出容器，Docker 读网卡统计失败，整份统计都是 0（踩坑 #57）：直接读 cgroup
+		var id struct {
+			ID string `json:"id"`
+		}
+		if json.Unmarshal(raw, &id) == nil && id.ID != "" {
+			if cu, cerr := CgroupUsage(ctx, CgroupRoot, id.ID); cerr == nil {
+				return cu, nil
+			}
+		}
+	}
+	return u, err
 }

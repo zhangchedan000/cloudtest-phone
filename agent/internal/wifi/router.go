@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // Runner 执行宿主机命令（测试时换成假的）。
@@ -164,7 +165,15 @@ func Setup(ctx context.Context, run Runner, newRadio NewRadioFunc, p Plan, conta
 	}
 	// iw 按名字找网卡要读 /sys，网卡搬进手机后从外面的 /sys 看不到（踩坑 #57）：
 	// 所以在路由器命名空间里先把 wlan0 建好，再把网卡连同 wlan0 一起搬进手机。
-	if err := step("手机 wlan0", "ip", in("iw", "phy", p.StaPhy, "interface", "add", "wlan0", "type", "managed")...); err != nil {
+	// 刚建的网卡在 /sys 里出现要一点时间（机器忙时实测会 ENOENT），稍等重试
+	var err error
+	for i := 0; i < 10; i++ {
+		if err = step("手机 wlan0", "ip", in("iw", "phy", p.StaPhy, "interface", "add", "wlan0", "type", "managed")...); err == nil {
+			break
+		}
+		time.Sleep(300 * time.Millisecond)
+	}
+	if err != nil {
 		return err
 	}
 	if err := step("网卡搬进手机", "ip", in("iw", "phy", p.StaPhy, "set", "netns", pid)...); err != nil {

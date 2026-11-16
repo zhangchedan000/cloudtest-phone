@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"os/exec"
+	"syscall"
+	"time"
 )
 
 // 开了时间命名空间（踩坑 #49）后，docker exec 进容器的进程还在宿主机的时间里（runc 不知道时间命名空间），
@@ -20,7 +22,13 @@ func (s *Service) phoneCommand(ctx context.Context, id string, args ...string) *
 		if info, err := s.docker.InspectContainer(ctx, containerName(id)); err == nil && info.State.Pid > 0 {
 			if _, err := exec.LookPath("nsenter"); err == nil {
 				full := append([]string{"-t", fmt.Sprint(info.State.Pid), "-a", "--", "/system/bin/env", "-i", androidPath, "ANDROID_DATA=/data", "ANDROID_ROOT=/system"}, args...)
-				return exec.CommandContext(ctx, "nsenter", full...)
+				cmd := exec.CommandContext(ctx, "nsenter", full...)
+				// nsenter 进 PID 命名空间时会 fork，真正干活的（比如 screenrecord）是它的子进程：只杀 nsenter 子进程不会停，
+				// 输出管道也一直开着（页面关了 screenrecord 还在跑）。所以放进单独的进程组，取消时整组杀。
+				cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+				cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
+				cmd.WaitDelay = 3 * time.Second
+				return cmd
 			}
 		}
 	}
