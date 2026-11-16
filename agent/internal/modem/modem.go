@@ -131,9 +131,9 @@ func (m *Modem) one(c string) (res []string, ok bool) {
 		// gsm rssi,ber, cdma(2), evdo(3), lte: ss,rsrp,rsrq,rssnr,cqi, timing advance
 		return []string{fmt.Sprintf("+CSQ: %d,99,-1,-1,-1,-1,-1,%d,%d,10,150,2147483647,2147483647", s.Signal, s.Signal, s.RSRP)}, true
 	case up == "+CREG?":
-		return []string{fmt.Sprintf("+CREG: 2,1,\"%s\",\"%s\",14", s.LAC, s.CellID)}, true
+		return []string{fmt.Sprintf("+CREG: 2,1,\"%s\",\"%s\",7", s.LAC, s.CellID)}, true
 	case up == "+CGREG?":
-		return []string{fmt.Sprintf("+CGREG: 2,1,\"%s\",\"%s\",14", s.LAC, s.CellID)}, true
+		return []string{fmt.Sprintf("+CGREG: 2,1,\"%s\",\"%s\",7", s.LAC, s.CellID)}, true
 	case up == "+COPS?":
 		m.mu.Lock()
 		defer m.mu.Unlock()
