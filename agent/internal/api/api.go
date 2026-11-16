@@ -65,6 +65,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/phones/{id}/import-params", s.importParams)
 	mux.HandleFunc("GET /api/phones/{id}/clipboard", s.getClipboard)
 	mux.HandleFunc("POST /api/phones/{id}/clipboard", s.setClipboard)
+	mux.HandleFunc("POST /api/phones/{id}/adb-key", s.authorizeADB)
 	mux.HandleFunc("POST /api/phones/{id}/apk", s.installAPK)
 	mux.HandleFunc("GET /api/phones/{id}/logs", s.logs)
 	mux.HandleFunc("POST /api/phones/{id}/files", s.uploadFile)
@@ -405,6 +406,22 @@ func (s *Server) setClipboard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.svc.SetClipboard(r.Context(), r.PathValue("id"), req.Text, req.Paste); err != nil {
+		fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+// authorizeADB 把用户电脑的 ADB 公钥（adbkey.pub）加进手机，之后 adb connect 不再 unauthorized。
+func (s *Server) authorizeADB(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Key string `json:"key"`
+	}
+	if err := decode(r, &req); err != nil {
+		fail(w, err)
+		return
+	}
+	if err := s.svc.AuthorizeADBKey(r.Context(), r.PathValue("id"), req.Key); err != nil {
 		fail(w, err)
 		return
 	}

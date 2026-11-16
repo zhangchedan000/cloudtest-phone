@@ -223,6 +223,11 @@ export function setClipboard(id: string, text: string, paste = false): Promise<{
   return call('POST', `/phones/${id}/clipboard`, { text, paste })
 }
 
+/** 授权电脑的 ADB 公钥（adbkey.pub 的内容），之后 adb connect 不再 unauthorized。 */
+export function authorizeAdbKey(id: string, key: string): Promise<{ ok: boolean }> {
+  return call('POST', `/phones/${id}/adb-key`, { key })
+}
+
 export function writeTokenCookie(token: string): void {
   document.cookie = `pp_token=${encodeURIComponent(token)}; path=/; SameSite=Strict`
 }

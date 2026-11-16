@@ -1,8 +1,11 @@
-import { App, Button, Modal, Space, Typography } from 'antd'
+import { App, Button, Input, Modal, Space, Typography } from 'antd'
+import { useState } from 'react'
+import { authorizeAdbKey } from '@/data/api'
 
 /**
  * ADB 连接命令（2026-11-15 用户要求）。
- * 云手机的 ADB 不要授权（踩坑 #33），所以不对外开放，只能经 SSH 隧道：
+ * 云手机按真机设了 ro.debuggable=0，adbd 要校验电脑的公钥：第一次连之前把 adbkey.pub 粘贴进来授权（踩坑 #46）。
+ * ADB 不对外开放，只能经 SSH 隧道：
  *   1. ssh -N -L <本机端口>:<手机内部 IP>:5555 root@<服务器>   （窗口开着）
  *   2. adb connect 127.0.0.1:<本机端口>
  * 本机端口按手机 IP 算（10.88.a.b → 20000 + a×256 + b），每台不一样，几台可以同时连。
@@ -28,8 +31,23 @@ export function adbCommands(ip: string, hostname: string): { tunnel: string; con
   }
 }
 
-export function AdbDialog({ open, ip, name, host, onClose }: { open: boolean; ip?: string; name: string; host?: string; onClose: () => void }) {
+export function AdbDialog({ open, id, ip, name, host, running, onClose }: { open: boolean; id?: string; ip?: string; name: string; host?: string; running?: boolean; onClose: () => void }) {
   const { message } = App.useApp()
+  const [key, setKey] = useState('')
+  const [saving, setSaving] = useState(false)
+  const authorize = async () => {
+    if (!id) return
+    setSaving(true)
+    try {
+      await authorizeAdbKey(id, key)
+      message.success('已授权这台电脑，现在可以 adb connect 了')
+      setKey('')
+    } catch (error) {
+      message.error((error as Error).message)
+    } finally {
+      setSaving(false)
+    }
+  }
   // 手机在哪台服务器上，SSH 就连哪台（别的服务器用它的域名）
   const cmds = ip ? adbCommands(ip, host ?? window.location.hostname) : undefined
   const copy = async (text: string) => {
@@ -46,6 +64,11 @@ export function AdbDialog({ open, ip, name, host, onClose }: { open: boolean; ip
         <p>还拿不到这台手机的内部地址（开机后才有）。</p>
       ) : (
         <>
+          <p className="pp-small pp-muted">⓪ 第一次用这台电脑连时先授权：把电脑上 <Typography.Text code>adbkey.pub</Typography.Text> 的内容粘贴进来（Windows 在 <Typography.Text code>C:\Users\你的用户名\.android\adbkey.pub</Typography.Text>，Mac / Linux 在 <Typography.Text code>~/.android/adbkey.pub</Typography.Text>；没有这个文件就先随便运行一次 <Typography.Text code>adb devices</Typography.Text>）。重置手机后要重新授权。</p>
+          <Space.Compact style={{ width: '100%', marginBottom: 12 }}>
+            <Input.TextArea value={key} onChange={(e) => setKey(e.target.value)} placeholder="QAAAA…（一长串） 用户名@电脑名" autoSize={{ minRows: 2, maxRows: 4 }} />
+            <Button type="primary" loading={saving} disabled={!key.trim() || !id || !running} onClick={() => void authorize()}>{running ? '授权' : '先开机'}</Button>
+          </Space.Compact>
           <p>在你自己的电脑上按顺序运行（要能 SSH 登录服务器）：</p>
           <p className="pp-small pp-muted">① 开隧道（这个窗口保持开着，关掉就断开）</p>
           <Space.Compact style={{ width: '100%' }}>
@@ -61,7 +84,7 @@ export function AdbDialog({ open, ip, name, host, onClose }: { open: boolean; ip
           <p className="pp-small pp-muted" style={{ marginTop: 12 }}>
             连上以后 adb shell、adb install、scrcpy -s 127.0.0.1:{cmds.port} 都能用。每台手机的本机端口不一样，可以同时连几台。
             <br />
-            ⚠️ 云手机的 ADB 连接时不需要在手机上点「允许」，谁连上谁就能完全控制：只能走 SSH 隧道，不要在防火墙或反代里开放 5555。
+            ⚠️ 只能走 SSH 隧道，不要在防火墙或反代里开放 5555。连不上显示 unauthorized 就是这台电脑还没授权（看上面第 ⓪ 步）。
           </p>
         </>
       )}

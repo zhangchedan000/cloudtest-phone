@@ -118,7 +118,7 @@ export function PhoneDrawer({ phone, mode = 'view', onClose, onEdit, bare = fals
           <p className="pp-muted pp-small pp-center">在画面上点一下 = 点击，按住拖动 = 滑动</p>
           <ClipboardDialog open={clipOpen} phoneId={live.id} onClose={() => setClipOpen(false)} />
         </div>}
-        <AdbDialog open={adbOpen} ip={live.ip} name={live.name} host={new URL(serverUrl(live.serverId)).hostname} onClose={() => setAdbOpen(false)} />
+        <AdbDialog open={adbOpen} id={live.id} running={running} ip={live.ip} name={live.name} host={new URL(serverUrl(live.serverId)).hostname} onClose={() => setAdbOpen(false)} />
         {mode === 'edit' && <div className="pp-detail-side">
           <Tabs
             items={[
