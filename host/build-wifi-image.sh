@@ -72,14 +72,14 @@ cp "$here/touch/android.hardware.touchscreen.multitouch.jazzhand.xml" "$B/vendor
 log "打开电话（rild 连小助手模拟的基带，踩坑 #65）"
 # Redroid 自带的 rild 只有电话接口 1.1，安卓 13 起只认 1.4 以上（「IRadio <1.4 is no longer supported」）。
 # 换成模拟器的新版：libgoldfish-rild + libril-modem-lib（1.6 + AIDL 兼容层）+ 它自己的 reference-ril（支持 -d 串口）。
-# 实验中（踩坑 #65）：模拟器新版 rild 和 Redroid 的库 / reference-ril 的数据结构对不上（安卓 14 rild 空指针崩、15 缺库），
-# 默认不用，照旧用 Redroid 自带的 rild（安卓 13 起框架不认它的 1.1 接口 → 手机像「没插 SIM 卡」）。PP_EMU_RIL=1 才试。
-if [ "${PP_EMU_RIL:-0}" = 1 ] && [ -f "$V/bin/hw/libgoldfish-rild" ]; then
+# 模拟器的新版 rild（接口 2.x，安卓 13 起框架只认 1.4 以上）+ 配套的 libcuttlefish-ril-2（数据结构对得上），
+# 用 -p 9600 连本机 TCP，小助手在那儿扮演基带（踩坑 #65）。安卓 14 实测库对得上；15 的模拟器库要的 libbase 符号
+# Redroid 15 没有，13 没测 → 默认只有 14 用，别的版本照旧用 Redroid 自带的 rild（手机像没插卡）。PP_EMU_RIL=0/1 可强制。
+emu_ril=${PP_EMU_RIL:-$([ "$ver" = 14 ] && echo 1 || echo 0)}
+if [ "$emu_ril" = 1 ] && [ -f "$V/bin/hw/libgoldfish-rild" ]; then
   cp -a "$V/bin/hw/libgoldfish-rild" "$B/vendor/bin/hw/"
   cp -a "$V/lib64/libril-modem-lib.so" "$V/lib64/libreference-ril.so" "$B/vendor/lib64/"
-  # 模拟器的 rild 按名字加载 libcuttlefish-ril-2.so，但那个版本只认 vsock 连模拟器的基带（连不上就死循环狂打日志）。
-  # 把支持 -d 串口的普通 reference-ril 放成这个名字（踩坑 #65）。
-  cp -a "$V/lib64/libreference-ril.so" "$B/vendor/lib64/libcuttlefish-ril-2.so"
+  cp -a "$V/lib64/libcuttlefish-ril-2.so" "$B/vendor/lib64/"
   [ -f "$V/lib64/hw/android.hardware.radio-library.compat.so" ] && cp -a "$V/lib64/hw/android.hardware.radio-library.compat.so" "$B/vendor/lib64/hw/"
   cp -a "$V/etc/init/rild_goldfish.rc" "$B/vendor/etc/init/"
   # 电话服务的 VINTF 声明：从模拟器的 vendor manifest.xml 里摘出 radio 相关的 <hal>
@@ -91,7 +91,11 @@ open(sys.argv[2], 'w').write('<manifest version="1.0" type="device">\n' + '\n'.j
 print('电话服务声明：%d 段' % len(hals))
 PY
 fi
-cp "$here/ril/init.radio.rc" "$B/vendor/etc/init/init.radio.rc"
+if [ "$emu_ril" = 1 ] && [ -f "$V/bin/hw/libgoldfish-rild" ]; then
+  sed 's#"-d /dev/ttyC0"#"-p 9600"#' "$here/ril/init.radio.rc" > "$B/vendor/etc/init/init.radio.rc"
+else
+  cp "$here/ril/init.radio.rc" "$B/vendor/etc/init/init.radio.rc"
+fi
 cp "$here/ril/android.hardware.telephony.xml" "$B/vendor/etc/permissions/"
 
 log "补齐 vendor 命名空间里缺的库（递归）"

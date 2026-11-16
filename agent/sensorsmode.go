@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"os/exec"
 	"strings"
@@ -80,6 +81,10 @@ func runSensors() {
 			}()
 		}
 	}
+	// 模拟器配套的电话驱动（libcuttlefish-ril-2）用 -p 端口连本机 TCP（每台手机自己的网络命名空间，端口不冲突）
+	if spec.Modem != nil {
+		go serveModemTCP(*spec.Modem)
+	}
 	// 管家的命令通道：触摸 + 系统属性（开机后藏 ro.boot.redroid_* 等，踩坑 #63）
 	go func() { _ = touch.Serve(func(cmd string) error { return helperCommand(dev, cmd) }, func(string) {}) }()
 	sensors.Serve(spec, os.NewFile(3, "ptmx"), os.NewFile(4, "pts"), func(string) {})
@@ -106,4 +111,28 @@ func helperCommand(dev *touch.Device, cmd string) error {
 		return fmt.Errorf("没有触摸屏")
 	}
 	return dev.Do(cmd)
+}
+
+// ModemPort 模拟器配套电话驱动连的本机端口（镜像里 init.radio.rc 配的 -p 9600）。
+const ModemPort = "127.0.0.1:9600"
+
+func serveModemTCP(spec modem.Spec) {
+	for {
+		ln, err := net.Listen("tcp", ModemPort)
+		if err != nil {
+			time.Sleep(2 * time.Second) // 网卡还没起来等情况：过会儿再试
+			continue
+		}
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				break
+			}
+			go func(c net.Conn) {
+				defer c.Close()
+				_ = modem.New(spec, c).Serve(c)
+			}(c)
+		}
+		ln.Close()
+	}
 }
