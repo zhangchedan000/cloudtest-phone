@@ -57,10 +57,13 @@ func (s *Service) applyBattery(ctx context.Context, id, name string, v map[strin
 	if t, ok := toFloat(v["batteryTemp"]); ok && t > -50 && t < 150 {
 		seedTemp = int(t * 10)
 	}
-	s.seedBattery(id, seedLevel, seedTemp, fmt.Sprint(v["batteryCharging"]))
-	if lv, ok := toInt(v["batteryLevel"]); ok && lv >= 0 && lv <= 100 {
-		run("set", "level", strconv.Itoa(lv))
+	if seedLevel < 1 {
+		seedLevel = 1
 	}
+	s.seedBattery(id, seedLevel, seedTemp, fmt.Sprint(v["batteryCharging"]))
+	// 电量一定要先设（档案没填就用起始值 50）：Redroid 刚开机电量是 0，后面设 present=1 时
+	// 如果还是 0 且没插电，安卓会当成没电马上关机（实测 3 秒内容器退出，踩坑 #47）。
+	run("set", "level", strconv.Itoa(seedLevel))
 	// 充电状态：设插口的同时把 status 设一致（真机充电=2 充电中，拔了=3 放电中），
 	// 否则会出现「USB 供电 true 但 status 未知」这种自相矛盾、容易被看出来。
 	switch fmt.Sprint(v["batteryCharging"]) {
@@ -81,6 +84,7 @@ func (s *Service) applyBattery(ctx context.Context, id, name string, v map[strin
 		run("set", "temp", strconv.Itoa(int(t*10)))
 	}
 	// 电池「在位」：Redroid 没有电池 HAL，默认 present=false（真机永远是 true）。
+	// 必须放在设电量之后（见上）。
 	run("set", "present", "1")
 	// 健康度 / 电压 / 电池类型（technology）：安卓 14 的 dumpsys battery 不支持设置（会提示 Unknown set option
 	// 但仍返回成功），实测设不上，所以不发命令、不假装设过。要等镜像阶段补一个假的电池 HAL（踩坑 #47）。

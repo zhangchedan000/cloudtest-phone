@@ -134,3 +134,29 @@ func TestWarnLeftoverGMSWithoutGapps(t *testing.T) {
 		t.Fatalf("没开谷歌服务但留着 GMS 应提示：%+v", st)
 	}
 }
+
+// 电量没填 / 填了 0 时，也必须先设成正常电量再设 present=1，否则安卓当成没电关机（踩坑 #47）。
+func TestBatteryLevelSetBeforePresent(t *testing.T) {
+	for _, lv := range []any{nil, float64(0)} {
+		svc, id := startForResume(t)
+		r := &fakeRunner{}
+		svc.run = r
+		v := map[string]any{"batteryCharging": "none"}
+		if lv != nil {
+			v["batteryLevel"] = lv
+		}
+		svc.applyBattery(context.Background(), id, containerName(id), v)
+		levelAt, presentAt := -1, -1
+		for i, c := range r.calls {
+			if strings.HasSuffix(c, "dumpsys battery set level 50") || strings.HasSuffix(c, "dumpsys battery set level 1") {
+				levelAt = i
+			}
+			if strings.HasSuffix(c, "dumpsys battery set present 1") {
+				presentAt = i
+			}
+		}
+		if levelAt < 0 || presentAt < 0 || levelAt > presentAt {
+			t.Fatalf("电量 %v：要先设电量（>0）再设 present：\n%s", lv, strings.Join(r.calls, "\n"))
+		}
+	}
+}
