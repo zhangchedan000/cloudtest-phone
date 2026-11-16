@@ -183,14 +183,16 @@ export function PhonesPage() {
           columns={[
             { title: '名称', dataIndex: 'name', render: (name: string, p) => <a onClick={() => view_(p)}>{name}</a> },
             { title: '状态', render: (_, p) => <StatusDot status={p.status} /> },
-            { title: '机型', render: (_, p) => String(ws.modelOf(p)?.values.marketName ?? '—') },
+            { title: '机型', render: (_, p) => <Space size={4}>{String(ws.modelOf(p)?.values.marketName ?? '—')}{p.gapps && <Tag color="blue" className="pp-small">谷歌</Tag>}</Space> },
             { title: '安卓', render: (_, p) => `Android ${p.androidVersion}` },
             { title: '代理', render: (_, p) => <ProxyCell proxy={ws.proxyOf(p)} /> },
+            { title: '出口 IP', render: (_, p) => { const ip = ws.proxyOf(p)?.check?.exitIp; return ip ? <span className="pp-small">{ip}</span> : <span className="pp-muted">—</span> } },
+            { title: '上网', render: (_, p) => (p.status !== 'running' ? <span className="pp-muted">—</span> : !p.net ? <span className="pp-muted">—</span> : p.net.ok ? <Tag color="success" className="pp-small">正常</Tag> : <Tooltip title={p.net.error}><Tag color="error" className="pp-small">上不了网</Tag></Tooltip>) },
             { title: '分组', render: (_, p) => ws.groupOf(p)?.name ?? '未分组' },
             { title: '占用', render: (_, p) => (p.usage ? usageText(p.usage) : '—') },
             { title: '机器', render: (_, p) => ws.hostOf(p)?.name },
             { title: '检查', render: (_, p) => <IssueBadge issues={ws.issuesOf(p)} /> },
-            { title: '', render: (_, p) => <Space size={4}>{p.status === 'running' || p.status === 'starting' ? <Button size="small" onClick={() => ws.setStatus([p.id], 'stopped')}>关机</Button> : <Button size="small" type="primary" disabled={blocksStart(ws.issuesOf(p))} onClick={() => start([p.id])}>开机</Button>}<Button size="small" onClick={() => edit(p)}>编辑</Button></Space> }
+            { title: '', render: (_, p) => <Space size={4}>{p.status === 'running' || p.status === 'starting' ? <><Button size="small" onClick={() => view_(p)}>打开</Button><Button size="small" onClick={() => ws.setStatus([p.id], 'stopped')}>关机</Button></> : <Button size="small" type="primary" disabled={blocksStart(ws.issuesOf(p))} onClick={() => start([p.id])}>开机</Button>}<Button size="small" onClick={() => edit(p)}>编辑</Button></Space> }
           ]}
         />
       )}
