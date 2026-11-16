@@ -175,11 +175,14 @@ fi
 
 # 摄像头
 cam=$(ax 'dumpsys media.camera 2>/dev/null | grep -ciE "Camera [0-9]|device id"')
-[ "${cam:-0}" -ge 1 ] && info "摄像头条目：$cam" || brd "没有摄像头"
+[ "${cam:-0}" -ge 1 ] && info "摄像头条目：$cam" || brd "没有摄像头（模拟器的摄像头服务依赖模拟器显存，云上编不了真的，踩坑 #66）"
 
 # 电话 / SIM / IMEI
 simop=$(gp gsm.sim.operator.alpha); brd_sim=$(gp gsm.operator.alpha)
-if [ -z "$simop$brd_sim" ]; then brd "没有 SIM / 运营商信息（真机即便无卡也有电话子系统）"; else info "SIM 运营商：$simop$brd_sim"; fi
+tel=$(ax 'pm list features 2>/dev/null | grep -c "android.hardware.telephony"')
+if [ -n "$simop$brd_sim" ]; then hid "SIM 运营商：$simop$brd_sim"
+elif [ "${tel:-0}" -ge 1 ]; then cnt "有电话子系统（$tel 项电话能力），但显示没插 SIM 卡：Redroid 的电话驱动接口 1.1，安卓 13 起框架不认（踩坑 #65，下一步换模拟器配套驱动 + vsock）"
+else now "没有电话子系统（ro.radio.noril=yes，真机即便无卡也有）：换新镜像（host/build-wifi-image.sh，踩坑 #65）"; fi
 
 # 蓝牙
 ax 'command -v dumpsys >/dev/null && dumpsys bluetooth_manager 2>/dev/null | grep -qi "enabled\|address" && echo yes' | grep -q yes && info "有蓝牙子系统" || brd "没有蓝牙"
