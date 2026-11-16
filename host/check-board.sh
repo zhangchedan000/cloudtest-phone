@@ -74,6 +74,7 @@ kconf CONFIG_MEMCG                "内存 cgroup（限制每台云手机内存�
 kconf CONFIG_NFT_TPROXY           "nft tproxy（网络模块：每台走自己的代理）" 1
 kconf CONFIG_NFT_SOCKET           "nft socket（网络模块）" 0
 kconf CONFIG_NETFILTER_XT_TARGET_TPROXY "iptables TPROXY（网络模块备用）" 0
+kconf CONFIG_TIME_NS             "时间命名空间（云手机开机时长从 0 开始，不暴露宿主机开了多久；没有就照常开机、只是开机时长是宿主机的）" 0
 if grep -qw binder /proc/filesystems; then ok "binderfs 已能挂载（/proc/filesystems 里有 binder）"
 elif modprobe -n binder_linux 2>/dev/null; then wa "binderfs 要先加载模块 binder_linux（host/setup-host.sh 会处理）"
 else wa "/proc/filesystems 里没有 binder"; fi
