@@ -156,3 +156,4 @@ body { background: var(--fb-bg); color: var(--fb-text); font-family: Inter, ui-s
 .pp-kbd { position: relative; }
 .pp-kbd-box { position: absolute; left: 50%; bottom: 40px; width: 1px; height: 1px; opacity: 0; resize: none; border: 0; padding: 0; pointer-events: none; }
 .pp-kbd-on { color: var(--ant-color-success, #52c41a); }
+.pp-dropping { outline: 2px dashed var(--ant-color-primary, #1677ff); outline-offset: 4px; border-radius: 8px; }

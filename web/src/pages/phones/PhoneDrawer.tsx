@@ -1,6 +1,6 @@
 import {
   AppstoreAddOutlined, ArrowLeftOutlined, BorderOutlined, CameraOutlined, CodeOutlined, CopyOutlined, EditOutlined, HomeOutlined, MoreOutlined,
-  PoweroffOutlined, RedoOutlined, RotateRightOutlined, SoundOutlined, UploadOutlined
+  PoweroffOutlined, RedoOutlined, RotateRightOutlined, SoundOutlined, UploadOutlined, VideoCameraOutlined
 } from '@ant-design/icons'
 import { App, Button, Descriptions, Drawer, Dropdown, Input, Modal, Space, Switch, Tabs, Tooltip } from 'antd'
 import { getClipboard, openRawScreenshot, serverUrl, setClipboard, upload, type InputRequest } from '@/data/api'
@@ -30,6 +30,9 @@ export function PhoneDrawer({ phone, mode = 'view', onClose, onEdit, bare = fals
   const [uploading, setUploading] = useState<string>('')
   const [clipOpen, setClipOpen] = useState(false)
   const [adbOpen, setAdbOpen] = useState(false)
+  const [dragging, setDragging] = useState(false)
+  const recorder = useRef<MediaRecorder | null>(null)
+  const [recording, setRecording] = useState(false)
   if (!phone) return null
   const live = ws.phones.find((p) => p.id === phone.id) ?? phone
   const issues = ws.issuesOf(live)
@@ -54,15 +57,41 @@ export function PhoneDrawer({ phone, mode = 'view', onClose, onEdit, bare = fals
     }
   }
   const todo = (what: string) => () => message.info(`${what}：还没做`)
+  // 录屏：直接录浏览器里正在播的实时画面（不占服务器，不影响实时画面），停下后下载成视频文件
+  const toggleRecord = () => {
+    if (recorder.current) { recorder.current.stop(); return }
+    const canvas = document.querySelector<HTMLCanvasElement>('.pp-detail-screen canvas')
+    if (!canvas || canvas.style.display === 'none' || typeof MediaRecorder === 'undefined') { message.warning('实时画面还没出来（或者浏览器不支持录屏），等画面出来再录'); return }
+    const type = ['video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm'].find((t) => MediaRecorder.isTypeSupported(t)) ?? ''
+    const rec = new MediaRecorder(canvas.captureStream(30), type ? { mimeType: type, videoBitsPerSecond: 4_000_000 } : undefined)
+    const chunks: Blob[] = []
+    rec.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data) }
+    rec.onstop = () => {
+      recorder.current = null
+      setRecording(false)
+      const a = document.createElement('a')
+      a.href = URL.createObjectURL(new Blob(chunks, { type: 'video/webm' }))
+      a.download = `${live.name}-录屏-${new Date().toLocaleString('zh-CN', { hour12: false }).replace(/[/: ]/g, '')}.webm`
+      a.click()
+      setTimeout(() => URL.revokeObjectURL(a.href), 10_000)
+      message.success('录屏已下载')
+    }
+    rec.start(1000)
+    recorder.current = rec
+    setRecording(true)
+    message.info('开始录屏，再点一次「录屏」停止并下载')
+  }
   const key = (k: string) => () => (liveMode ? void ws.input(live.id, { kind: 'key', key: k } as InputRequest) : message.info('预览模式：接上管家程序后可用'))
 
   const controls = [
     { icon: <ArrowLeftOutlined />, tip: '返回', onClick: key('back') }, { icon: <HomeOutlined />, tip: '主页', onClick: key('home') },
     { icon: <BorderOutlined />, tip: '多任务', onClick: key('recents') }, { icon: <SoundOutlined />, tip: '音量 +', onClick: key('volume_up') },
+    { icon: <SoundOutlined style={{ opacity: 0.55, transform: 'scale(0.8)' }} />, tip: '音量 -', onClick: key('volume_down') },
     { icon: <RotateRightOutlined />, tip: '旋转', onClick: todo('旋转') },
     { icon: <CameraOutlined />, tip: '截图（新窗口打开原图）', onClick: () => (liveMode ? void openRawScreenshot(live.id).catch((e: Error) => message.error(e.message)) : message.info('预览模式：接上管家程序后可用')) },
-    { icon: <UploadOutlined />, tip: '上传文件（图片、视频进相册，其他进下载目录）', onClick: () => (liveMode ? fileInput.current?.click() : message.info('预览模式：接上管家程序后可用')) },
-    { icon: <AppstoreAddOutlined />, tip: '安装 APK', onClick: () => (liveMode ? apkInput.current?.click() : message.info('预览模式：接上管家程序后可用')) },
+    { icon: <VideoCameraOutlined style={recording ? { color: '#ff4d4f' } : undefined} />, tip: recording ? '录屏中：点一下停止并下载' : '录屏（录浏览器里的实时画面，停止后下载成视频文件）', onClick: () => (liveMode ? toggleRecord() : message.info('预览模式：接上管家程序后可用')) },
+    { icon: <UploadOutlined />, tip: '上传文件（图片、视频进相册，其他进下载目录；也可以直接把文件拖进窗口）', onClick: () => (liveMode ? fileInput.current?.click() : message.info('预览模式：接上管家程序后可用')) },
+    { icon: <AppstoreAddOutlined />, tip: '安装 APK（也可以直接把 APK 拖进窗口）', onClick: () => (liveMode ? apkInput.current?.click() : message.info('预览模式：接上管家程序后可用')) },
     { icon: <CopyOutlined />, tip: '剪贴板（电脑 ↔ 手机互相复制，支持中文）', onClick: () => (liveMode ? setClipOpen(true) : message.info('预览模式：接上管家程序后可用')) },
     { icon: <CodeOutlined />, tip: 'ADB 连接命令（复制到自己电脑上用）', onClick: () => (liveMode ? setAdbOpen(true) : message.info('预览模式：接上管家程序后可用')) }
   ]
@@ -100,7 +129,16 @@ export function PhoneDrawer({ phone, mode = 'view', onClose, onEdit, bare = fals
         </Space>)
   const body = (
       <div className="pp-detail">
-        {mode === 'view' && <div className="pp-detail-screen">
+        {mode === 'view' && <div
+          className={`pp-detail-screen${dragging ? ' pp-dropping' : ''}`}
+          // 把文件拖进窗口：APK 就安装，其他文件上传（图片、视频进相册）
+          onDragOver={(e) => { if (running && liveMode && e.dataTransfer.types.includes('Files')) { e.preventDefault(); setDragging(true) } }}
+          onDragLeave={(e) => { if (e.currentTarget === e.target) setDragging(false) }}
+          onDrop={(e) => {
+            e.preventDefault(); setDragging(false)
+            for (const f of Array.from(e.dataTransfer.files)) void sendFile(f.name.toLowerCase().endsWith('.apk') ? 'apk' : 'file', f)
+          }}
+        >
           <ProxySwitcher phone={live} />
           <KeyboardInput id={live.id} enabled={running && liveMode}>
             <PhoneScreen id={live.id} status={live.status} name={`${String(model?.values.marketName ?? '')} · Android ${live.androidVersion}`} size="large" seed={live.name.length + live.id.charCodeAt(5)} />
