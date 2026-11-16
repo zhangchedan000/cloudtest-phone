@@ -163,6 +163,11 @@ func (s *Service) applySettings(ctx context.Context, id string) {
 	for _, pkg := range aospOnlyPackages {
 		_, _ = s.run.Run(ctx, "docker", "exec", name, "pm", "uninstall", "--user", "0", pkg)
 	}
+	// 蓝牙默认关：安卓默认 bluetooth_on=1，开机自动开蓝牙；容器里没有蓝牙硬件，蓝牙 HAL 和
+	// com.android.bluetooth 会连崩几次才放弃（踩坑 #48）。设成 0 之后从下次开机起不再自动开、不再崩。
+	if cur, _ := s.run.Run(ctx, "docker", "exec", name, "settings", "get", "global", "bluetooth_on"); strings.TrimSpace(cur) != "0" {
+		_, _ = s.run.Run(ctx, "docker", "exec", name, "settings", "put", "global", "bluetooth_on", "0")
+	}
 	for _, prop := range cpuVariantProps {
 		if cur, _ := s.run.Run(ctx, "docker", "exec", name, "getprop", prop); cur != "" && cur != cpuVariant {
 			_, _ = s.run.Run(ctx, "docker", "exec", name, "setprop", prop, cpuVariant)
