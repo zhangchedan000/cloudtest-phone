@@ -55,6 +55,7 @@ func runSensors() {
 		if dev, err := touch.Create(touch.Config{W: spec.W, H: spec.H, Name: spec.TouchName}, "/dev/input", spec.Seed); err != nil {
 			fmt.Fprintf(os.Stderr, "vendor.sensord：触摸屏没建起来：%v\n", err)
 		} else {
+			go dev.KeepNode()
 			go func() { _ = touch.Serve(dev, func(string) {}) }()
 		}
 	}

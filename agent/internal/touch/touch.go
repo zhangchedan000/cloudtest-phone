@@ -73,6 +73,7 @@ type Device struct {
 	rnd  *rand.Rand
 	next int32 // 下一个触点编号（tracking id）
 	Node string
+	rdev uint64
 }
 
 func ioctl(fd uintptr, req, arg uintptr) error {
@@ -190,15 +191,44 @@ func (d *Device) makeNode(devDir string) (string, error) {
 	if err := os.MkdirAll(devDir, 0o755); err != nil {
 		return "", err
 	}
+	d.rdev = uint64(maj)<<8 | uint64(min&0xff) | uint64(min&^0xff)<<12
 	node := filepath.Join(devDir, ev)
 	_ = os.Remove(node)
-	dev := uint64(maj)<<8 | uint64(min&0xff) | uint64(min&^0xff)<<12
-	if err := syscall.Mknod(node, syscall.S_IFCHR|0o660, int(dev)); err != nil {
-		return "", fmt.Errorf("建设备节点 %s：%w", node, err)
+	if err := d.mknod(node); err != nil {
+		return "", err
 	}
-	_ = os.Chown(node, 0, 1004) // root:input（安卓的 input 组），system_server 才读得到
-	_ = os.Chmod(node, 0o660)
 	return node, nil
+}
+
+// mknod 建设备节点（踩坑 #61）：安卓 EventHub 用 inotify 盯着 /dev/input，文件一出现就去打开、打不开不再重试。
+// 所以建的那一刻权限就得让它打得开（umask 清零、直接 0666），它打开以后再收紧成真机一样的 root:input 0660。
+func (d *Device) mknod(node string) error {
+	old := syscall.Umask(0)
+	err := syscall.Mknod(node, syscall.S_IFCHR|0o666, int(d.rdev))
+	syscall.Umask(old)
+	if err != nil {
+		return fmt.Errorf("建设备节点 %s：%w", node, err)
+	}
+	go func() {
+		time.Sleep(3 * time.Second)
+		_ = os.Chown(node, 0, 1004) // root:input（安卓的 input 组）
+		_ = os.Chmod(node, 0o660)
+	}()
+	return nil
+}
+
+// KeepNode 一直看着设备节点：被删了（安卓 ueventd 开机时会清 /dev 下它不认识的节点）就重建。
+func (d *Device) KeepNode() {
+	for {
+		time.Sleep(2 * time.Second)
+		var st syscall.Stat_t
+		if err := syscall.Stat(d.Node, &st); err == nil && st.Rdev == d.rdev {
+			continue
+		}
+		_ = os.Remove(d.Node)
+		_ = os.MkdirAll(filepath.Dir(d.Node), 0o755)
+		_ = d.mknod(d.Node)
+	}
 }
 
 // Close 拆掉设备。
