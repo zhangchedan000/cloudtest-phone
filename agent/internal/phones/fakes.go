@@ -117,30 +117,69 @@ func (s *Service) hostCPUs() int {
 	return runtime.NumCPU()
 }
 
+// fitCPUs 把机型的核心分组按比例缩到宿主机核数，每组至少留 1 个（核太少时优先留大核）。
+// 以前从前往后截，8 核的天玑 / 骁龙在 4 核开发机上只剩 4 个 A55 小核，像一台低端机，和 SoC 型号对不上。
+// freqs 按 CPU 序号排（和 parts 顺序一致），跟着每组一起缩。
 func fitCPUs(parts []fakefs.CPUPart, freqs []int, host int) ([]fakefs.CPUPart, []int) {
 	total := 0
 	for _, p := range parts {
 		total += p.Count
 	}
-	if total <= host || host <= 0 {
+	if total <= host || host <= 0 || len(parts) == 0 {
 		return parts, freqs
 	}
-	var out []fakefs.CPUPart
+	counts := make([]int, len(parts))
 	left := host
-	for _, p := range parts {
-		if left == 0 {
-			break
+	// 核比组还少：从最后（大核）往前每组给 1 个
+	if host < len(parts) {
+		for i := len(parts) - 1; i >= 0 && left > 0; i-- {
+			counts[i] = 1
+			left--
 		}
-		if p.Count > left {
-			p.Count = left
+	} else {
+		for i := range parts {
+			counts[i] = 1
+			left--
 		}
-		left -= p.Count
-		out = append(out, p)
+		// 剩下的按原比例分，零头从大核往前补
+		for left > 0 {
+			best, bestScore := -1, -1.0
+			for i := len(parts) - 1; i >= 0; i-- {
+				if counts[i] >= parts[i].Count {
+					continue
+				}
+				score := float64(parts[i].Count) / float64(counts[i]+1)
+				if score > bestScore {
+					best, bestScore = i, score
+				}
+			}
+			if best < 0 {
+				break
+			}
+			counts[best]++
+			left--
+		}
 	}
-	if len(freqs) > host {
-		freqs = freqs[:host]
+	var out []fakefs.CPUPart
+	var outFreqs []int
+	start := 0
+	for i, p := range parts {
+		if counts[i] > 0 {
+			q := p
+			q.Count = counts[i]
+			out = append(out, q)
+			for j := 0; j < counts[i]; j++ {
+				if start+j < len(freqs) {
+					outFreqs = append(outFreqs, freqs[start+j])
+				}
+			}
+		}
+		start += p.Count
 	}
-	return out, freqs
+	if len(freqs) == 0 {
+		outFreqs = freqs
+	}
+	return out, outFreqs
 }
 
 // applyFakes 等安卓开机完成，再把伪造文件挂进去。在后台跑，结果记在 fakes 里。

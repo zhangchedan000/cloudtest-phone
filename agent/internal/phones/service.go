@@ -67,7 +67,9 @@ type Service struct {
 	settings settingsTracker
 	// netGuard 网络模块开着时检查这台设备有没有出口；返回错误就禁止开机（绝不走宿主机网络）。
 	netGuard func(id string) error
-	fakes    fakeTracker
+	// proxyChecker 检测代理出口（时区 / 语言跟随代理要用），见 proxyauto.go。
+	proxyChecker func(ctx context.Context, proxyID string) error
+	fakes        fakeTracker
 	// async 为 false 时伪造文件同步挂载（测试用）。
 	async bool
 }
@@ -336,7 +338,7 @@ func (s *Service) BootArgs(p store.Phone, st store.State) []string {
 		args = append(args, fmt.Sprintf("androidboot.redroid_dpi=%v", dpi))
 	}
 	if fps, ok := byKey["refreshRate"]; ok && fps != nil {
-		args = append(args, fmt.Sprintf("androidboot.redroid_fps=%v", fps))
+		args = append(args, fmt.Sprintf("androidboot.redroid_fps=%d", redroidFPS(fps)))
 	}
 	var props []string
 	for _, r := range resolved {
@@ -490,6 +492,8 @@ func disguiseProps() []string {
 		"ro.boot.veritymode=enforcing",
 		"ro.boot.vbmeta.device_state=locked",
 		"ro.secure=1",
+		// 设备类型：Redroid 是 default（模拟器 / 通用），手机出厂多是 nosdcard。
+		"ro.build.characteristics=nosdcard",
 	}
 }
 
@@ -609,6 +613,14 @@ func (s *Service) Start(ctx context.Context, id string) error {
 			return fmt.Errorf("%w：%v", ErrBlocked, err)
 		}
 	}
+	// 时区 / 语言跟随代理：代理没检测过就先检测，再拿最新数据算开机参数。
+	if p.ProxyID != "" {
+		s.ensureProxyChecked(ctx, p.ProxyID)
+		st = s.store.Snapshot()
+		if p, err = st.Phone(id); err != nil {
+			return err
+		}
+	}
 	if s.cfg.MaxRunning > 0 {
 		running := 0
 		for _, other := range st.Phones {
@@ -662,6 +674,9 @@ func (s *Service) Start(ctx context.Context, id string) error {
 	if err := s.docker.StartContainer(ctx, name); err != nil {
 		return fmt.Errorf("启动容器：%w", err)
 	}
+	// 清掉容器痕迹：Redroid 镜像自带的 su（setuid root，检测 root 的第一项）和 Docker 的 /.dockerenv。
+	// 管家自己用 docker exec（本来就是 root），不需要 su。
+	_, _ = s.run.Run(ctx, "docker", "exec", name, "rm", "-f", "/system/xbin/su", "/.dockerenv")
 	// 先标成「设置中」，开机后设置做完之前设备都算开机中（不会在框架重启前就让人操作）。
 	s.settings.set(p.ID, SettingsStatus{State: "pending"})
 	if s.async {
@@ -890,4 +905,27 @@ func contains(list []string, v string) bool {
 		}
 	}
 	return false
+}
+
+// redroidFPS 给 Redroid 的刷新率。实测（踩坑 #44）：redroid_fps=144 时屏幕只报 15Hz，
+// 60 / 120 正常；所以超过 120 的按 120 给（144Hz 屏的手机日常多数也跑 120）。
+func redroidFPS(v any) int {
+	n := 60
+	switch x := v.(type) {
+	case int:
+		n = x
+	case float64:
+		n = int(x)
+	case string:
+		_, _ = fmt.Sscanf(x, "%d", &n)
+	default:
+		_, _ = fmt.Sscanf(fmt.Sprint(v), "%d", &n)
+	}
+	if n > 120 {
+		n = 120
+	}
+	if n < 30 {
+		n = 60
+	}
+	return n
 }

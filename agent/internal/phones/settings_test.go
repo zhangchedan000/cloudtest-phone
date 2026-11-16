@@ -303,3 +303,11 @@ func TestFingerprintFallbackWhenNoProfileValue(t *testing.T) {
 		t.Fatalf("兜底指纹不对：\n%s", joined)
 	}
 }
+
+func TestRedroidFPS(t *testing.T) {
+	for in, want := range map[any]int{144: 120, 120: 120, 90: 90, 60: 60, float64(165): 120, "144": 120, 0: 60} {
+		if got := redroidFPS(in); got != want {
+			t.Errorf("redroidFPS(%v)=%d 应为 %d", in, got, want)
+		}
+	}
+}

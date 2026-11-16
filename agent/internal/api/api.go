@@ -480,22 +480,26 @@ func (s *Server) deleteProxy(w http.ResponseWriter, r *http.Request) {
 // checkProxy 检测代理并把结果存起来（开机前检查会用到）。
 func (s *Server) checkProxy(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	var px *store.Proxy
-	for _, p := range s.store.Snapshot().Proxies {
-		if p.ID == id {
-			p := p
-			px = &p
-		}
-	}
-	if px == nil {
-		fail(w, store.ErrNotFound)
+	res, err := s.RunProxyCheck(r.Context(), id)
+	if err != nil {
+		fail(w, err)
 		return
+	}
+	writeJSON(w, http.StatusOK, res)
+}
+
+// RunProxyCheck 检测一个代理并把结果存起来（管理页「检测」按钮和开机前自动检测共用）。
+func (s *Server) RunProxyCheck(ctx context.Context, id string) (store.ProxyCheck, error) {
+	st := s.store.Snapshot()
+	px := st.Proxy(id)
+	if px == nil {
+		return store.ProxyCheck{}, store.ErrNotFound
 	}
 	var res store.ProxyCheck
 	if !proxycheck.Supported(px.Protocol) && s.netCheck != nil {
-		res = s.netCheck(r.Context(), s.store.Snapshot(), *px)
+		res = s.netCheck(ctx, st, *px)
 	} else {
-		res = proxycheck.Check(r.Context(), *px)
+		res = proxycheck.Check(ctx, *px)
 	}
 	err := s.store.Update(func(st *store.State) error {
 		for i := range st.Proxies {
@@ -506,11 +510,7 @@ func (s *Server) checkProxy(w http.ResponseWriter, r *http.Request) {
 		}
 		return store.ErrNotFound
 	})
-	if err != nil {
-		fail(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, res)
+	return res, err
 }
 
 // protocolFromAddress 地址带了协议头（socks5:// http:// vless:// …）就以它为准，免得选的协议和地址对不上。

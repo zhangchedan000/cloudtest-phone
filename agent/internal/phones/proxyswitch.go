@@ -50,6 +50,8 @@ func (s *Service) SwitchProxy(ctx context.Context, id, proxyID string) (ProxySwi
 			res.Warning = err.Error()
 		}
 	}
+	// 新代理没检测过就检测一次，时区才能跟上（关着的手机下次开机也直接用上）
+	s.ensureProxyChecked(ctx, proxyID)
 	if s.State(ctx, id) != "running" {
 		return res, nil
 	}

@@ -158,6 +158,10 @@ func (s *Service) applySettings(ctx context.Context, id string) {
 	name := containerName(id)
 	var applied, problems []string
 	restart := false
+	// AOSP 自带、真机没有的测试 App：对当前用户卸掉（系统分区里的不动，恢复用 pm install-existing）。
+	for _, pkg := range aospOnlyPackages {
+		_, _ = s.run.Run(ctx, "docker", "exec", name, "pm", "uninstall", "--user", "0", pkg)
+	}
 	for _, r := range s.resolve(*p, st) {
 		def, ok := liveProps[r.Key]
 		if !ok || r.Value == nil {
@@ -264,3 +268,6 @@ func (t *settingsTracker) set(id string, st SettingsStatus) {
 	st.At = time.Now().UTC()
 	t.put(id, st)
 }
+
+// aospOnlyPackages 只有 AOSP / 模拟器才有的 App（出现在已装应用列表里就是破绽）。
+var aospOnlyPackages = []string{"org.chromium.webview_shell"}

@@ -165,6 +165,10 @@ func main() {
 	if net != nil && net.CanCheck() {
 		apiServer.SetNetworkCheck(net.Check)
 	}
+	svc.SetProxyChecker(func(ctx context.Context, id string) error {
+		_, err := apiServer.RunProxyCheck(ctx, id)
+		return err
+	})
 	if health != nil {
 		apiServer.SetNetworkHealth(func() any {
 			if l := health.Last(); l != nil {
