@@ -80,6 +80,8 @@ export interface Phone {
   usage?: { cpuPercent: number; memMB: number; memLimitMB: number }
   /** 管家程序返回：最近一次上网检查（每 2 分钟从手机里试连外网）。 */
   net?: { ok: boolean; error?: string; at: string }
+  /** 管家程序返回：正在做 / 最近做完的备份或恢复（后台做，几十秒到几分钟）。 */
+  dataJob?: { kind: 'backup' | 'restore'; state: 'running' | 'done' | 'failed'; error?: string; backupId?: string; at: string }
 }
 
 export type ProxyProtocol = 'socks5' | 'http' | 'https' | 'ss' | 'vmess' | 'vless' | 'trojan' | 'hysteria2' | 'subscription' | 'clash'

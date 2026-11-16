@@ -1,9 +1,10 @@
 import { CloudServerOutlined, DeleteOutlined, EditOutlined, PlusOutlined } from '@ant-design/icons'
 import { Alert, App, Button, Card, Descriptions, Form, Input, Modal, Progress, Space, Tag } from 'antd'
-import { useState } from 'react'
+import { useState, Fragment } from 'react'
 import { api, LOCAL } from '@/data/api'
 import { useWorkspace } from '@/data/store'
 import { TrashCard } from './TrashCard'
+import { BackupsCard } from './BackupsCard'
 
 /**
  * 机器：每台机器上跑一个管家程序，一个页面管所有机器（2026-11-15 加多台服务器）。
@@ -87,7 +88,10 @@ export function HostsPage() {
         })}
       </div>
       {ws.hosts.filter((h) => h.online).map((h) => (
-        <TrashCard key={`trash-${h.id}`} serverId={h.serverId ?? LOCAL} title={ws.hosts.length > 1 ? h.name : undefined} />
+        <Fragment key={h.id}>
+          <BackupsCard serverId={h.serverId ?? LOCAL} title={ws.hosts.length > 1 ? h.name : undefined} />
+          <TrashCard serverId={h.serverId ?? LOCAL} title={ws.hosts.length > 1 ? h.name : undefined} />
+        </Fragment>
       ))}
 
       <Modal open={adding} title="添加服务器" okText="连接并添加" confirmLoading={busy} onOk={() => form.submit()} onCancel={() => setAdding(false)} destroyOnHidden>

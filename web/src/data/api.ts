@@ -92,6 +92,7 @@ export interface HostInfo {
   netHealth?: { ok: boolean; problems?: string[]; healedAt?: string; checkedAt: string }
 }
 
+export interface Backup { id: string; phoneId: string; phoneName: string; modelId: string; androidVersion: number; gapps: boolean; note?: string; createdAt: string; kind: 'image' | 'dir'; sizeMB: number }
 export interface TrashItem { name: string; phoneId: string; kind: 'delete' | 'reset' | 'restore'; at: string; sizeMB: number }
 
 export interface InputRequest { kind: 'tap' | 'swipe' | 'text' | 'key'; x?: number; y?: number; x2?: number; y2?: number; durationMs?: number; text?: string; key?: string }
@@ -115,6 +116,12 @@ export const api = {
   checkProxy: (id: string, sid?: string) => call<ProxyCheck>('POST', `/proxies/${id}/check`, undefined, sid),
   deleteProxy: (id: string, sid?: string) => call('DELETE', `/proxies/${id}`, undefined, sid),
   importProxies: (req: { url?: string; text?: string; note?: string }, sid?: string) => call<{ added: number; duplicates: number; skipped?: string[] }>('POST', '/proxies/import', req, sid),
+  backups: (sid?: string) => call<Backup[]>('GET', '/backups', undefined, sid),
+  /** 在后台备份（开着的手机会先关机，备份完再开回来）。 */
+  backup: (id: string, note: string) => call('POST', `/phones/${id}/backup`, { note }),
+  /** 在后台把备份恢复到这台（这台现在的数据挪进回收站）。 */
+  restore: (id: string, backupId: string) => call('POST', `/phones/${id}/restore`, { backupId }),
+  deleteBackup: (bid: string, sid?: string) => call('DELETE', `/backups/${encodeURIComponent(bid)}`, undefined, sid),
   trash: (sid?: string) => call<TrashItem[]>('GET', '/trash', undefined, sid),
   deleteTrash: (name: string, sid?: string) => call('DELETE', `/trash/${encodeURIComponent(name)}`, undefined, sid),
   groups: (sid?: string) => call<Group[]>('GET', '/groups', undefined, sid),

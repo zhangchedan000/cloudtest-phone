@@ -4,7 +4,7 @@ import {
 } from '@ant-design/icons'
 import { App, Button, Descriptions, Drawer, Dropdown, Input, Modal, Popover, Select, Space, Switch, Tabs, Tooltip } from 'antd'
 import { getClipboard, openRawScreenshot, serverUrl, setClipboard, upload, type InputRequest } from '@/data/api'
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { PhoneScreen } from '@/components/PhoneScreen'
 import { KeyboardInput } from '@/components/KeyboardInput'
 import { ProxyCell, StatusDot } from '@/components/bits'
@@ -12,6 +12,7 @@ import { blocksStart } from '@/data/consistency'
 import { useWorkspace } from '@/data/store'
 import type { Phone } from '@/data/types'
 import { AdbDialog } from './AdbDialog'
+import { BackupDialog } from './BackupDialog'
 import { ProxyListEditor, ProxySwitcher } from './ProxySwitcher'
 import { LogsPanel } from './LogsPanel'
 import { ParamPanel } from './ParamPanel'
@@ -33,6 +34,20 @@ export function PhoneDrawer({ phone, mode = 'view', onClose, onEdit, bare = fals
   const [dragging, setDragging] = useState(false)
   const recorder = useRef<MediaRecorder | null>(null)
   const [recording, setRecording] = useState(false)
+  const [backupMode, setBackupMode] = useState<'backup' | 'restore' | null>(null)
+  // 备份 / 恢复做完了提示一次
+  const job = phone ? ws.phones.find((p) => p.id === phone.id)?.dataJob : undefined
+  const lastJob = useRef<string>('')
+  useEffect(() => {
+    if (!job) return
+    const sig = `${job.kind}-${job.state}-${job.at}`
+    if (lastJob.current && lastJob.current !== sig && job.state !== 'running') {
+      const what = job.kind === 'backup' ? '备份' : '恢复'
+      if (job.state === 'done') message.success(`${what}完成`)
+      else message.error(`${what}失败：${job.error ?? ''}`)
+    }
+    lastJob.current = sig
+  }, [job, message])
   if (!phone) return null
   const live = ws.phones.find((p) => p.id === phone.id) ?? phone
   const issues = ws.issuesOf(live)
@@ -96,7 +111,7 @@ export function PhoneDrawer({ phone, mode = 'view', onClose, onEdit, bare = fals
     { icon: <CodeOutlined />, tip: 'ADB 连接命令（复制到自己电脑上用）', onClick: () => (liveMode ? setAdbOpen(true) : message.info('预览模式：接上管家程序后可用')) }
   ]
 
-  const title = <Space size={10}>{mode === 'edit' && <span className="pp-muted">编辑</span>}<b>{live.name}</b><StatusDot status={live.status} />{mode === 'edit' && <span className="pp-muted">{String(model?.values.marketName ?? '')} · Android {live.androidVersion}</span>}</Space>
+  const title = <Space size={10}>{mode === 'edit' && <span className="pp-muted">编辑</span>}<b>{live.name}</b><StatusDot status={live.status} />{live.dataJob?.state === 'running' && <span className="pp-small" style={{ color: '#1677ff' }}>{live.dataJob.kind === 'backup' ? '备份中…' : '恢复中…'}</span>}{mode === 'edit' && <span className="pp-muted">{String(model?.values.marketName ?? '')} · Android {live.androidVersion}</span>}</Space>
   const followers = ws.followers[live.id] ?? []
   const others = ws.phones.filter((p) => p.id !== live.id)
   const groupPicker = (
@@ -125,11 +140,15 @@ export function PhoneDrawer({ phone, mode = 'view', onClose, onEdit, bare = fals
             menu={{
               items: [
                 ...(running || live.status === 'starting' ? [{ key: 'restart', label: '重启', icon: <RedoOutlined /> }, { type: 'divider' as const }] : []),
+                { key: 'backup', label: '备份这台手机…' },
+                { key: 'restore', label: '从备份恢复…' },
+                { type: 'divider' as const },
                 { key: 'renew', label: '一键新机（重新随机身份，保留机型和数据）' },
                 { key: 'reset', label: '一键重置（清空数据，恢复出厂）' },
                 ...(host?.androidVersions ?? []).filter((v) => v !== live.androidVersion).map((v) => ({ key: `flash-${v}`, label: `刷机：换成 Android ${v}（清空数据）` }))
               ],
               onClick: ({ key }) => {
+                if (key === 'backup' || key === 'restore') { setBackupMode(key); return }
                 if (key === 'restart') { void ws.setStatus([live.id], 'stopped').then(() => ws.setStatus([live.id], 'running')); return }
                 if (key === 'renew') { Modal.confirm({ title: `一键新机 ${live.name}？`, content: '序列号、WiFi/蓝牙 MAC、Android ID、广告 ID 等「随机」身份重新生成一遍，机型、App 数据、代理都保留。重启后生效。', onOk: () => ws.renewPhones([live.id]) }); return }
                 const version = key.startsWith('flash-') ? Number(key.slice(6)) : undefined
@@ -177,6 +196,7 @@ export function PhoneDrawer({ phone, mode = 'view', onClose, onEdit, bare = fals
           <p className="pp-muted pp-small pp-center">在画面上点一下 = 点击，按住拖动 = 滑动；剪贴板自动互通（电脑复制的 Ctrl+V 粘进手机，手机里复制的自动到电脑）</p>
           <ClipboardDialog open={clipOpen} phoneId={live.id} onClose={() => setClipOpen(false)} />
         </div>}
+        <BackupDialog phone={live} mode={backupMode} onClose={() => setBackupMode(null)} />
         <AdbDialog open={adbOpen} id={live.id} running={running} adbOn={!!live.adb} onEnable={() => ws.assign([live.id], { adb: true })} ip={live.ip} name={live.name} host={new URL(serverUrl(live.serverId)).hostname} onClose={() => setAdbOpen(false)} />
         {mode === 'edit' && <div className="pp-detail-side">
           <Tabs
