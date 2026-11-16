@@ -47,6 +47,7 @@ func (f *fakeRun) Run(_ context.Context, name string, args ...string) (string, e
 }
 
 func TestSetupOrderAndCommands(t *testing.T) {
+	DelRadioFunc = func(string, string) error { return nil }
 	dir := t.TempDir()
 	p, _ := PlanFor("378ad10f54b8", "64:a2:00:3c:5e:71", dir)
 	r := &fakeRun{}
@@ -63,6 +64,9 @@ func TestSetupOrderAndCommands(t *testing.T) {
 	}
 	j := strings.Join(r.calls, "\n")
 	idx := func(s string) int { return strings.Index(j, s) }
+	if idx("interface add wlan0") > idx("set netns 4242") {
+		t.Error("wlan0 要在路由器里建好再连网卡一起搬进手机（iw 在外面找不到已经搬走的网卡）")
+	}
 	for _, want := range []string{"ip netns add ppr-378ad10f54b8", "set netns 4242", "interface add wlan0 type managed", "hostapd -B", "dnsmasq --interface=wlan1", "nft -f", "ip link set eth0 netns ppr-378ad10f54b8", "ip addr add 10.88.1.4/16 dev eth0", "default via 10.88.0.1 dev eth0"} {
 		if idx(want) < 0 {
 			t.Errorf("缺 %q：\n%s", want, j)

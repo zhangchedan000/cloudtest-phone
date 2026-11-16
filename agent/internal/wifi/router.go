@@ -61,13 +61,13 @@ func PlanFor(phoneID, wifiMAC, dataDir string) (Plan, error) {
 		short = short[:10]
 	}
 	p := Plan{
-		PhoneID: phoneID,
-		Netns:   "ppr-" + phoneID,
-		StaPhy:  "pps" + short,
-		APPhy:   "ppa" + short,
-		StaMAC:  mac,
-		APMAC:   [6]byte{r.oui[0], r.oui[1], r.oui[2], h[1], h[2], h[3]},
-		Subnet:  subnets[int(h[4])%len(subnets)],
+		PhoneID:   phoneID,
+		Netns:     "ppr-" + phoneID,
+		StaPhy:    "pps" + short,
+		APPhy:     "ppa" + short,
+		StaMAC:    mac,
+		APMAC:     [6]byte{r.oui[0], r.oui[1], r.oui[2], h[1], h[2], h[3]},
+		Subnet:    subnets[int(h[4])%len(subnets)],
 		PhoneHost: 100 + int(h[5])%100,
 		Channel:   []int{1, 6, 11}[int(h[6])%3],
 		Dir:       filepath.Join(dataDir, "phones", phoneID, "wifi"),
@@ -162,10 +162,12 @@ func Setup(ctx context.Context, run Runner, newRadio NewRadioFunc, p Plan, conta
 	if _, err := newRadio(nsPath, p.APPhy, p.APMAC); err != nil {
 		return fmt.Errorf("建路由器的虚拟无线网卡：%w", err)
 	}
-	if err := step("网卡搬进手机", "ip", in("iw", "phy", p.StaPhy, "set", "netns", pid)...); err != nil {
+	// iw 按名字找网卡要读 /sys，网卡搬进手机后从外面的 /sys 看不到（踩坑 #57）：
+	// 所以在路由器命名空间里先把 wlan0 建好，再把网卡连同 wlan0 一起搬进手机。
+	if err := step("手机 wlan0", "ip", in("iw", "phy", p.StaPhy, "interface", "add", "wlan0", "type", "managed")...); err != nil {
 		return err
 	}
-	if err := step("手机 wlan0", "nsenter", inPhone("iw", "phy", p.StaPhy, "interface", "add", "wlan0", "type", "managed")...); err != nil {
+	if err := step("网卡搬进手机", "ip", in("iw", "phy", p.StaPhy, "set", "netns", pid)...); err != nil {
 		return err
 	}
 	if err := step("路由器 wlan1", "ip", in("iw", "phy", p.APPhy, "interface", "add", "wlan1", "type", "managed")...); err != nil {
@@ -248,8 +250,20 @@ func Setup(ctx context.Context, run Runner, newRadio NewRadioFunc, p Plan, conta
 	return nil
 }
 
-// Teardown 停掉热点 / DHCP，删路由器网络命名空间（内核顺带删掉这台的 hwsim 网卡）。没有就什么都不做。
+// DelRadioFunc 删 hwsim 网卡（测试时换成假的）。
+var DelRadioFunc = DelRadioInNetns
+
+// Teardown 停掉热点 / DHCP，删掉这台的两块 hwsim 网卡和路由器网络命名空间。没有就什么都不做。
+// 实测删命名空间不会自动删网卡（会一直留着），所以要显式删：路由器那块在路由器命名空间里删；
+// 手机那块在手机关机后回到管家所在的命名空间，在这里删。
 func Teardown(ctx context.Context, run Runner, p Plan) error {
+	if p.APPhy != "" {
+		_ = DelRadioFunc("/run/netns/"+p.Netns, p.APPhy)
+		_ = DelRadioFunc("", p.APPhy)
+	}
+	if p.StaPhy != "" {
+		_ = DelRadioFunc("", p.StaPhy)
+	}
 	for _, f := range []string{"hostapd.pid", "dnsmasq.pid"} {
 		if b, err := os.ReadFile(filepath.Join(p.Dir, f)); err == nil {
 			if pid := strings.TrimSpace(string(b)); pid != "" {

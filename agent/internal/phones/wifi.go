@@ -56,7 +56,11 @@ func (s *Service) setupWifi(ctx context.Context, id, image string, byKey map[str
 
 // teardownWifi 关机 / 删除 / 重置后清掉路由器（没有就什么都不做）。
 func (s *Service) teardownWifi(ctx context.Context, id string) {
-	p := wifi.Plan{Netns: "ppr-" + id, Dir: s.phoneDir(id) + "/wifi"}
+	// 只需要名字（不依赖 wifiMac 字段：字段改过也能清干净）
+	p, err := wifi.PlanFor(id, "02:00:00:00:00:00", s.cfg.DataDir)
+	if err != nil {
+		return
+	}
 	if err := wifi.Teardown(ctx, s.run, p); err != nil {
 		log.Printf("手机 %s：清理 WiFi 路由器：%v", id, err)
 	}

@@ -26,6 +26,7 @@ const (
 	ctrlAttrFamilyID    = 1
 	ctrlAttrFamilyName  = 2
 	hwsimCmdNewRadio    = 4
+	hwsimCmdDelRadio    = 5
 	hwsimAttrRadioName  = 17
 	hwsimAttrNoVIF      = 18
 	hwsimAttrPermAddr   = 22
@@ -60,6 +61,52 @@ func NewRadioInNetns(netnsPath, name string, mac [6]byte) (int, error) {
 	}()
 	r := <-ch
 	return r.id, r.err
+}
+
+// DelRadioInNetns 删掉一块 hwsim 网卡（内核只认网卡当前所在网络命名空间里发来的删除请求）。
+// netnsPath 为空 = 在管家自己所在的命名空间（手机关机后，手机那块网卡会回到这里）。找不到不算错。
+func DelRadioInNetns(netnsPath, name string) error {
+	ch := make(chan error, 1)
+	go func() {
+		runtime.LockOSThread()
+		if netnsPath != "" {
+			fd, err := os.Open(netnsPath)
+			if err != nil {
+				ch <- nil // 命名空间已经没了，网卡也不在那
+				return
+			}
+			defer fd.Close()
+			if _, _, e := syscall.RawSyscall(sysSetns, fd.Fd(), cloneNewNet, 0); e != 0 {
+				ch <- fmt.Errorf("进入网络命名空间：%v", e)
+				return
+			}
+		}
+		ch <- delRadio(name)
+	}()
+	return <-ch
+}
+
+func delRadio(name string) error {
+	s, err := syscall.Socket(syscall.AF_NETLINK, syscall.SOCK_RAW|syscall.SOCK_CLOEXEC, syscall.NETLINK_GENERIC)
+	if err != nil {
+		return err
+	}
+	defer syscall.Close(s)
+	if err := syscall.Bind(s, &syscall.SockaddrNetlink{Family: syscall.AF_NETLINK}); err != nil {
+		return err
+	}
+	fam, err := familyID(s, "MAC80211_HWSIM")
+	if err != nil {
+		return nil // 模块都没有，自然没有网卡
+	}
+	code, _, err := request(s, fam, hwsimCmdDelRadio, nlAttr(hwsimAttrRadioName, append([]byte(name), 0)))
+	if err != nil {
+		return err
+	}
+	if code < 0 && syscall.Errno(-code) != syscall.ENODEV {
+		return fmt.Errorf("删 hwsim 网卡 %s：%v", name, syscall.Errno(-code))
+	}
+	return nil
 }
 
 func newRadio(name string, mac [6]byte) (int, error) {
