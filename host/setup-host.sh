@@ -33,6 +33,9 @@ command -v curl   >/dev/null || need+=(curl)
 command -v lxcfs  >/dev/null || need+=(lxcfs)        # 手机里的 /proc/meminfo 按每台的内存上限显示（踩坑 #54）
 command -v nsenter >/dev/null || need+=(util-linux)  # 实时画面进时间命名空间（踩坑 #50）
 command -v mkfs.ext4 >/dev/null || need+=(e2fsprogs) # 按机型容量的手机存储镜像（踩坑 #53）
+command -v iw      >/dev/null || need+=(iw)          # 虚拟 WiFi（踩坑 #57）
+command -v hostapd >/dev/null || need+=(hostapd)
+command -v dnsmasq >/dev/null || need+=(dnsmasq-base)
 if [ ${#need[@]} -gt 0 ]; then
   wait_apt
   export DEBIAN_FRONTEND=noninteractive
@@ -43,6 +46,12 @@ systemctl enable --now docker >/dev/null
 # lxcfs 一重启，正在运行的手机里 /proc/meminfo 就读不了（挂载断开），所以不让它自动升级（升级挑没开手机的时候手动做）
 systemctl enable --now lxcfs >/dev/null 2>&1 || true
 apt-mark hold lxcfs >/dev/null 2>&1 || true
+# 虚拟 WiFi 的网卡由管家按需建（每台手机一对，netlink），模块加载时不要自动建
+echo "options mac80211_hwsim radios=0" > /etc/modprobe.d/prism-hwsim.conf
+echo mac80211_hwsim > /etc/modules-load.d/prism-hwsim.conf
+modprobe mac80211_hwsim radios=0 2>/dev/null || echo "内核没有 mac80211_hwsim：手机照旧用有线网（不影响其他功能）"
+# 系统自带的 hostapd 服务不要开（每台手机自己的热点由管家在各自的命名空间里起）
+systemctl disable --now hostapd >/dev/null 2>&1 || true
 
 # 4. 内核功能：binder（binderfs 模式，每个容器自己挂载，互不冲突）、PSI
 cfg="/boot/config-$(uname -r)"

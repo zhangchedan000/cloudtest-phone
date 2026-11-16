@@ -33,6 +33,9 @@ type Runner interface {
 
 type execRunner struct{}
 
+// ExecRunner 真正执行宿主机命令的 Runner（main 里给别的包用）。
+func ExecRunner() Runner { return execRunner{} }
+
 func (execRunner) Run(ctx context.Context, name string, args ...string) (string, error) {
 	out, err := exec.CommandContext(ctx, name, args...).CombinedOutput()
 	return strings.TrimSpace(string(out)), err

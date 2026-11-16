@@ -15,6 +15,7 @@ import (
 
 	"github.com/zhangchedan000/prism-phone/agent/internal/docker"
 	"github.com/zhangchedan000/prism-phone/agent/internal/store"
+	"github.com/zhangchedan000/prism-phone/agent/internal/wifi"
 )
 
 // Docker 是用到的 Docker 接口（测试时换成假的）。
@@ -48,6 +49,9 @@ type Config struct {
 	// HostMemMB 宿主机内存（0 = 自动读，测试用）。Lxcfs 宿主机装了 lxcfs：手机的 /proc/meminfo 按容器显示。
 	HostMemMB int64
 	Lxcfs     bool
+	// Wifi 宿主机能做虚拟 WiFi（hwsim、hostapd、dnsmasq 都在）；WifiDNS 手机 WiFi 里的 DNS 转到哪（mihomo DNS）。
+	Wifi    bool
+	WifiDNS string
 	// DataImages 新手机的 /data 用按机型容量建的 ext4 磁盘镜像（手机里看到的总容量对得上机型，storage.go）。
 	DataImages bool
 	// InitHelper 开机时长归零的启动器（管家程序自己的路径，见 timens 包）；空 = 不用（内核不支持时间命名空间）。
@@ -80,12 +84,14 @@ type Service struct {
 	// proxyChecker 检测代理出口（时区 / 语言跟随代理要用），见 proxyauto.go。
 	proxyChecker func(ctx context.Context, proxyID string) error
 	fakes        fakeTracker
+	// newRadio 建 hwsim 虚拟无线网卡（测试时换成假的）
+	newRadio wifi.NewRadioFunc
 	// async 为 false 时伪造文件同步挂载（测试用）。
 	async bool
 }
 
 func NewService(cfg Config, d Docker, st *store.Store, cat *Catalog, models []Model) *Service {
-	return &Service{cfg: cfg, docker: d, store: st, cat: cat, models: models, now: time.Now, run: execRunner{}, raw: execRaw{}, async: true}
+	return &Service{cfg: cfg, docker: d, store: st, cat: cat, models: models, now: time.Now, run: execRunner{}, raw: execRaw{}, async: true, newRadio: wifi.NewRadioInNetns}
 }
 
 // SetNetworkGuard 接上网络模块（mihomo）的开机前检查。
@@ -779,6 +785,8 @@ func (s *Service) Start(ctx context.Context, id string) error {
 	if err := s.docker.StartContainer(ctx, name); err != nil {
 		return fmt.Errorf("启动容器：%w", err)
 	}
+	// 虚拟 WiFi 要在安卓的有线网管理启动之前把 eth0 换掉，所以容器一起来就同步做（wifi.go）
+	s.setupWifi(ctx, p.ID, image, byKey)
 	if s.async {
 		go s.removeTraces(context.Background(), name)
 	} else {
@@ -823,6 +831,7 @@ func (s *Service) Stop(ctx context.Context, id string) error {
 		"am broadcast -a android.intent.action.ACTION_SHUTDOWN >/dev/null 2>&1; sync")
 	cancel()
 	err := s.docker.StopContainer(ctx, name, 25)
+	s.teardownWifi(ctx, id)
 	if docker.IsNotFound(err) {
 		return nil
 	}
@@ -834,6 +843,7 @@ func (s *Service) Delete(ctx context.Context, id string) error {
 	if err := s.docker.RemoveContainer(ctx, containerName(id)); err != nil {
 		return err
 	}
+	s.teardownWifi(ctx, id)
 	if err := s.releaseData(ctx, id); err != nil {
 		return err
 	}

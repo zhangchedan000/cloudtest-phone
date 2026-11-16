@@ -26,6 +26,7 @@ import (
 	"github.com/zhangchedan000/prism-phone/agent/internal/selfcheck"
 	"github.com/zhangchedan000/prism-phone/agent/internal/store"
 	"github.com/zhangchedan000/prism-phone/agent/internal/timens"
+	"github.com/zhangchedan000/prism-phone/agent/internal/wifi"
 )
 
 var version = "dev"
@@ -50,6 +51,7 @@ func main() {
 	maxRunning := flag.Int("max-running", 4, "同时最多运行几台")
 	devHost := flag.Bool("dev-host", false, "开发机：允许「直连（仅开发）」代理")
 	noTimens := flag.Bool("no-timens", false, "不让云手机的开机时长归零（出问题时临时关掉用）")
+	noWifi := flag.Bool("no-wifi", false, "不给手机配虚拟 WiFi（手机照旧用有线 eth0）")
 	memFollow := flag.Bool("mem-follow-model", true, "每台手机的内存上限按机型（例如 8GB）；false 时用固定的 -mem-mb")
 	noDataImages := flag.Bool("no-data-images", false, "新手机不用按机型容量的磁盘镜像，/data 直接用宿主机目录")
 	dockerSock := flag.String("docker", "/var/run/docker.sock", "Docker socket")
@@ -94,6 +96,14 @@ func main() {
 	}
 	cfg.DataImages = !*noDataImages && phones.DataImagesSupported()
 	cfg.MemFollowModel = *memFollow
+	// 虚拟 WiFi：宿主机准备好了（hwsim、hostapd、dnsmasq……）就开；镜像带不带 WiFi 开机时再看
+	if !*noWifi {
+		if err := wifi.HostReady(context.Background(), phones.ExecRunner()); err != nil {
+			log.Printf("虚拟 WiFi 没开（手机照旧用有线）：%v", err)
+		} else {
+			cfg.Wifi, cfg.WifiDNS = true, *dnsListen
+		}
+	}
 	cfg.Lxcfs = phones.LxcfsAvailable()
 	// 开机时长归零：内核支持时间命名空间就用管家程序自己当容器启动器（timens 包）
 	if !*noTimens && timens.Supported() {

@@ -167,6 +167,10 @@ func (s *Service) applySettings(ctx context.Context, id string) {
 	for _, pkg := range aospOnlyPackages {
 		_, _ = s.run.Run(ctx, "docker", "exec", name, "pm", "uninstall", "--user", "0", pkg)
 	}
+	// 虚拟 WiFi：打开并连上这台手机自己的路由器（wifi.go）
+	if err := s.connectWifi(ctx, id, s.resolvedValues(*p, st)); err != nil {
+		problems = append(problems, err.Error())
+	}
 	// USB 调试按手机的开关（默认关，adbtoggle.go）
 	s.applyAdb(ctx, id)
 	// 蓝牙默认关：安卓默认 bluetooth_on=1，开机自动开蓝牙；容器里没有蓝牙硬件，蓝牙 HAL 和
