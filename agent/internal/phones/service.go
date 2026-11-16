@@ -674,9 +674,11 @@ func (s *Service) Start(ctx context.Context, id string) error {
 	if err := s.docker.StartContainer(ctx, name); err != nil {
 		return fmt.Errorf("启动容器：%w", err)
 	}
-	// 清掉容器痕迹：Redroid 镜像自带的 su（setuid root，检测 root 的第一项）和 Docker 的 /.dockerenv。
-	// 管家自己用 docker exec（本来就是 root），不需要 su。
-	_, _ = s.run.Run(ctx, "docker", "exec", name, "rm", "-f", "/system/xbin/su", "/.dockerenv")
+	if s.async {
+		go s.removeTraces(context.Background(), name)
+	} else {
+		s.removeTraces(ctx, name)
+	}
 	// 先标成「设置中」，开机后设置做完之前设备都算开机中（不会在框架重启前就让人操作）。
 	s.settings.set(p.ID, SettingsStatus{State: "pending"})
 	if s.async {
@@ -928,4 +930,21 @@ func redroidFPS(v any) int {
 		n = 60
 	}
 	return n
+}
+
+// removeTraces 清掉容器痕迹：Redroid 镜像自带的 su（setuid root，检测 root 的第一项）和 Docker 的 /.dockerenv。
+// 管家自己用 docker exec（本来就是 root），不需要 su。
+// 刚启动时安卓的动态链接器（/apex）还没挂好，docker exec 跑不了任何命令（踩坑 #44），所以重试到成功为止，
+// 一般开机后几秒就能删掉，早于 App 启动。
+func (s *Service) removeTraces(ctx context.Context, name string) {
+	deadline := time.Now().Add(s.bootTimeout())
+	for {
+		if _, err := s.run.Run(ctx, "docker", "exec", name, "rm", "-f", "/system/xbin/su", "/.dockerenv"); err == nil {
+			return
+		}
+		if time.Now().After(deadline) || ctx.Err() != nil {
+			return
+		}
+		time.Sleep(time.Second)
+	}
 }
