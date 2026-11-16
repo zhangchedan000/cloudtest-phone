@@ -121,6 +121,27 @@ echo "$ifs" | grep -qi wlan0 || cnt "没有 wlan0 无线网卡（真机一定有
 den=$(ax 'wm density 2>/dev/null' | tr -dc '0-9 :a-zA-Z'); info "wm density：${den:-读不到}"
 info "↑ 和该机型官方 dpi 核对（进度记录里标了 dpi 待真机核实）"
 
+# ========== 2b. 2026-11-16 ADB 体检修掉的项（防复发，踩坑 #44–#49）==========
+sect "2b. 开机后处理（防复发）"
+ax 'ls /.dockerenv' | grep -q dockerenv && now "/.dockerenv 还在（开机后 removeTraces 应删掉）" || hid "/.dockerenv 已删"
+ax 'ls /pp-init' | grep -q pp-init && now "/pp-init 启动器挂载点没清掉" || true
+ax 'pm list packages org.chromium.webview_shell' | grep -q webview_shell && now "AOSP 测试 App org.chromium.webview_shell 还在（开机设置应卸掉）" || hid "AOSP 测试 App webview_shell 已卸"
+ch=$(gp ro.build.characteristics); [ "$ch" = default ] && now "ro.build.characteristics=default（模拟器默认值）" || hid "ro.build.characteristics=$ch"
+for p in dalvik.vm.isa.arm64.variant ro.bionic.cpu_variant; do
+  v=$(gp "$p"); [ "$v" = generic ] && now "$p=generic（通用编译，真机写具体核心）" || info "$p=${v:-空}"
+done
+fps=$(ax 'dumpsys SurfaceFlinger 2>/dev/null | grep -m1 refresh-rate' | grep -oE '[0-9]+\.[0-9]+'); info "屏幕刷新率：${fps:-读不到} Hz"
+[ -n "$fps" ] && awk "BEGIN{exit !($fps < 50)}" && now "刷新率只有 $fps Hz（redroid_fps 超过 120 会变 15Hz，见踩坑 #44）"
+parts=$(ax 'grep "CPU part" /proc/cpuinfo | sort -u | wc -l'); info "cpuinfo 里不同核心类型数：${parts:-?}"
+[ "${parts:-0}" = 1 ] && info "↑ 只有一种核心：宿主机核少时 fitCPUs 应按比例保留大核（8 核机型应看到 2 种以上）"
+cpid=$(docker inspect -f '{{.State.Pid}}' "$C")
+if [ "$(readlink /proc/$cpid/ns/time 2>/dev/null)" != "$(readlink /proc/self/ns/time)" ]; then hid "安卓在自己的时间命名空间里（开机时长从 0 开始；注意 docker exec 读 /proc/uptime 仍是宿主机值，要用 adb shell 看）"
+else now "安卓和宿主机共用时钟：uptime 显示宿主机开了多久（管家 -no-timens？内核不支持 CONFIG_TIME_NS？见踩坑 #49）"; fi
+bpres=$(ax 'dumpsys battery 2>/dev/null' | grep -m1 'present:' | awk '{print $2}'); [ "$bpres" = false ] && now "电池 present=false（真机永远 true，开机设置应设 present 1）" || info "电池 present=${bpres:-?}"
+bton=$(ax 'settings get global bluetooth_on'); [ "$bton" = 1 ] && now "bluetooth_on=1：没有蓝牙硬件，每次开机蓝牙进程会连崩（踩坑 #48）" || info "bluetooth_on=${bton:-?}"
+crash=$(ax 'logcat -b crash -d 2>/dev/null' | grep -cE 'Fatal signal|FATAL EXCEPTION')
+[ "${crash:-0}" -gt 0 ] && { now "这次开机有 $crash 次崩溃（下面是崩的进程）"; ax 'logcat -b crash -d 2>/dev/null' | grep -oE 'Process: [a-z0-9._:]+|pid [0-9]+ \([^)]*\)' | sort | uniq -c | sort -rn | head -5 | sed 's/^/             /'; } || hid "这次开机没有崩溃"
+
 # ========== 3. 硬件缺的（和显卡一个性质，等板子）==========
 sect "3. 硬件缺失（等板子，和显卡同类）"
 
