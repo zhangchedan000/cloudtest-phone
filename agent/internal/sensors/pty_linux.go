@@ -12,8 +12,9 @@ import (
 // tcflsh ioctl TCFLSH（arm64 / amd64 都是 0x540B，syscall 包没导出）。
 const tcflsh = 0x540B
 
-// PipePath 模拟器传感器 HAL 打开的管道文件（镜像里的 HAL 已打补丁走这个路径，踩坑 #59）。
-const PipePath = "/dev/goldfish_pipe_dprctd"
+// PipePaths 模拟器传感器 HAL 打开的管道文件（踩坑 #59）：安卓 14 起是 goldfish_pipe_dprctd（镜像里的 HAL 打了补丁才走它）；
+// 安卓 13 的 HAL 连 vsock 失败会自己退回 /dev/goldfish_pipe。两个都绑到同一个伪终端，哪个版本都能用。
+var PipePaths = []string{"/dev/goldfish_pipe_dprctd", "/dev/goldfish_pipe"}
 
 func ioctl(fd uintptr, req uintptr, arg uintptr) error {
 	if _, _, e := syscall.Syscall(syscall.SYS_IOCTL, fd, req, arg); e != 0 {
@@ -72,15 +73,17 @@ func Setup() (master, slave *os.File, err error) {
 	if err != nil {
 		return nil, nil, fmt.Errorf("开伪终端：%w", err)
 	}
-	if f, err := os.OpenFile(PipePath, os.O_CREATE|os.O_RDONLY, 0o666); err == nil {
-		f.Close()
+	for _, path := range PipePaths {
+		if f, err := os.OpenFile(path, os.O_CREATE|os.O_RDONLY, 0o666); err == nil {
+			f.Close()
+		}
+		if err := syscall.Mount(slave.Name(), path, "", syscall.MS_BIND, ""); err != nil {
+			master.Close()
+			slave.Close()
+			return nil, nil, fmt.Errorf("绑到 %s：%w", path, err)
+		}
+		_ = os.Chmod(path, 0o666)
 	}
-	if err := syscall.Mount(slave.Name(), PipePath, "", syscall.MS_BIND, ""); err != nil {
-		master.Close()
-		slave.Close()
-		return nil, nil, fmt.Errorf("绑到 %s：%w", PipePath, err)
-	}
-	_ = os.Chmod(PipePath, 0o666)
 	return master, slave, nil
 }
 

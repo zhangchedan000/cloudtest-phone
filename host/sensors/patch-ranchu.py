@@ -72,6 +72,8 @@ if renamed:
     print('改了 %d 个名字' % renamed)
 if not cands and already == 1:
     print('已经打过补丁'); sys.exit(0)
+if not cands and b'/dev/goldfish_pipe\x00' in b:
+    print('这一版（安卓 13 及更早）vsock 连不上会自己退回 /dev/goldfish_pipe，不用打补丁'); sys.exit(0)
 if not cands and b'vsock' not in b:
     print('这一版不走 vsock（老版本直接开管道文件），不用打补丁'); sys.exit(0)
 if len(cands) != 1:
