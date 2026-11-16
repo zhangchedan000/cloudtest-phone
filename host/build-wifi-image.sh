@@ -74,8 +74,8 @@ log "打开电话（rild 连小助手模拟的基带，踩坑 #65）"
 # 换成模拟器的新版：libgoldfish-rild + libril-modem-lib（1.6 + AIDL 兼容层）+ 它自己的 reference-ril（支持 -d 串口）。
 # 模拟器的新版 rild（接口 2.x，安卓 13 起框架只认 1.4 以上）+ 配套的 libcuttlefish-ril-2（数据结构对得上），
 # 用 -p 9600 连本机 TCP，小助手在那儿扮演基带（踩坑 #65）。安卓 13、14 实测库对得上；15 的模拟器库要的 libbase 符号
-# Redroid 15 没有；13、14 实测通过 → 默认 13、14 用，15 照旧用 Redroid 自带的 rild（手机像没插卡）。PP_EMU_RIL=0/1 可强制。
-emu_ril=${PP_EMU_RIL:-$([ "$ver" = 13 ] || [ "$ver" = 14 ] && echo 1 || echo 0)}
+# Redroid 15 没有（模拟器那份改名 libbas2.so 私用，见下面 private-libbase.py）。PP_EMU_RIL=0 可关掉（照旧用 Redroid 自带的 rild，手机像没插卡）。
+emu_ril=${PP_EMU_RIL:-1}
 if [ "$emu_ril" = 1 ] && [ -f "$V/bin/hw/libgoldfish-rild" ]; then
   cp -a "$V/bin/hw/libgoldfish-rild" "$B/vendor/bin/hw/"
   cp -a "$V/lib64/libril-modem-lib.so" "$V/lib64/libreference-ril.so" "$B/vendor/lib64/"
@@ -117,6 +117,11 @@ for round in 1 2 3 4 5 6 7 8; do
   done
   [ $added = 0 ] && break
 done
+
+if [ "$emu_ril" = 1 ] && [ -f "$R/vendor/lib64/libbase.so" ] && [ -f "$V/lib64/libbase.so" ]; then
+  log "电话库要的 libbase 函数 Redroid 自己的有没有（安卓 15 没有 → 模拟器那份改名私用，踩坑 #65）"
+  python3 "$here/ril/private-libbase.py" "$V/lib64/libbase.so" "$R/vendor/lib64/libbase.so" "$B/vendor/lib64" "$B/vendor/bin/hw"
+fi
 
 log "编译时钟垫片 libppclock.so"
 gcc -shared -fPIC -nostdlib -O2 -Wl,-z,max-page-size=16384 -Wl,--hash-style=both -Wl,-soname,libppclock.so \
