@@ -129,6 +129,9 @@ body { background: var(--fb-bg); color: var(--fb-text); font-family: Inter, ui-s
 .pp-window-body { flex: 1; min-height: 0; overflow: auto; padding: 12px; display: flex; justify-content: center; }
 .pp-window .pp-detail-screen { position: relative; }
 .pp-window .pp-phone-large .pp-phone-screen { height: calc(100vh - 190px); width: calc((100vh - 190px) * 0.47); max-width: calc(100vw - 90px); }
+/* 横屏（投屏窗口「旋转」或 App 自己横屏）：手机框也横过来 */
+.pp-phone-large .pp-phone-screen:has(.pp-live-landscape) { width: 640px; height: 300px; }
+.pp-window .pp-phone-large .pp-phone-screen:has(.pp-live-landscape) { width: min(calc(100vw - 140px), calc((100vh - 190px) * 2.1)); height: auto; aspect-ratio: 2.2; }
 .pp-proxy-switch { width: 300px; max-width: 100%; margin-bottom: 4px; }
 
 /* 控制台（仿魔云腾客户端布局） */

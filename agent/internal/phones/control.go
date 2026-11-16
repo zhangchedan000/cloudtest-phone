@@ -138,7 +138,7 @@ func (s *Service) Screenshot(ctx context.Context, id string) ([]byte, error) {
 
 // InputRequest 一次操作。坐标是安卓屏幕上的像素。
 type InputRequest struct {
-	Kind     string `json:"kind"` // tap / swipe / text / key
+	Kind     string `json:"kind"` // tap / swipe / text / key / rotate（rotate 由 API 直接调 Rotate）
 	X        int    `json:"x"`
 	Y        int    `json:"y"`
 	X2       int    `json:"x2"`

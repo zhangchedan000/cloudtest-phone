@@ -36,7 +36,7 @@ export function LiveScreen({ id, size }: { id: string; size: 'thumb' | 'large' }
   const [quality, setQuality] = useState<Quality>(savedQuality)
   // 视频连上了不等于画面出来了：第一帧解出来之前继续显示截图，免得一打开是黑屏
   const [gotFrame, setGotFrame] = useState(false)
-  const down = useRef<{ x: number; y: number; at: number } | null>(null)
+  const down = useRef<{ x: number; y: number; landscape: boolean; at: number } | null>(null)
   const canvas = useRef<HTMLCanvasElement>(null)
   const wantVideo = video === 'connecting' || video === 'playing'
 
@@ -78,7 +78,7 @@ export function LiveScreen({ id, size }: { id: string; size: 'thumb' | 'large' }
           setVideo('playing')
           // 手机可能在别的服务器上：地址和口令按手机所在的服务器
           const path = `/phones/${id}/stream?w=${w}&h=${h}&br=${q.bitRate}`
-          await playStream(apiUrl(path), authHeaders(path), el, abort.signal, () => setGotFrame(true))
+          await playStream(apiUrl(path), authHeaders(path), el, abort.signal, () => { setGotFrame(true); setLandscape(el.width > el.height) })
         } catch (error) {
           if (abort.signal.aborted) return
           setVideoError((error as Error).message)
@@ -90,12 +90,30 @@ export function LiveScreen({ id, size }: { id: string; size: 'thumb' | 'large' }
     return () => abort.abort()
   }, [id, device, wantVideo, quality])
 
+  // 画面实际是横的还是竖的（转屏以后视频 / 截图是横的，见管家 rotate.go）
+  const [landscape, setLandscape] = useState(false)
+  const frameSize = (el: HTMLElement) => el instanceof HTMLCanvasElement ? { w: el.width, h: el.height } : el instanceof HTMLImageElement ? { w: el.naturalWidth, h: el.naturalHeight } : { w: 0, h: 0 }
   const toDevice = (event: PointerEvent<HTMLElement>) => {
     if (!device) return undefined
-    const rect = event.currentTarget.getBoundingClientRect()
+    const el = event.currentTarget
+    // 画面横竖和手机分辨率不一致时按转过来的宽高算
+    const f = frameSize(el)
+    const land = f.w > 0 && f.h > 0 && f.w > f.h
+    const dw = land === (device.w > device.h) ? device.w : device.h
+    const dh = land === (device.w > device.h) ? device.h : device.w
+    // object-fit: contain 会留黑边：按画面实际占的区域算
+    const r = el.getBoundingClientRect()
+    let left = r.left, top = r.top, width = r.width, height = r.height
+    if (f.w > 0 && f.h > 0) {
+      const scale = Math.min(r.width / f.w, r.height / f.h)
+      width = f.w * scale; height = f.h * scale
+      left += (r.width - width) / 2; top += (r.height - height) / 2
+    }
+    const clamp = (v: number, max: number) => Math.min(max, Math.max(0, Math.round(v)))
     return {
-      x: Math.round(((event.clientX - rect.left) / rect.width) * device.w),
-      y: Math.round(((event.clientY - rect.top) / rect.height) * device.h)
+      x: clamp(((event.clientX - left) / width) * dw, dw),
+      y: clamp(((event.clientY - top) / height) * dh, dh),
+      landscape: land
     }
   }
 
@@ -109,15 +127,15 @@ export function LiveScreen({ id, size }: { id: string; size: 'thumb' | 'large' }
       if (!start || !end) return
       const moved = Math.hypot(end.x - start.x, end.y - start.y)
       void (moved < 12
-        ? ws.input(id, { kind: 'tap', x: start.x, y: start.y })
-        : ws.input(id, { kind: 'swipe', x: start.x, y: start.y, x2: end.x, y2: end.y, durationMs: Math.max(100, Date.now() - start.at) })
+        ? ws.input(id, { kind: 'tap', x: start.x, y: start.y, landscape: start.landscape })
+        : ws.input(id, { kind: 'swipe', x: start.x, y: start.y, x2: end.x, y2: end.y, durationMs: Math.max(100, Date.now() - start.at), landscape: start.landscape })
       ).then(() => setTick((t) => t + 1))
     }
   } : {}
 
   const showVideo = video === 'playing' && gotFrame
   return (
-    <div className="pp-live">
+    <div className={`pp-live${landscape ? ' pp-live-landscape' : ''}`}>
       {!showVideo && shot && (
         <img
           className="pp-live-img"
@@ -126,7 +144,7 @@ export function LiveScreen({ id, size }: { id: string; size: 'thumb' | 'large' }
           draggable={false}
           style={{ visibility: loaded ? 'visible' : 'hidden', cursor: interactive ? 'pointer' : 'default' }}
           // 旧版管家程序不给真实分辨率的响应头，但那时返回的是原图，图片尺寸就是手机分辨率
-          onLoad={(e) => { const el = e.currentTarget; if (el.naturalWidth) setDevice((d) => d ?? { w: el.naturalWidth, h: el.naturalHeight }) }}
+          onLoad={(e) => { const el = e.currentTarget; if (el.naturalWidth) { setDevice((d) => d ?? { w: el.naturalWidth, h: el.naturalHeight }); if (!showVideo) setLandscape(el.naturalWidth > el.naturalHeight) } }}
           {...pointer}
         />
       )}

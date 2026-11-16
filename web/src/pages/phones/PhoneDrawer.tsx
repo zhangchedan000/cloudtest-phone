@@ -71,7 +71,6 @@ export function PhoneDrawer({ phone, mode = 'view', onClose, onEdit, bare = fals
       setUploading('')
     }
   }
-  const todo = (what: string) => () => message.info(`${what}：还没做`)
   // 录屏：直接录浏览器里正在播的实时画面（不占服务器，不影响实时画面），停下后下载成视频文件
   const toggleRecord = () => {
     if (recorder.current) { recorder.current.stop(); return }
@@ -96,13 +95,21 @@ export function PhoneDrawer({ phone, mode = 'view', onClose, onEdit, bare = fals
     setRecording(true)
     message.info('开始录屏，再点一次「录屏」停止并下载')
   }
+  const rotate = () => {
+    if (!liveMode) { message.info('预览模式：接上管家程序后可用'); return }
+    void ws.input(live.id, { kind: 'rotate' }).then((res) => {
+      if (!res) return
+      if (res.wantLandscape && !res.landscape) message.info({ content: '已设成横屏，但当前界面只能竖屏（比如桌面）；打开支持横屏的 App 会自动横过来', key: 'pp-rotate' })
+      else message.success({ content: res.landscape ? '已切到横屏' : '已切回竖屏', key: 'pp-rotate' })
+    })
+  }
   const key = (k: string) => () => (liveMode ? void ws.input(live.id, { kind: 'key', key: k } as InputRequest) : message.info('预览模式：接上管家程序后可用'))
 
   const controls = [
     { icon: <ArrowLeftOutlined />, tip: '返回', onClick: key('back') }, { icon: <HomeOutlined />, tip: '主页', onClick: key('home') },
     { icon: <BorderOutlined />, tip: '多任务', onClick: key('recents') }, { icon: <SoundOutlined />, tip: '音量 +', onClick: key('volume_up') },
     { icon: <SoundOutlined style={{ opacity: 0.55, transform: 'scale(0.8)' }} />, tip: '音量 -', onClick: key('volume_down') },
-    { icon: <RotateRightOutlined />, tip: '旋转', onClick: todo('旋转') },
+    { icon: <RotateRightOutlined />, tip: '横竖屏切换（桌面是锁竖屏的，打开支持横屏的 App 再转）', onClick: rotate },
     { icon: <CameraOutlined />, tip: '截图（新窗口打开原图）', onClick: () => (liveMode ? void openRawScreenshot(live.id).catch((e: Error) => message.error(e.message)) : message.info('预览模式：接上管家程序后可用')) },
     { icon: <VideoCameraOutlined style={recording ? { color: '#ff4d4f' } : undefined} />, tip: recording ? '录屏中：点一下停止并下载' : '录屏（录浏览器里的实时画面，停止后下载成视频文件）', onClick: () => (liveMode ? toggleRecord() : message.info('预览模式：接上管家程序后可用')) },
     { icon: <UploadOutlined />, tip: '上传文件（图片、视频进相册，其他进下载目录；也可以直接把文件拖进窗口）', onClick: () => (liveMode ? fileInput.current?.click() : message.info('预览模式：接上管家程序后可用')) },

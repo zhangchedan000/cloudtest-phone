@@ -16,6 +16,8 @@ export function screenOf(values: Record<string, unknown> | undefined): ScreenSiz
 /** 把主控手机上的一次操作换算到另一台手机（坐标按比例，其他原样）。 */
 export function scaleInput(req: InputRequest, from: ScreenSize, to: ScreenSize): InputRequest {
   if (req.kind !== 'tap' && req.kind !== 'swipe') return req
+  // 横屏时画面宽高和机型的竖屏宽高是反的
+  if (req.landscape) { from = { w: from.h, h: from.w }; to = { w: to.h, h: to.w } }
   const sx = (v?: number) => (v === undefined ? v : Math.round((v * to.w) / from.w))
   const sy = (v?: number) => (v === undefined ? v : Math.round((v * to.h) / from.h))
   return { ...req, x: sx(req.x), y: sy(req.y), x2: sx(req.x2), y2: sy(req.y2) }

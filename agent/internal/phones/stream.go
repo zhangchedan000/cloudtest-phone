@@ -125,6 +125,13 @@ func (s *Service) Stream(ctx context.Context, id string, opt StreamOptions, w io
 	name := containerName(id)
 	// 顶掉旧的一路：docker exec 的进程被杀不会连带杀掉容器里的 screenrecord，要进容器停。
 	_, _ = s.run.Run(ctx, "docker", "exec", name, "pkill", "-x", "screenrecord")
+	// 横屏时画面是横的：宽高按当前方向对调（页面按竖屏要的尺寸），方向一变就结束这一路，页面自动重连拿新方向（rotate.go）
+	if st, err := s.screen(ctx, id, true); err == nil {
+		if st.landscape() != (opt.Width > opt.Height) {
+			opt.Width, opt.Height = opt.Height, opt.Width
+		}
+		go s.watchRotation(ctx, id, st.landscape(), cancel)
+	}
 	cmd := s.phoneCommand(ctx, id, streamArgs(opt)...)
 	out, err := cmd.StdoutPipe()
 	if err != nil {
@@ -144,4 +151,21 @@ func (s *Service) Stream(ctx context.Context, id string, opt StreamOptions, w io
 		return nil
 	}
 	return err
+}
+
+// watchRotation 实时画面播着的时候每 2 秒看一次横竖屏，变了就结束这一路（页面会马上重连，按新方向出画面）。
+func (s *Service) watchRotation(ctx context.Context, id string, landscape bool, stop func()) {
+	t := time.NewTicker(2 * time.Second)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			if st, err := s.screen(ctx, id, true); err == nil && st.landscape() != landscape {
+				stop()
+				return
+			}
+		}
+	}
 }

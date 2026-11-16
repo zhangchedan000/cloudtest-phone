@@ -92,15 +92,21 @@ func (s *Service) touchInput(ctx context.Context, id string, req InputRequest) e
 		return fmt.Errorf("拿不到容器进程：%v", err)
 	}
 	ns := fmt.Sprintf("/proc/%d/ns/net", info.State.Pid)
+	// 触摸屏用竖着拿时的物理坐标；横屏时管理页发来的是转过以后的画面坐标，要换回去（rotate.go）
+	x, y, x2, y2 := req.X, req.Y, req.X2, req.Y2
+	if st, err := s.screen(ctx, id, false); err == nil && st.rotation != 0 {
+		x, y = st.toPhysical(x, y)
+		x2, y2 = st.toPhysical(x2, y2)
+	}
 	switch req.Kind {
 	case "tap":
-		return touch.Send(ns, fmt.Sprintf("tap %d %d", req.X, req.Y), 3*time.Second)
+		return touch.Send(ns, fmt.Sprintf("tap %d %d", x, y), 3*time.Second)
 	case "swipe":
 		d := req.Duration
 		if d <= 0 {
 			d = 300
 		}
-		return touch.Send(ns, fmt.Sprintf("swipe %d %d %d %d %d", req.X, req.Y, req.X2, req.Y2, d), time.Duration(d)*time.Millisecond+3*time.Second)
+		return touch.Send(ns, fmt.Sprintf("swipe %d %d %d %d %d", x, y, x2, y2, d), time.Duration(d)*time.Millisecond+3*time.Second)
 	}
 	return fmt.Errorf("不是触摸操作")
 }

@@ -348,6 +348,16 @@ func (s *Server) input(w http.ResponseWriter, r *http.Request) {
 		fail(w, err)
 		return
 	}
+	if req.Kind == "rotate" {
+		// 横竖屏切换：告诉页面转完是不是横的（桌面锁竖屏，转不过去要提示）
+		want, landscape, err := s.svc.Rotate(r.Context(), r.PathValue("id"))
+		if err != nil {
+			fail(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]bool{"ok": true, "wantLandscape": want, "landscape": landscape})
+		return
+	}
 	if err := s.svc.Input(r.Context(), r.PathValue("id"), req); err != nil {
 		fail(w, err)
 		return

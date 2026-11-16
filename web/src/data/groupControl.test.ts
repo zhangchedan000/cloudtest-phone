@@ -8,6 +8,10 @@ describe('群控坐标换算', () => {
     expect(scaleInput({ kind: 'swipe', x: 0, y: 2400, x2: 1080, y2: 0, durationMs: 300 }, from, to)).toMatchObject({ x: 0, y: 2712, x2: 1220, y2: 0, durationMs: 300 })
     expect(scaleInput({ kind: 'text', text: '你好' }, from, to)).toEqual({ kind: 'text', text: '你好' })
   })
+  it('横屏时按横过来的宽高换算', () => {
+    const from = { w: 1080, h: 2400 }, to = { w: 1220, h: 2712 }
+    expect(scaleInput({ kind: 'tap', x: 1200, y: 540, landscape: true }, from, to)).toMatchObject({ x: 1356, y: 610 })
+  })
   it('机型分辨率', () => {
     expect(screenOf({ resolution: { w: 1080, h: 2460 } })).toEqual({ w: 1080, h: 2460 })
     expect(screenOf({})).toEqual({ w: 1080, h: 2400 })

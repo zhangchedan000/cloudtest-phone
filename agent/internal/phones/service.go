@@ -82,6 +82,7 @@ type Service struct {
 	raw      RawRunner
 	boots    bootTracker
 	streams  streamTracker
+	screens  screenCache // 横竖屏（rotate.go）
 	usage    tracker[docker.Usage]
 	dataJobs tracker[DataJob]
 	netStat  tracker[NetStatus]    // 上网健康检查（netcheck.go）

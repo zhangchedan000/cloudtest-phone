@@ -45,7 +45,8 @@ interface Workspace {
   saveGroup: (group: Omit<Group, 'id'> & { id?: string }) => Promise<void>
   removeGroup: (id: string, serverId?: string) => Promise<void>
   importProxies: (req: { url?: string; text?: string; note?: string }, serverId?: string) => Promise<{ added: number; duplicates: number; skipped?: string[] }>
-  input: (id: string, req: InputRequest) => Promise<void>
+  /** 返回领头这台的结果（旋转时有 landscape：转完是不是横的） */
+  input: (id: string, req: InputRequest) => Promise<{ landscape?: boolean; wantLandscape?: boolean } | undefined>
   /** 粘贴文字到手机当前输入框（群控时其他手机一起粘贴）。 */
   paste: (id: string, text: string) => Promise<void>
   /** 群控：主控手机 → 跟着做的手机。 */
@@ -239,16 +240,18 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         await each([id], '删除分组', () => api.deleteGroup(id, sid))
       },
       input: async (id, req) => {
-        if (!live) return
+        if (!live) return undefined
         const lead = phones.find((p) => p.id === id)
         const from = screenOf(lead && modelOf(lead)?.values)
         const others = (followers[id] ?? []).flatMap((fid) => {
           const f = phones.find((p) => p.id === fid && p.status === 'running')
           return f ? [api.input(fid, scaleInput(req, from, screenOf(modelOf(f)?.values))).then(() => true, () => false)] : []
         })
-        try { await api.input(id, req) } catch (error) { message.error((error as Error).message) }
+        let res: { landscape?: boolean; wantLandscape?: boolean } | undefined
+        try { res = await api.input(id, req) } catch (error) { message.error((error as Error).message) }
         const ok = await Promise.all(others)
         if (ok.includes(false)) message.warning({ content: `群控：${ok.filter((x) => !x).length} 台没跟上`, key: 'pp-follow' })
+        return res
       },
       paste: async (id, text) => {
         if (!live) return
