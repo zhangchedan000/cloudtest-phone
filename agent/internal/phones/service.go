@@ -42,6 +42,11 @@ type Config struct {
 	MaxRunning  int            // 同时最多运行几台
 	// DevHost 开发机：允许「直连（仅开发）」代理，方便没代理时测试。正式机器必须是 false。
 	DevHost bool
+	// MemFollowModel 容器内存上限按机型 memTotal（memory.go）；false 时用固定的 MemoryMB。
+	MemFollowModel bool
+	// HostMemMB 宿主机内存（0 = 自动读，测试用）。Lxcfs 宿主机装了 lxcfs：手机的 /proc/meminfo 按容器显示。
+	HostMemMB int64
+	Lxcfs     bool
 	// DataImages 新手机的 /data 用按机型容量建的 ext4 磁盘镜像（手机里看到的总容量对得上机型，storage.go）。
 	DataImages bool
 	// InitHelper 开机时长归零的启动器（管家程序自己的路径，见 timens 包）；空 = 不用（内核不支持时间命名空间）。
@@ -684,11 +689,18 @@ func (s *Service) Start(ctx context.Context, id string) error {
 	for _, r := range s.resolve(*p, st) {
 		byKey[r.Key] = r.Value
 	}
+	memLimit := s.memLimitMB(byKey)
+	if err := s.checkMemoryBudget(ctx, p.ID, memLimit); err != nil {
+		return err
+	}
 	dataDir, err := s.prepareData(ctx, p.ID, byKey)
 	if err != nil {
 		return err
 	}
 	binds := []string{dataDir + ":/data"}
+	if s.cfg.Lxcfs {
+		binds = append(binds, lxcfsProc+":"+lxcfsMount+":ro")
+	}
 	hasFakes, err := s.prepareFakes(*p, st)
 	if err != nil {
 		return fmt.Errorf("生成伪造文件：%w", err)
@@ -716,7 +728,7 @@ func (s *Service) Start(ctx context.Context, id string) error {
 		Cmd:        s.BootArgs(*p, st),
 		Labels:     map[string]string{"prism-phone": "1", "prism-phone.id": p.ID},
 		Binds:      binds,
-		MemoryMB:   s.cfg.MemoryMB,
+		MemoryMB:   memLimit,
 		NanoCPUs:   int64(s.cfg.CPUs * 1e9),
 		Network:    s.cfg.Network,
 		IPv4:       p.IP,

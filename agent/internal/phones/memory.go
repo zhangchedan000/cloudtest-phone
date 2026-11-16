@@ -1,0 +1,108 @@
+package phones
+
+import (
+	"bufio"
+	"context"
+	"fmt"
+	"os"
+	"strconv"
+	"strings"
+)
+
+// 内存（2026-11-16 用户定：每台手机的内存上限按机型来，例如 8GB）：
+//   - 容器内存上限 = 机型档案的 memTotal（GB，十进制，和厂商标的一样；8GB ≈ 7629 MiB，真机 MemTotal 也是 7.x GiB）。
+//   - 手机里的 /proc/meminfo 用 lxcfs 按容器自己的上限和用量显示（以前显示宿主机 24GB）。
+//   - 开机前按「正在运行的手机上限之和 + 这台 ≤ 宿主机内存 - 预留」把关，内存不够就不让开，
+//     不会把宿主机挤爆（阿什本 24GB：8GB 的手机同时 2 台）。
+// 没装 lxcfs 的机器只改上限、/proc/meminfo 仍是宿主机的；-mem-follow-model=false 退回固定的 -mem-mb。
+// 改不了的：sysinfo() 系统调用（部分原生代码用）仍返回宿主机内存，见踩坑 #54。
+
+const (
+	lxcfsProc     = "/var/lib/lxcfs/proc"
+	lxcfsMount    = "/.pplxcfs"
+	hostReserveMB = 3072 // 给宿主机自己（系统、mihomo、管家、Docker）留的
+)
+
+// memLimitMB 这台手机的容器内存上限（MiB）。
+func (s *Service) memLimitMB(byKey map[string]any) int64 {
+	limit := s.cfg.MemoryMB
+	if s.cfg.MemFollowModel {
+		if gb, ok := toInt(byKey["memTotal"]); ok && gb > 0 && gb <= 64 {
+			limit = int64(gb) * 1_000_000_000 / (1 << 20)
+		}
+	}
+	if host := s.hostMB(); host > 0 && limit > host-hostReserveMB {
+		limit = host - hostReserveMB
+	}
+	return limit
+}
+
+func (s *Service) hostMB() int64 {
+	if s.cfg.HostMemMB > 0 {
+		return s.cfg.HostMemMB
+	}
+	return hostMemMB()
+}
+
+// hostMemMB 宿主机总内存（MiB）；读不到返回 0。
+func hostMemMB() int64 {
+	f, err := os.Open("/proc/meminfo")
+	if err != nil {
+		return 0
+	}
+	defer f.Close()
+	sc := bufio.NewScanner(f)
+	for sc.Scan() {
+		if fields := strings.Fields(sc.Text()); len(fields) >= 2 && fields[0] == "MemTotal:" {
+			kb, _ := strconv.ParseInt(fields[1], 10, 64)
+			return kb / 1024
+		}
+	}
+	return 0
+}
+
+// checkMemoryBudget 开机前把关：正在运行的手机内存上限之和 + 这台，不能超过宿主机内存 - 预留。
+func (s *Service) checkMemoryBudget(ctx context.Context, id string, mine int64) error {
+	host := s.hostMB()
+	if host <= 0 || !s.cfg.MemFollowModel {
+		return nil
+	}
+	st := s.store.Snapshot()
+	used := int64(0)
+	for _, other := range st.Phones {
+		if other.ID == id || !s.isRunning(ctx, other.ID) {
+			continue
+		}
+		byKey := map[string]any{}
+		for _, r := range s.resolve(other, st) {
+			byKey[r.Key] = r.Value
+		}
+		used += s.memLimitMB(byKey)
+	}
+	if used+mine > host-hostReserveMB {
+		return fmt.Errorf("%w：内存不够——正在运行的手机已占 %.1f GB，这台要 %.1f GB，这台机器能给手机用的一共 %.1f GB（总 %.1f GB，留 %.1f GB 给系统）。先关掉一台再开",
+			ErrBlocked, float64(used)/1024, float64(mine)/1024, float64(host-hostReserveMB)/1024, float64(host)/1024, float64(hostReserveMB)/1024)
+	}
+	return nil
+}
+
+// LxcfsAvailable 宿主机上 lxcfs 在运行吗（有它的 meminfo 文件）。
+func LxcfsAvailable() bool {
+	_, err := os.Stat(lxcfsProc + "/meminfo")
+	return err == nil
+}
+
+// applyLxcfs 开机后把 lxcfs 的 meminfo 盖到 /proc/meminfo 上（已经盖过就跳过），然后卸掉临时挂载点。
+func (s *Service) applyLxcfs(ctx context.Context, name string) error {
+	if _, err := s.run.Run(ctx, "docker", "exec", name, "ls", lxcfsMount+"/meminfo"); err != nil {
+		return nil // 这台开机时没挂 lxcfs
+	}
+	if !mountedTargets(ctx, s.run, name)["/proc/meminfo"] {
+		if out, err := s.run.Run(ctx, "docker", "exec", name, "mount", "--bind", lxcfsMount+"/meminfo", "/proc/meminfo"); err != nil {
+			return fmt.Errorf("内存信息挂载失败：%v %s", err, out)
+		}
+	}
+	_, _ = s.run.Run(ctx, "docker", "exec", name, "umount", "-l", lxcfsMount)
+	_, _ = s.run.Run(ctx, "docker", "exec", name, "rmdir", lxcfsMount)
+	return nil
+}

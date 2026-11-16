@@ -30,6 +30,9 @@ command -v docker >/dev/null || need+=(docker.io)
 command -v adb    >/dev/null || need+=(adb)
 command -v jq     >/dev/null || need+=(jq)
 command -v curl   >/dev/null || need+=(curl)
+command -v lxcfs  >/dev/null || need+=(lxcfs)        # 手机里的 /proc/meminfo 按每台的内存上限显示（踩坑 #54）
+command -v nsenter >/dev/null || need+=(util-linux)  # 实时画面进时间命名空间（踩坑 #50）
+command -v mkfs.ext4 >/dev/null || need+=(e2fsprogs) # 按机型容量的手机存储镜像（踩坑 #53）
 if [ ${#need[@]} -gt 0 ]; then
   wait_apt
   export DEBIAN_FRONTEND=noninteractive
@@ -37,6 +40,9 @@ if [ ${#need[@]} -gt 0 ]; then
   apt-get install -y "${need[@]}"
 fi
 systemctl enable --now docker >/dev/null
+# lxcfs 一重启，正在运行的手机里 /proc/meminfo 就读不了（挂载断开），所以不让它自动升级（升级挑没开手机的时候手动做）
+systemctl enable --now lxcfs >/dev/null 2>&1 || true
+apt-mark hold lxcfs >/dev/null 2>&1 || true
 
 # 4. 内核功能：binder（binderfs 模式，每个容器自己挂载，互不冲突）、PSI
 cfg="/boot/config-$(uname -r)"

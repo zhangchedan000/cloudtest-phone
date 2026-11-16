@@ -159,6 +159,10 @@ func (s *Service) applySettings(ctx context.Context, id string) {
 	name := containerName(id)
 	var applied, problems []string
 	restart := false
+	// 内存信息按容器显示（lxcfs，memory.go）
+	if err := s.applyLxcfs(ctx, name); err != nil {
+		problems = append(problems, err.Error())
+	}
 	// AOSP 自带、真机没有的测试 App：对当前用户卸掉（系统分区里的不动，恢复用 pm install-existing）。
 	for _, pkg := range aospOnlyPackages {
 		_, _ = s.run.Run(ctx, "docker", "exec", name, "pm", "uninstall", "--user", "0", pkg)
