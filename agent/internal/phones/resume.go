@@ -77,6 +77,9 @@ func (s *Service) Busy() bool {
 		if st := s.fakes.get(p.ID); st != nil && st.State == "pending" {
 			return true
 		}
+		if j := s.dataJobs.get(p.ID); j != nil && j.State == "running" {
+			return true
+		}
 	}
 	return false
 }

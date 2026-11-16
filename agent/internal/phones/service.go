@@ -80,6 +80,7 @@ type Service struct {
 	boots    bootTracker
 	streams  streamTracker
 	usage    tracker[docker.Usage]
+	dataJobs tracker[DataJob]
 	netStat  tracker[NetStatus]    // 上网健康检查（netcheck.go）
 	batt     tracker[batteryState] // 电池漂移状态（battery.go）
 	settings settingsTracker
@@ -893,6 +894,8 @@ type PhoneView struct {
 	Usage *docker.Usage `json:"usage,omitempty"`
 	// Net 最近一次上网检查（运行中的设备才有）。
 	Net *NetStatus `json:"net,omitempty"`
+	// DataJob 正在做 / 最近做完的备份或恢复。
+	DataJob *DataJob `json:"dataJob,omitempty"`
 }
 
 func (s *Service) List(ctx context.Context) []PhoneView {
@@ -900,7 +903,7 @@ func (s *Service) List(ctx context.Context) []PhoneView {
 	out := make([]PhoneView, 0, len(st.Phones))
 	for _, p := range st.Phones {
 		p.Status = s.State(ctx, p.ID)
-		view := PhoneView{Phone: p, Issues: s.Check(p, st), Resolved: s.resolve(p, st), Fakes: s.fakes.get(p.ID), Settings: s.settings.get(p.ID)}
+		view := PhoneView{Phone: p, Issues: s.Check(p, st), Resolved: s.resolve(p, st), Fakes: s.fakes.get(p.ID), Settings: s.settings.get(p.ID), DataJob: s.dataJobs.get(p.ID)}
 		if s.netGuard != nil {
 			if err := s.netGuard(p.ID); err != nil {
 				view.Network = err.Error()

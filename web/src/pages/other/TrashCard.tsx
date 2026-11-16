@@ -43,7 +43,7 @@ export function TrashCard({ serverId, title }: { serverId?: string; title?: stri
           dataSource={items}
           columns={[
             { title: '设备', render: (_, it) => nameOf(it.phoneId) },
-            { title: '原因', render: (_, it) => (it.kind === 'reset' ? '重置 / 刷机' : '删除设备') },
+            { title: '原因', render: (_, it) => (it.kind === 'reset' ? '重置 / 刷机' : it.kind === 'restore' ? '恢复备份前的数据' : '删除设备') },
             { title: '时间', render: (_, it) => new Date(it.at).toLocaleString() },
             { title: '大小', render: (_, it) => `${Math.round(it.sizeMB)} MB` },
             { title: '', width: 50, render: (_, it) => <Button size="small" danger icon={<DeleteOutlined />} onClick={() => remove([it.name])} /> }

@@ -18,12 +18,12 @@ import (
 type TrashItem struct {
 	Name    string    `json:"name"`
 	PhoneID string    `json:"phoneId"`
-	Kind    string    `json:"kind"` // delete（删除设备）/ reset（重置或刷机）
+	Kind    string    `json:"kind"` // delete（删除设备）/ reset（重置或刷机）/ restore（恢复备份前的数据）
 	At      time.Time `json:"at"`
 	SizeMB  float64   `json:"sizeMB"`
 }
 
-var trashName = regexp.MustCompile(`^([0-9a-f]{6,32})(-reset)?-(\d{8}-\d{6})$`)
+var trashName = regexp.MustCompile(`^([0-9a-f]{6,32})(?:-(reset|restore))?-(\d{8}-\d{6})$`)
 
 func (s *Service) trashDir() string { return filepath.Join(s.cfg.DataDir, "trash") }
 
@@ -45,7 +45,7 @@ func (s *Service) ListTrash() ([]TrashItem, error) {
 		at, _ := time.ParseInLocation("20060102-150405", m[3], time.Local)
 		kind := "delete"
 		if m[2] != "" {
-			kind = "reset"
+			kind = m[2]
 		}
 		out = append(out, TrashItem{Name: e.Name(), PhoneID: m[1], Kind: kind, At: at, SizeMB: dirSizeMB(filepath.Join(s.trashDir(), e.Name()))})
 	}

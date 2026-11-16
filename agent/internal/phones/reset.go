@@ -40,24 +40,8 @@ func (s *Service) Reset(ctx context.Context, id string, req ResetRequest) error 
 	if err := s.releaseData(ctx, p.ID); err != nil {
 		return err
 	}
-	dataDir := s.dataDir(p.ID)
-	dest := filepath.Join(s.cfg.DataDir, "trash", p.ID+"-reset-"+s.now().Format("20060102-150405"))
-	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
+	if err := s.trashData(p.ID, "reset"); err != nil {
 		return err
-	}
-	if _, err := os.Stat(s.dataImage(p.ID)); err == nil {
-		// 用磁盘镜像的手机：镜像整个挪进回收站（下次开机按机型容量建新的），空的挂载点删掉
-		if err := os.MkdirAll(dest, 0o755); err != nil {
-			return err
-		}
-		if err := os.Rename(s.dataImage(p.ID), filepath.Join(dest, "data.img")); err != nil {
-			return fmt.Errorf("旧数据挪到回收站：%w", err)
-		}
-		_ = os.Remove(dataDir)
-	} else if _, err := os.Stat(dataDir); err == nil {
-		if err := os.Rename(dataDir, dest); err != nil {
-			return fmt.Errorf("旧数据挪到回收站：%w", err)
-		}
 	}
 	if err := s.store.Update(func(st *store.State) error {
 		ph, err := st.Phone(id)
@@ -83,6 +67,30 @@ func (s *Service) Reset(ctx context.Context, id string, req ResetRequest) error 
 	}
 	if wasRunning {
 		return s.Start(ctx, id)
+	}
+	return nil
+}
+
+// trashData 把一台手机现在的数据（磁盘镜像或目录）整个挪进回收站（容器已停、存储已卸载）。没有数据就什么都不做。
+func (s *Service) trashData(id, tag string) error {
+	dataDir := s.dataDir(id)
+	dest := filepath.Join(s.cfg.DataDir, "trash", id+"-"+tag+"-"+s.now().Format("20060102-150405"))
+	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
+		return err
+	}
+	if _, err := os.Stat(s.dataImage(id)); err == nil {
+		// 用磁盘镜像的手机：镜像整个挪进回收站，空的挂载点删掉
+		if err := os.MkdirAll(dest, 0o755); err != nil {
+			return err
+		}
+		if err := os.Rename(s.dataImage(id), filepath.Join(dest, "data.img")); err != nil {
+			return fmt.Errorf("旧数据挪到回收站：%w", err)
+		}
+		_ = os.Remove(dataDir)
+	} else if _, err := os.Stat(dataDir); err == nil {
+		if err := os.Rename(dataDir, dest); err != nil {
+			return fmt.Errorf("旧数据挪到回收站：%w", err)
+		}
 	}
 	return nil
 }

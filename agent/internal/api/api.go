@@ -53,10 +53,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/phones", s.listPhones)
 	mux.HandleFunc("POST /api/phones", s.createPhone)
 	mux.HandleFunc("PUT /api/phones/{id}", s.savePhone)
-	mux.HandleFunc("DELETE /api/phones/{id}", s.deletePhone)
-	mux.HandleFunc("POST /api/phones/{id}/start", s.action(func(r *http.Request, id string) error { return s.svc.Start(r.Context(), id) }))
-	mux.HandleFunc("POST /api/phones/{id}/stop", s.action(func(r *http.Request, id string) error { return s.svc.Stop(r.Context(), id) }))
-	mux.HandleFunc("POST /api/phones/{id}/reset", s.resetPhone)
+	mux.HandleFunc("DELETE /api/phones/{id}", s.notDuringDataJob(s.deletePhone))
+	mux.HandleFunc("POST /api/phones/{id}/start", s.notDuringDataJob(s.action(func(r *http.Request, id string) error { return s.svc.Start(r.Context(), id) })))
+	mux.HandleFunc("POST /api/phones/{id}/stop", s.notDuringDataJob(s.action(func(r *http.Request, id string) error { return s.svc.Stop(r.Context(), id) })))
+	mux.HandleFunc("POST /api/phones/{id}/reset", s.notDuringDataJob(s.resetPhone))
 	mux.HandleFunc("POST /api/phones/{id}/renew", s.action(func(_ *http.Request, id string) error { return s.svc.Renew(id) }))
 	mux.HandleFunc("GET /api/phones/{id}/screen", s.screen)
 	mux.HandleFunc("GET /api/phones/{id}/stream", s.stream)
@@ -77,6 +77,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /api/proxies/{id}", s.deleteProxy)
 	mux.HandleFunc("POST /api/proxies/{id}/check", s.checkProxy)
 	mux.HandleFunc("POST /api/proxies/import", s.importProxies)
+	mux.HandleFunc("GET /api/backups", s.listBackups)
+	mux.HandleFunc("POST /api/phones/{id}/backup", s.createBackup)
+	mux.HandleFunc("POST /api/phones/{id}/restore", s.restoreBackup)
+	mux.HandleFunc("DELETE /api/backups/{bid}", s.deleteBackup)
 	mux.HandleFunc("GET /api/trash", s.listTrash)
 	mux.HandleFunc("DELETE /api/trash/{name}", s.deleteTrash)
 	mux.HandleFunc("GET /api/servers", s.listServers)
@@ -684,4 +688,65 @@ func (s *Server) deleteTrash(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+// 备份和恢复（phones/backup.go）。
+func (s *Server) listBackups(w http.ResponseWriter, _ *http.Request) {
+	items, err := s.svc.ListBackups()
+	if err != nil {
+		fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, items)
+}
+
+func (s *Server) createBackup(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Note string `json:"note"`
+	}
+	if r.ContentLength > 0 {
+		if err := decode(r, &req); err != nil {
+			fail(w, err)
+			return
+		}
+	}
+	if err := s.svc.StartBackup(r.PathValue("id"), req.Note); err != nil {
+		fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusAccepted, map[string]bool{"ok": true})
+}
+
+func (s *Server) restoreBackup(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		BackupID string `json:"backupId"`
+	}
+	if err := decode(r, &req); err != nil {
+		fail(w, err)
+		return
+	}
+	if err := s.svc.StartRestore(r.PathValue("id"), req.BackupID); err != nil {
+		fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusAccepted, map[string]bool{"ok": true})
+}
+
+func (s *Server) deleteBackup(w http.ResponseWriter, r *http.Request) {
+	if err := s.svc.DeleteBackup(r.PathValue("bid")); err != nil {
+		fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+// notDuringDataJob 正在备份 / 恢复的手机不许开关机、重置、删除（会把正在拷的数据弄坏）。
+func (s *Server) notDuringDataJob(h http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if s.svc.JobRunning(r.PathValue("id")) {
+			writeJSON(w, http.StatusConflict, map[string]string{"error": "这台手机正在备份或恢复，等它做完再操作"})
+			return
+		}
+		h(w, r)
+	}
 }

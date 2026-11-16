@@ -92,7 +92,7 @@ export interface HostInfo {
   netHealth?: { ok: boolean; problems?: string[]; healedAt?: string; checkedAt: string }
 }
 
-export interface TrashItem { name: string; phoneId: string; kind: 'delete' | 'reset'; at: string; sizeMB: number }
+export interface TrashItem { name: string; phoneId: string; kind: 'delete' | 'reset' | 'restore'; at: string; sizeMB: number }
 
 export interface InputRequest { kind: 'tap' | 'swipe' | 'text' | 'key'; x?: number; y?: number; x2?: number; y2?: number; durationMs?: number; text?: string; key?: string }
 
