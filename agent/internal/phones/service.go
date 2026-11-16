@@ -769,7 +769,7 @@ func (s *Service) Start(ctx context.Context, id string) error {
 	}
 	entrypoint := s.initEntrypoint(ctx, image)
 	if entrypoint != nil && s.cfg.Sensors && s.imageHasSensors(ctx, image) {
-		entrypoint = withSensors(entrypoint, sensorSpec(*p, st))
+		entrypoint = withSensors(entrypoint, sensorSpec(*p, st, s.resolvedValues(*p, st)))
 	}
 	if entrypoint != nil {
 		binds = append(binds, s.cfg.InitHelper+":"+initMount+":ro")

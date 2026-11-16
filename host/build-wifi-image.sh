@@ -57,6 +57,10 @@ cp -a "$V/etc/vintf/manifest/android.hardware.sensors-multihal.xml" "$B/vendor/e
 cp -a "$V/etc/init/android.hardware.sensors-service-multihal.rc" "$B/vendor/etc/init/"
 python3 "$here/sensors/patch-ranchu.py" "$B/vendor/lib64/hw/android.hardware.sensors@2.1-impl.ranchu.so"
 
+log "声明多点触控（手机里的虚拟触摸屏是 10 点触控，agent/internal/touch）"
+mkdir -p "$B/vendor/etc/permissions"
+cp "$here/touch/android.hardware.touchscreen.multitouch.jazzhand.xml" "$B/vendor/etc/permissions/"
+
 log "补齐 vendor 命名空间里缺的库（递归）"
 id=$(docker create "$base"); mkdir -p "$R"
 docker export "$id" | tar -x -C "$R" --wildcards 'vendor/lib64/*' 'system/apex/com.android.vndk.current/*' 2>/dev/null || true
@@ -83,7 +87,7 @@ chmod 644 "$B/vendor/lib64/libppclock.so"
 cat > "$B/Dockerfile" <<DF
 FROM $base
 COPY vendor/ /vendor/
-LABEL prism.wifi=1 prism.sensors=1
+LABEL prism.wifi=1 prism.sensors=1 prism.touch=1
 DF
 out="${base}-wifi"
 log "构建 $out"

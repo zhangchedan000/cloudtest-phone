@@ -2,12 +2,14 @@ package phones
 
 import (
 	"context"
+	"fmt"
 	"hash/fnv"
 	"strings"
 	"time"
 
 	"github.com/zhangchedan000/prism-phone/agent/internal/sensors"
 	"github.com/zhangchedan000/prism-phone/agent/internal/store"
+	"github.com/zhangchedan000/prism-phone/agent/internal/touch"
 )
 
 // 传感器（踩坑 #59）：镜像带传感器 HAL（标签 prism.sensors=1）时，pp-init 在安卓开机前起一个喂数据的小程序，
@@ -19,7 +21,7 @@ func (s *Service) imageHasSensors(ctx context.Context, image string) bool {
 }
 
 // sensorSpec 这台手机的传感器配置。
-func sensorSpec(p store.Phone, st store.State) sensors.Spec {
+func sensorSpec(p store.Phone, st store.State, byKey map[string]any) sensors.Spec {
 	h := fnv.New64a()
 	h.Write([]byte(p.ID))
 	spec := sensors.Spec{Mask: sensors.DefaultMask, Seed: int64(h.Sum64() >> 1)}
@@ -28,6 +30,14 @@ func sensorSpec(p store.Phone, st store.State) sensors.Spec {
 		country, tz = px.Check.Country, px.Check.Timezone
 	}
 	spec.MagWorld = sensors.MagForRegion(country)
+	if size, ok := byKey["resolution"].(map[string]any); ok {
+		w, _ := toInt(size["w"])
+		h, _ := toInt(size["h"])
+		spec.W, spec.H = w, h
+	}
+	if name, ok := byKey["touchName"].(string); ok && name != "" {
+		spec.TouchName = name
+	}
 	if loc, err := time.LoadLocation(tz); err == nil && tz != "" {
 		_, spec.TZOffset = time.Now().In(loc).Zone()
 	} else {
@@ -44,4 +54,24 @@ func withSensors(entrypoint []string, spec sensors.Spec) []string {
 	out := append([]string{}, entrypoint[:2]...)
 	out = append(out, "--sensors="+spec.Encode())
 	return append(out, entrypoint[2:]...)
+}
+
+// touchInput 把点击 / 滑动发给手机里的小助手，由虚拟触摸屏像真手指一样做出来。
+func (s *Service) touchInput(ctx context.Context, id string, req InputRequest) error {
+	info, err := s.docker.InspectContainer(ctx, containerName(id))
+	if err != nil || info.State.Pid <= 0 {
+		return fmt.Errorf("拿不到容器进程：%v", err)
+	}
+	ns := fmt.Sprintf("/proc/%d/ns/net", info.State.Pid)
+	switch req.Kind {
+	case "tap":
+		return touch.Send(ns, fmt.Sprintf("tap %d %d", req.X, req.Y), 3*time.Second)
+	case "swipe":
+		d := req.Duration
+		if d <= 0 {
+			d = 300
+		}
+		return touch.Send(ns, fmt.Sprintf("swipe %d %d %d %d %d", req.X, req.Y, req.X2, req.Y2, d), time.Duration(d)*time.Millisecond+3*time.Second)
+	}
+	return fmt.Errorf("不是触摸操作")
 }

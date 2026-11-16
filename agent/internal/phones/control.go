@@ -240,6 +240,12 @@ func (s *Service) Input(ctx context.Context, id string, req InputRequest) error 
 	if err := s.requireRunning(ctx, id, true); err != nil {
 		return err
 	}
+	// 点击、滑动优先走手机里的虚拟触摸屏（像真手指，见 internal/touch）；没有触摸屏（老镜像、没开传感器）再用 input 命令
+	if (req.Kind == "tap" || req.Kind == "swipe") && s.cfg.Sensors {
+		if err := s.touchInput(ctx, id, req); err == nil {
+			return nil
+		}
+	}
 	cmd := "input " + strings.Join(args, " ")
 	if out, err := s.run.Run(ctx, "docker", "exec", containerName(id), "sh", "-c", cmd); err != nil {
 		return fmt.Errorf("操作失败：%v %s", err, out)

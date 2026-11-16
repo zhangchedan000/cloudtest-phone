@@ -8,6 +8,7 @@ import (
 	"syscall"
 
 	"github.com/zhangchedan000/prism-phone/agent/internal/sensors"
+	"github.com/zhangchedan000/prism-phone/agent/internal/touch"
 )
 
 // startSensors pp-init 里调用（容器里、安卓 init 之前）：开伪终端绑到 HAL 的管道路径，起喂数据子进程。
@@ -48,6 +49,14 @@ func runSensors() {
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "pp-sensors：参数不对：%v\n", err)
 		os.Exit(2)
+	}
+	// 虚拟触摸屏（踩坑 #61）：建不起来不影响传感器，管家那边会退回 input 命令
+	if spec.W > 0 && spec.H > 0 {
+		if dev, err := touch.Create(touch.Config{W: spec.W, H: spec.H, Name: spec.TouchName}, "/dev/input", spec.Seed); err != nil {
+			fmt.Fprintf(os.Stderr, "vendor.sensord：触摸屏没建起来：%v\n", err)
+		} else {
+			go func() { _ = touch.Serve(dev, func(string) {}) }()
+		}
 	}
 	sensors.Serve(spec, os.NewFile(3, "ptmx"), os.NewFile(4, "pts"), func(string) {})
 }

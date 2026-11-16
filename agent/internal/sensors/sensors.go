@@ -58,6 +58,10 @@ type Spec struct {
 	Seed     int64      `json:"seed"`
 	MagWorld [3]float64 `json:"mag"`      // 当地地磁（微特斯拉）：北、东、下
 	TZOffset int        `json:"tzOffset"` // 当地时区相对 UTC 的秒数（光线按当地时间）
+	// 虚拟触摸屏（internal/touch，同一个小助手进程负责）：屏幕像素和触控芯片名；W 为 0 不建
+	W         int    `json:"w,omitempty"`
+	H         int    `json:"h,omitempty"`
+	TouchName string `json:"touch,omitempty"`
 }
 
 // Encode / Decode 命令行参数格式。

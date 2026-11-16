@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 真手机都声明的多点触控能力（AOSP frameworks/native/data/etc 同名文件的内容）。
+     手机里的虚拟触摸屏是 10 点触控（agent/internal/touch），这里声明出来，App 查 PackageManager 才对得上。 -->
+<permissions>
+    <feature name="android.hardware.touchscreen" />
+    <feature name="android.hardware.touchscreen.multitouch" />
+    <feature name="android.hardware.touchscreen.multitouch.distinct" />
+    <feature name="android.hardware.touchscreen.multitouch.jazzhand" />
+</permissions>
