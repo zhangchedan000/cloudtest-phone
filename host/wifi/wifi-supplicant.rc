@@ -1,0 +1,17 @@
+# 云手机 WiFi（踩坑 #57）：wlan0 由宿主机的 mac80211_hwsim 虚拟网卡提供，热点在每台手机自己的「路由器」netns 里
+on early-init
+    setprop wifi.interface wlan0
+    setprop wifi.direct.interface p2p-dev-wlan0
+
+on post-fs-data
+    mkdir /data/vendor/wifi 0771 wifi wifi
+    mkdir /data/vendor/wifi/wpa 0770 wifi wifi
+    mkdir /data/vendor/wifi/wpa/sockets 0770 wifi wifi
+
+service wpa_supplicant /vendor/bin/hw/wpa_supplicant -Dnl80211 -iwlan0 -c/vendor/etc/wifi/wpa_supplicant.conf -g@android:wpa_wlan0
+    interface aidl android.hardware.wifi.supplicant.ISupplicant/default
+    setenv LD_PRELOAD /vendor/lib64/libppclock.so
+    socket wpa_wlan0 dgram 660 wifi wifi
+    group system wifi inet
+    oneshot
+    disabled
