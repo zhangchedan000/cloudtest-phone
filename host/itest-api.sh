@@ -27,6 +27,11 @@ r=$(api GET "/phones/$ID/screen"); echo "$r" | grep -q "没有开机" && ok "关
 
 t0=$(date +%s)
 r=$(api POST "/phones/$ID/start"); echo "$r" | grep -q '"ok":true' && ok "开机命令（$(( $(date +%s)-t0 )) 秒）" || bad "开机：$r"
+if echo "$r" | grep -q "内存不够"; then
+  api DELETE "/phones/$ID" >/dev/null
+  echo "⚠️  测试手机开不了机：服务器内存被正在运行的手机占满了（这是管家在正常把关，不是故障）。先关掉一台手机再跑这个测试。"
+  exit 2
+fi
 st=""
 for _ in $(seq 1 60); do
   st=$(api GET /phones | jget "[p['status'] for p in d if p['id']=='$ID'][0]")
