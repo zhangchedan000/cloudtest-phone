@@ -1081,7 +1081,8 @@ func (s *Service) removeTraces(ctx context.Context, name string) {
 	deadline := time.Now().Add(s.bootTimeout())
 	for {
 		// 启动器（/pp-init）开机后用不着了：卸掉挂载再删掉挂载点留下的空文件。
-		if _, err := s.run.Run(ctx, "docker", "exec", name, "sh", "-c", "umount "+initMount+" 2>/dev/null; rm -f "+initMount+" /system/xbin/su /.dockerenv"); err == nil {
+		// 传感器喂数据进程就是从它启动的，普通 umount 会报「忙」：用 -l（立刻从挂载表摘掉，正在跑的进程不受影响）。
+		if _, err := s.run.Run(ctx, "docker", "exec", name, "sh", "-c", "umount -l "+initMount+" 2>/dev/null; rm -f "+initMount+" /system/xbin/su /.dockerenv"); err == nil {
 			return
 		}
 		if time.Now().After(deadline) || ctx.Err() != nil {

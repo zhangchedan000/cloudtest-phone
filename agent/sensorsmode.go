@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"syscall"
@@ -17,22 +18,33 @@ func startSensors(spec string) {
 		fmt.Fprintf(os.Stderr, "pp-init：传感器没配好（手机照常开机，只是没有传感器数据）：%v\n", err)
 		return
 	}
-	cmd := exec.Command("/proc/self/exe", "pp-sensors", spec)
-	cmd.ExtraFiles = []*os.File{master, slave} // 子进程里是 3、4
+	// 配置走管道（fd 5），不放命令行：手机里 ps 看到的只是 vendor.sensord
+	r, w, err := os.Pipe()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "pp-init：传感器没配好：%v\n", err)
+		return
+	}
+	cmd := &exec.Cmd{Path: "/proc/self/exe", Args: []string{"vendor.sensord"}, Env: []string{"PP_MODE=pp-sensors"}}
+	cmd.ExtraFiles = []*os.File{master, slave, r} // 子进程里是 3、4、5
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	if err := cmd.Start(); err != nil {
 		fmt.Fprintf(os.Stderr, "pp-init：起传感器进程失败：%v\n", err)
 	}
+	_, _ = w.WriteString(spec)
+	w.Close()
+	r.Close()
 	master.Close()
 	slave.Close()
 }
 
-// runSensors 喂数据进程（不返回）。
-func runSensors(arg string) {
+// runSensors 喂数据进程（不返回）：配置从 fd 5 读。
+func runSensors() {
+	arg, _ := io.ReadAll(os.NewFile(5, "spec"))
 	// 进程名别叫 exe（只有 root 看得见，App 看不到别的进程，但还是起个像样的名字）
 	// /proc/self/comm 是整个进程（主线程）的名字；prctl 只改当前线程，Go 的 main 不一定在主线程上
 	_ = os.WriteFile("/proc/self/comm", []byte("vendor.sensord"), 0)
-	spec, err := sensors.Decode(arg)
+	os.Unsetenv("PP_MODE")
+	spec, err := sensors.Decode(string(arg))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "pp-sensors：参数不对：%v\n", err)
 		os.Exit(2)

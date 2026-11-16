@@ -43,8 +43,8 @@ func main() {
 		timens.Run(args)
 	}
 	// 容器里的传感器喂数据进程（pp-init 开机前起的，见 internal/sensors）
-	if len(os.Args) > 2 && os.Args[1] == "pp-sensors" {
-		runSensors(os.Args[2])
+	if os.Getenv("PP_MODE") == "pp-sensors" {
+		runSensors()
 	}
 	listen := flag.String("listen", "127.0.0.1:8099", "监听地址（默认只监听本机，外部访问走 HTTPS 反向代理或 SSH 隧道）")
 	dataDir := flag.String("data", "/opt/prism-phone/data", "数据目录")
