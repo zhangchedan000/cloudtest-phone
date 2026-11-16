@@ -48,12 +48,12 @@ systemctl enable --now lxcfs >/dev/null 2>&1 || true
 apt-mark hold lxcfs >/dev/null 2>&1 || true
 # 虚拟 WiFi 的网卡由管家按需建（每台手机一对，netlink），模块加载时不要自动建
 echo "options mac80211_hwsim radios=0" > /etc/modprobe.d/prism-hwsim.conf
-echo mac80211_hwsim > /etc/modules-load.d/prism-hwsim.conf
+# ccm = WPA2 加密用的 AES-CCMP 算法：这台内核不会自动加载，缺了热点报 "key addition failed"（踩坑 #57）
+printf 'mac80211_hwsim\nccm\n' > /etc/modules-load.d/prism-hwsim.conf
+modprobe ccm 2>/dev/null || true
 modprobe mac80211_hwsim radios=0 2>/dev/null || echo "内核没有 mac80211_hwsim：手机照旧用有线网（不影响其他功能）"
 # 系统自带的 hostapd 服务不要开（每台手机自己的热点由管家在各自的命名空间里起）
 systemctl disable --now hostapd >/dev/null 2>&1 || true
-# 系统自带 hostapd 2.10 在新内核上配不了 WPA2 热点，编译 2.11 装到 /usr/local/sbin（踩坑 #57）
-bash "$(dirname "$0")/build-hostapd.sh" || echo "hostapd 2.11 没装好：WiFi 加密热点会失败，手机照旧用有线网"
 
 # 4. 内核功能：binder（binderfs 模式，每个容器自己挂载，互不冲突）、PSI
 cfg="/boot/config-$(uname -r)"

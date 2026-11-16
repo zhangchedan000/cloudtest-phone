@@ -296,5 +296,11 @@ func HostReady(ctx context.Context, run Runner) error {
 			return fmt.Errorf("内核没有 mac80211_hwsim：%v %s", err, out)
 		}
 	}
+	// WPA2 热点要 AES-CCMP（ccm 模块）。有的内核不会自动加载，缺了 hostapd 报 "key addition failed"（踩坑 #57）
+	if _, err := os.Stat("/sys/module/ccm"); err != nil {
+		if out, err := run.Run(ctx, "modprobe", "ccm"); err != nil {
+			return fmt.Errorf("加载 ccm（WPA2 加密）失败：%v %s", err, out)
+		}
+	}
 	return nil
 }
