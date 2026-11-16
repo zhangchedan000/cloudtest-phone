@@ -13,9 +13,9 @@ describe('KeyQueue', () => {
     await vi.advanceTimersByTimeAsync(150)
     await q.then(async () => undefined)
     expect(sent).toEqual([
-      { kind: 'text', text: 'hello' },
+      { kind: 'text', text: 'hello', human: true },
       { kind: 'key', key: 'enter' },
-      { kind: 'text', text: '你好' }
+      { kind: 'text', text: '你好', human: true }
     ])
     vi.useRealTimers()
   })

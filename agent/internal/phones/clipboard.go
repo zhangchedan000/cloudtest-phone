@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 	"unicode/utf8"
 )
 
@@ -142,4 +143,18 @@ func (s *Service) GetClipboard(ctx context.Context, id string) (string, error) {
 		return "", fmt.Errorf("剪贴板内容读不出来：%q", last)
 	}
 	return string(b), nil
+}
+
+// pasteKeepClipboard 打中文（电脑键盘打字）：放进剪贴板、粘贴，再把手机原来的剪贴板内容放回去，
+// 手机剪贴板里不留我们打的字（踩坑 #62）。原来是空的就没法「放回空」，只能留着这次的字。
+func (s *Service) pasteKeepClipboard(ctx context.Context, id, text string) error {
+	old, oldErr := s.GetClipboard(ctx, id)
+	if err := s.SetClipboard(ctx, id, text, true); err != nil {
+		return err
+	}
+	if oldErr == nil && old != "" && old != text {
+		time.Sleep(300 * time.Millisecond) // 等 App 把粘贴读完
+		_, _ = s.runClip(ctx, id, "set", base64.StdEncoding.EncodeToString([]byte(old)))
+	}
+	return nil
 }

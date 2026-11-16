@@ -51,7 +51,7 @@ export class KeyQueue {
     const text = this.pending
     this.pending = ''
     // 安卓 input text 一次最多 500 字节，长的拆开发
-    for (const part of splitText(text, 400)) this.enqueue({ kind: 'text', text: part } as InputRequest)
+    for (const part of splitText(text, 400)) this.enqueue({ kind: 'text', text: part, human: true } as InputRequest)
   }
 
   /** 排在前面的都发完以后再做 fn（比如粘贴、读剪贴板）。 */

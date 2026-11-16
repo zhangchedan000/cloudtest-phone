@@ -4,10 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/rand"
 	"os/exec"
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 	"unicode"
 )
 
@@ -143,7 +145,9 @@ type InputRequest struct {
 	Y2       int    `json:"y2"`
 	Duration int    `json:"durationMs"`
 	Text     string `json:"text"`
-	Key      string `json:"key"` // back / home / recents / power / enter / delete / volume_up / volume_down / tab / up … / select_all / copy …
+	// Human 电脑键盘打字（管理页手机窗口里直接打）：英文一个字一个字按人的节奏发，中文粘贴后把手机原来的剪贴板放回去。
+	Human bool   `json:"human,omitempty"`
+	Key   string `json:"key"` // back / home / recents / power / enter / delete / volume_up / volume_down / tab / up … / select_all / copy …
 }
 
 var keyCodes = map[string]string{
@@ -231,7 +235,19 @@ func (s *Service) Input(ctx context.Context, id string, req InputRequest) error 
 		if len(req.Text) > 5000 {
 			return fmt.Errorf("%w：文字太长（发送文字最多 5000 字节，长文请用「放进手机剪贴板」）", ErrInvalid)
 		}
+		if req.Human {
+			return s.pasteKeepClipboard(ctx, id, req.Text)
+		}
 		return s.SetClipboard(ctx, id, req.Text, true)
+	}
+	if req.Kind == "text" && req.Human && req.Text != "" && len(req.Text) <= 500 && isPlainASCII(req.Text) {
+		if err := s.requireRunning(ctx, id, true); err != nil {
+			return err
+		}
+		if out, err := s.run.Run(ctx, "docker", "exec", containerName(id), "sh", "-c", humanTypeScript(req.Text, rand.New(rand.NewSource(time.Now().UnixNano())))); err != nil {
+			return fmt.Errorf("打字失败：%v %s", err, out)
+		}
+		return nil
 	}
 	args, err := inputArgs(req)
 	if err != nil {
@@ -271,4 +287,26 @@ func (s *Service) Logs(ctx context.Context, id string, lines int, level string) 
 		return "", fmt.Errorf("读日志失败：%v %s", err, out)
 	}
 	return out, nil
+}
+
+// humanTypeScript 一个字一个字打，字与字之间隔 70~220 毫秒（空格后、标点后再多停一下），像人打字的节奏。
+// 安卓 12 起 input 是 cmd input 的壳，单次只要十几毫秒，节奏由 sleep 决定。
+// 以前整串一次 input text，几毫秒打完几十个字，统计打字节奏的 App 一看就不是人（踩坑 #62）。
+func humanTypeScript(text string, r *rand.Rand) string {
+	var b strings.Builder
+	for i, ch := range text {
+		if i > 0 {
+			ms := 70 + r.Intn(150)
+			if strings.ContainsRune(" ,.;:!?", rune(text[i-1])) {
+				ms += 60 + r.Intn(160)
+			}
+			fmt.Fprintf(&b, "sleep 0.%03d; ", ms)
+		}
+		if ch == ' ' {
+			b.WriteString("input keyevent KEYCODE_SPACE; ")
+		} else {
+			b.WriteString("input text " + shellQuote(string(ch)) + "; ")
+		}
+	}
+	return strings.TrimSuffix(b.String(), "; ")
 }

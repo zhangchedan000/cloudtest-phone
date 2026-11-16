@@ -95,7 +95,7 @@ export interface HostInfo {
 export interface Backup { id: string; phoneId: string; phoneName: string; modelId: string; androidVersion: number; gapps: boolean; note?: string; createdAt: string; kind: 'image' | 'dir'; sizeMB: number }
 export interface TrashItem { name: string; phoneId: string; kind: 'delete' | 'reset' | 'restore'; at: string; sizeMB: number }
 
-export interface InputRequest { kind: 'tap' | 'swipe' | 'text' | 'key'; x?: number; y?: number; x2?: number; y2?: number; durationMs?: number; text?: string; key?: string }
+export interface InputRequest { kind: 'tap' | 'swipe' | 'text' | 'key'; x?: number; y?: number; x2?: number; y2?: number; durationMs?: number; text?: string; key?: string; /** 电脑键盘打字：按人的节奏发、中文粘完放回原剪贴板 */ human?: boolean }
 
 export const api = {
   host: (sid?: string) => call<HostInfo>('GET', '/host', undefined, sid),

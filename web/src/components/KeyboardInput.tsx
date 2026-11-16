@@ -22,6 +22,7 @@ export function KeyboardInput({ id, enabled, children }: { id: string; enabled: 
   const pushed = useRef<string | null>(null)
   const seen = useRef<string | null>(null)
   const queue = useMemo(() => new KeyQueue(async (req) => {
+    // 中文走剪贴板粘贴，粘完管家会把手机原来的剪贴板放回去；以防万一也记下来，别同步回电脑
     if (req.kind === 'text' && req.text && !isASCII(req.text)) pushed.current = req.text
     await wsRef.current.input(id, req)
   }), [id])

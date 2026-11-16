@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"github.com/zhangchedan000/prism-phone/agent/internal/docker"
+	"math/rand"
 	"strings"
 	"testing"
 )
@@ -187,5 +188,17 @@ func TestUsageShownForRunningPhones(t *testing.T) {
 		if v.ID == b.ID && v.Usage != nil {
 			t.Fatalf("关机的设备不应有占用：%+v", v.Usage)
 		}
+	}
+}
+
+func TestHumanTypeScript(t *testing.T) {
+	got := humanTypeScript("hi a'b", rand.New(rand.NewSource(1)))
+	for _, want := range []string{"input text 'h'", "input text 'i'", "input keyevent KEYCODE_SPACE", `input text ''\''`, "sleep 0."} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("缺 %q：%s", want, got)
+		}
+	}
+	if strings.Count(got, "sleep") != 5 {
+		t.Fatalf("6 个字之间应有 5 次停顿：%s", got)
 	}
 }
