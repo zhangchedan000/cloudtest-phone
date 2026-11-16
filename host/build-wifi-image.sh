@@ -102,8 +102,10 @@ for round in 1 2 3 4 5 6 7 8; do
   for f in "$B"/vendor/bin/hw/* "$B"/vendor/lib64/*.so "$B"/vendor/lib64/hw/*.so; do
     for l in $(readelf -d "$f" 2>/dev/null | sed -n 's/.*NEEDED.*\[\(.*\)\]/\1/p'); do
       have "$l" && continue
-      [ -f "$V/lib64/$l" ] || die "$l 在模拟器 vendor 里也没有（$(basename "$f") 需要）"
-      cp -a "$V/lib64/$l" "$B/vendor/lib64/"; log "  补 $l"; added=1
+      src=""
+      for d in "$V/lib64" "$V/lib64/hw"; do [ -f "$d/$l" ] && src="$d/$l" && break; done
+      [ -n "$src" ] || die "$l 在模拟器 vendor 里也没有（$(basename "$f") 需要）"
+      cp -a "$src" "$B/vendor/lib64/"; log "  补 $l"; added=1
     done
   done
   [ $added = 0 ] && break
