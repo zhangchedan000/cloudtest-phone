@@ -495,9 +495,9 @@ func disguiseProps() []string {
 		// 设备类型：Redroid 是 default（模拟器 / 通用），手机出厂多是 nosdcard。
 		"ro.build.characteristics=nosdcard",
 		// CPU 类型：Redroid 是 generic（模拟器 / 通用编译），真机写具体核心。开发机 Neoverse N1 和板子 RK3588
-		// 都是 Cortex-A76 一类，指令集一致（dotprod / fp16），ART 按 a76 编译不会出错。
-		"dalvik.vm.isa.arm64.variant=cortex-a76",
-		"ro.bionic.cpu_variant=cortex-a76",
+		// 都是 Cortex-A76 一类，指令集一致（dotprod / fp16），按 a76 编译不会出错。
+		// dalvik.vm.isa.*.variant 不是只读属性，开机参数会被 build.prop 盖回去，在开机设置里 setprop（cpuVariantProps）。
+		"ro.bionic.cpu_variant=" + cpuVariant,
 	}
 }
 
@@ -952,3 +952,9 @@ func (s *Service) removeTraces(ctx context.Context, name string) {
 		time.Sleep(time.Second)
 	}
 }
+
+// cpuVariant 开发机 / 板子 CPU 对应的核心类型（见 disguiseProps）。
+const cpuVariant = "cortex-a76"
+
+// cpuVariantProps 开机后用 setprop 改的 CPU 类型属性（只改系统里本来就有的：64 位镜像没有 arm 32 位那个）。
+var cpuVariantProps = []string{"dalvik.vm.isa.arm64.variant", "dalvik.vm.isa.arm.variant"}
