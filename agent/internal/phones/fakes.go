@@ -208,10 +208,16 @@ func (s *Service) applyFakes(ctx context.Context, id string) {
 	for _, f := range s.fakeTargets(id) {
 		targets[f.Name] = f.Target
 	}
+	// 已经挂上的不重复挂（管家重启后补做时，可能有一部分在重启前就挂好了）。
+	mounted := mountedTargets(ctx, s.run, name)
 	var applied, skipped []string
 	for _, e := range entries {
 		target, ok := targets[e.Name()]
 		if !ok {
+			continue
+		}
+		if mounted[target] {
+			applied = append(applied, target)
 			continue
 		}
 		if _, err := s.run.Run(ctx, "docker", "exec", name, "ls", target); err != nil {
@@ -273,4 +279,19 @@ func convert(in any, out any) error {
 func readHost(path string) string {
 	b, _ := os.ReadFile(path)
 	return string(b)
+}
+
+// mountedTargets 容器里当前所有挂载点（读 /proc/mounts 第 2 列）。
+func mountedTargets(ctx context.Context, run Runner, name string) map[string]bool {
+	out, err := run.Run(ctx, "docker", "exec", name, "cat", "/proc/mounts")
+	m := map[string]bool{}
+	if err != nil {
+		return m
+	}
+	for _, line := range strings.Split(out, "\n") {
+		if f := strings.Fields(line); len(f) >= 2 {
+			m[f[1]] = true
+		}
+	}
+	return m
 }

@@ -169,6 +169,10 @@ func main() {
 		_, err := apiServer.RunProxyCheck(ctx, id)
 		return err
 	})
+	// 管家重启时正在开机的手机：开机后设置 / 伪造文件会被中断，这里补做（踩坑 #45）
+	if n := svc.ResumeRunning(context.Background()); n > 0 {
+		log.Printf("补做 %d 台运行中手机的开机后设置", n)
+	}
 	if health != nil {
 		apiServer.SetNetworkHealth(func() any {
 			if l := health.Last(); l != nil {

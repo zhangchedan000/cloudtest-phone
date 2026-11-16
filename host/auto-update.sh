@@ -38,6 +38,16 @@ run() {
   if [ "$here" = "$there" ] && [ -z "$(git status --porcelain)" ] && [ "$running" = "$(git rev-parse --short=7 HEAD)" ]; then
     return 0
   fi
+  # 有手机正在开机、做开机后设置时先不更新（重启管家会打断设置，踩坑 #45）；下一轮（10 分钟后）再试。
+  # 管家没在跑 / 老版本没有 busy 字段时照常更新。
+  local listen
+  listen=$(sed -n 's/^AGENT_ARGS=.*-listen[ =]\([^ ]*\).*/\1/p' /etc/prism-phone/agent.env 2>/dev/null | head -1)
+  listen=${listen:-127.0.0.1:8099}
+  case "$listen" in 0.0.0.0:*|:*) listen="127.0.0.1:${listen##*:}" ;; esac
+  if curl -s -m 3 "http://$listen/api/health" 2>/dev/null | grep -q '"busy":true'; then
+    log "有手机正在做开机后设置，这次先不更新"
+    return 0
+  fi
   if [ -n "$(git status --porcelain)" ]; then
     git stash push -u -q -m "auto-update $(date +%F_%T)：服务器上的手改，已存起来"
     log "服务器仓库有手改，已 git stash 保存（git stash list 可以看到）"

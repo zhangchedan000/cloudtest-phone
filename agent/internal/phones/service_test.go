@@ -299,7 +299,7 @@ func TestStartMountsFakeFiles(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// 宿主机只有 4 核：只写 4 个核（都是 A55，part 0xd05），不能写出 8 个
+	// 宿主机只有 4 核：只写 4 个核（按比例 2 个 A55 + 2 个 A78），不能写出 8 个
 	if n := strings.Count(string(cpuinfo), "processor\t:"); n != 4 {
 		t.Fatalf("应该写 4 个核，实际 %d：\n%s", n, cpuinfo)
 	}

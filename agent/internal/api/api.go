@@ -149,7 +149,11 @@ func (s *Server) health(w http.ResponseWriter, _ *http.Request) {
 	if !rep.OK {
 		status = http.StatusServiceUnavailable
 	}
-	writeJSON(w, status, rep)
+	// busy：有手机正在做开机后设置，自动更新看到就先不重启管家（host/auto-update.sh）
+	writeJSON(w, status, struct {
+		selfcheck.Report
+		Busy bool `json:"busy"`
+	}{rep, s.svc != nil && s.svc.Busy()})
 }
 
 func (s *Server) host(w http.ResponseWriter, _ *http.Request) {
