@@ -33,6 +33,7 @@
 
 #define PP_SLOTS 128
 #define PP_LINE_MAX 2048
+#define PP_DROP_MAX 16 /* 每次 add 最多顺手清掉几台已关的（引用在锁外放） */
 
 struct pp_slot {
 	struct pid_namespace *ns; /* 持有引用 */
@@ -171,7 +172,7 @@ static ssize_t pp_mnt_write(struct file *file, const char __user *ubuf, size_t l
 {
 	char buf[PP_PREFIX_MAX + PP_SRC_MAX + 32];
 	char *p, *cmd, *spid, *prefix, *src;
-	struct pid_namespace *ns, *drop[PP_SLOTS + 2];
+	struct pid_namespace *ns, *drop[PP_DROP_MAX + 2];
 	struct pp_slot *s;
 	long nr;
 	int i, ndrop = 0, ret = 0;
@@ -207,7 +208,7 @@ static ssize_t pp_mnt_write(struct file *file, const char __user *ubuf, size_t l
 			goto out;
 		}
 		/* 顺手清掉已经关了的手机 */
-		for (i = 0; i < PP_SLOTS; i++)
+		for (i = 0; i < PP_SLOTS && ndrop < PP_DROP_MAX; i++)
 			if (slots[i].ns && slots[i].ns != ns && pp_ns_dead(slots[i].ns)) {
 				drop[ndrop++] = slots[i].ns;
 				slots[i].ns = NULL;
