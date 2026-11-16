@@ -296,6 +296,8 @@ func TestFingerprintPropsConsistent(t *testing.T) {
 func TestFingerprintFallbackWhenNoProfileValue(t *testing.T) {
 	// xiaomi-12t 档案没填真实指纹 → 用 Redroid 镜像真实 buildId/incremental 兜底拼一致指纹。
 	svc, _, _ := newTestService(t, true, "software")
+	m := svc.model("xiaomi-12t")
+	m.Fingerprints, m.BuildProps = nil, nil // 模拟没有真机数据的机型
 	p, _ := svc.Create(CreateRequest{Name: "A", ModelID: "xiaomi-12t", AndroidVersion: 14, ProxyID: DirectDevProxyID})
 	joined := strings.Join(svc.BootArgs(*mustPhone(t, svc, p.ID), svc.store.Snapshot()), " ")
 	wantFP := "Xiaomi/plato/plato:14/UD2A.240505.001.W1/eng.frank.20240527.152423:user/release-keys"
@@ -308,6 +310,55 @@ func TestRedroidFPS(t *testing.T) {
 	for in, want := range map[any]int{144: 120, 120: 120, 90: 90, 60: 60, float64(165): 120, "144": 120, 0: 60} {
 		if got := redroidFPS(in); got != want {
 			t.Errorf("redroidFPS(%v)=%d 应为 %d", in, got, want)
+		}
+	}
+}
+
+// 有真机分区数据（buildProps）的机型：各分区照搬真机原样，不再统一成同一个机型（踩坑 #52）。
+func TestBuildPropsUseRealPartitionLayout(t *testing.T) {
+	svc, _, _ := newTestService(t, true, "software")
+	p, _ := svc.Create(CreateRequest{Name: "A", ModelID: "xiaomi-13t", AndroidVersion: 14, ProxyID: DirectDevProxyID})
+	args := svc.BootArgs(*mustPhone(t, svc, p.ID), svc.store.Snapshot())
+	joined := " " + strings.Join(args, " ") + " "
+	for _, want := range []string{
+		"ro.build.fingerprint=Xiaomi/aristotle_global/aristotle:14/UP1A.230905.011/V816.0.2.0.UMFMIXM:user/release-keys",
+		"ro.product.system.brand=Android", "ro.product.system.model=mainline", // 小米的 system 分区是通用镜像
+		"ro.product.product.name=miproduct_aristotle_global",
+		"ro.odm.build.fingerprint=Xiaomi/aristotle_global/aristotle:12/SP1A.210812.016/V816.0.2.0.UMFMIXM:user/release-keys", // odm 停在出厂版本
+		"ro.product.vendor.model=2306EPN60G",
+	} {
+		if !strings.Contains(joined, " "+want+" ") {
+			t.Errorf("缺少真机分区属性 %q", want)
+		}
+	}
+	if strings.Contains(joined, " ro.product.system.brand=Xiaomi ") {
+		t.Error("system 分区不该被改成机型品牌（真机是 Android）")
+	}
+}
+
+// 所有机型 × 安卓版本：启动参数里同一个属性只能出现一次、不能带空格、身份属性不能残留 redroid 痕迹。
+func TestBootArgsNoDuplicateProps(t *testing.T) {
+	svc, _, _ := newTestService(t, true, "software")
+	for _, m := range svc.models {
+		for _, v := range []int{14, 15} {
+			p, err := svc.Create(CreateRequest{Name: "A", ModelID: m.ID, AndroidVersion: v, ProxyID: DirectDevProxyID})
+			if err != nil {
+				continue // 这个机型不支持这个版本
+			}
+			seen := map[string]string{}
+			for _, a := range svc.BootArgs(*mustPhone(t, svc, p.ID), svc.store.Snapshot()) {
+				k, _, _ := strings.Cut(a, "=")
+				if old, dup := seen[k]; dup {
+					t.Errorf("%s/%d：%s 重复（%q 和 %q）", m.ID, v, k, old, a)
+				}
+				seen[k] = a
+				if strings.Contains(a, " ") {
+					t.Errorf("%s/%d：参数带空格 %q", m.ID, v, a)
+				}
+				if (strings.HasPrefix(a, "ro.product.") || strings.Contains(a, ".build.")) && strings.Contains(strings.ToLower(a), "redroid") {
+					t.Errorf("%s/%d：身份属性残留 redroid：%q", m.ID, v, a)
+				}
+			}
 		}
 	}
 }

@@ -342,6 +342,13 @@ func (s *Service) BootArgs(p store.Phone, st store.State) []string {
 	if fps, ok := byKey["refreshRate"]; ok && fps != nil {
 		args = append(args, fmt.Sprintf("androidboot.redroid_fps=%d", redroidFPS(fps)))
 	}
+	// 真机分区身份（有的话）：手动 / 导入了指纹就不用（那是另一台真机的身份，不能混）。
+	var realBP map[string]string
+	if str(byKey["fingerprint"]) == "" {
+		if m := s.model(p.ModelID); m != nil {
+			realBP = m.BuildProps[fmt.Sprintf("%d", p.AndroidVersion)]
+		}
+	}
 	var props []string
 	for _, r := range resolved {
 		f, _ := s.cat.Field(r.Key)
@@ -357,6 +364,9 @@ func (s *Service) BootArgs(p store.Phone, st store.State) []string {
 			continue
 		}
 		for _, name := range f.Sink.Names {
+			if _, real := realBP[name]; real {
+				continue // 真机数据里有这个分区属性，用真机的
+			}
 			props = append(props, name+"="+val)
 		}
 	}
@@ -371,7 +381,34 @@ func (s *Service) BootArgs(p store.Phone, st store.State) []string {
 	} else if m := s.model(p.ModelID); m != nil {
 		realFP = m.Fingerprints[fmt.Sprintf("%d", p.AndroidVersion)]
 	}
-	return append(args, fingerprintProps(byKey, realFP, p.AndroidVersion)...)
+	return withBuildProps(append(args, fingerprintProps(byKey, realFP, p.AndroidVersion)...), realBP)
+}
+
+// withBuildProps 用真机的分区属性替换兜底值：fingerprintProps 里同名的去掉，真机的整套加在后面；
+// 真机数据里没有的（某些分区没有对应文件）仍保留兜底值，保证不漏 redroid 默认值。值带空格的跳过（启动参数会截断）。
+func withBuildProps(base []string, bp map[string]string) []string {
+	if len(bp) == 0 {
+		return base
+	}
+	out := make([]string, 0, len(base)+len(bp))
+	for _, kv := range base {
+		k, _, _ := strings.Cut(kv, "=")
+		if _, real := bp[k]; !real {
+			out = append(out, kv)
+		}
+	}
+	keys := make([]string, 0, len(bp))
+	for k, v := range bp {
+		// 安全补丁日期不照搬（比镜像旧会让密钥库认为补丁回退，已存的密钥失效）。
+		if v != "" && !strings.ContainsAny(v, " \t\n") && strings.HasPrefix(k, "ro.") && !strings.Contains(k, "security_patch") {
+			keys = append(keys, k)
+		}
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		out = append(out, k+"="+bp[k])
+	}
+	return out
 }
 
 // redroidBuildID 各安卓版本的 Redroid 镜像自带的 buildId / incremental（真实值，

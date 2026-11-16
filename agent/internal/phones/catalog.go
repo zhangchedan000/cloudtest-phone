@@ -44,7 +44,11 @@ type Model struct {
 	// Fingerprints 按安卓版本（"14"/"15"）存的真实 stock 指纹（从设备树/固件抠）。
 	// 必须和手机实际跑的安卓版本一致，否则指纹里的 release 和 ro.build.version.release 对不上。
 	Fingerprints map[string]string `json:"fingerprints"`
-	Raw          json.RawMessage
+	// BuildProps 按安卓版本存的真机各分区身份属性（从真实出厂 build.prop 抠，host/extract-buildprops.py，踩坑 #52）。
+	// 有就照搬真机的分区布局（system / product 分区是通用系统镜像的值，odm 指纹停在出厂版本……），
+	// 不再把 9 个分区统一改成同一个机型。
+	BuildProps map[string]map[string]string `json:"buildProps"`
+	Raw        json.RawMessage
 }
 
 func (c *Catalog) Field(key string) (Field, bool) {

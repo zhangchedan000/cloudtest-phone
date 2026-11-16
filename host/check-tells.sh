@@ -68,7 +68,9 @@ brand=$(gp ro.product.brand); model=$(gp ro.product.model); dev=$(gp ro.product.
 info "brand/model/device = ${brand}/${model}/${dev}"
 echo "$fp" | grep -q "$dev" 2>/dev/null || now "fingerprint 里不含 device=$dev，机型属性之间可能不自洽，核对一遍"
 bootimg=$(gp ro.bootimage.build.fingerprint); vendfp=$(gp ro.vendor.build.fingerprint)
-[ -n "$bootimg$vendfp" ] && { [ "$bootimg" = "$fp" ] && [ "$vendfp" = "$fp" ] || now "boot/vendor 的 fingerprint 和主 fingerprint 不一致，App 会比对（system/vendor/boot 应一致）"; }
+# 注意：真机各分区指纹本来就不一样（小米 / 联发科的 vendor、odm 指纹停在出厂安卓版本，system 是通用镜像），
+# 有真机分区数据（机型档案 buildProps）的机型照搬真机，不一致是对的（踩坑 #52）；这里只列出来看。
+info "vendor 指纹：${vendfp:-空}"; info "bootimage 指纹：${bootimg:-空}"
 # 全分区扫描：各分区的 fingerprint / build.id / product.name 不能残留 redroid / test-keys / userdebug / eng.frank
 # （system_ext / vendor_dlkm / odm_dlkm / system_dlkm 这些分区容易漏，魔云腾改机 SDK 也处理，2026-11-15 已覆盖）
 partleak=0
