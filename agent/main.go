@@ -7,6 +7,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"github.com/zhangchedan000/prism-phone/agent/internal/hostguard"
 	"io/fs"
 	"log"
 	"net/http"
@@ -50,6 +51,7 @@ func main() {
 	cpus := flag.Float64("cpus", 2, "每台容器 CPU 上限")
 	maxRunning := flag.Int("max-running", 4, "同时最多运行几台")
 	devHost := flag.Bool("dev-host", false, "开发机：允许「直连（仅开发）」代理")
+	noHostGuard := flag.Bool("no-host-guard", false, "不守宿主机内核设置（默认守：手机开机会改宿主机的 kernel.* / vm.*，踩坑 #58）")
 	noTimens := flag.Bool("no-timens", false, "不让云手机的开机时长归零（出问题时临时关掉用）")
 	noWifi := flag.Bool("no-wifi", false, "不给手机配虚拟 WiFi（手机照旧用有线 eth0）")
 	memFollow := flag.Bool("mem-follow-model", true, "每台手机的内存上限按机型（例如 8GB）；false 时用固定的 -mem-mb")
@@ -96,6 +98,14 @@ func main() {
 	}
 	cfg.DataImages = !*noDataImages && phones.DataImagesSupported()
 	cfg.MemFollowModel = *memFollow
+	// 宿主机内核设置：手机开机会改宿主机的 kernel.* / vm.*（踩坑 #58）。先改回来（kernel.modprobe 被清空时下面加载 WiFi 模块也要靠它）
+	cfg.HostGuard = !*noHostGuard && os.Geteuid() == 0
+	if cfg.HostGuard {
+		if err := hostguard.WriteConf(); err != nil {
+			log.Printf("写宿主机 sysctl 配置：%v", err)
+		}
+		hostguard.Fix()
+	}
 	// 虚拟 WiFi：宿主机准备好了（hwsim、hostapd、dnsmasq……）就开；镜像带不带 WiFi 开机时再看
 	if !*noWifi {
 		if err := wifi.HostReady(context.Background(), phones.ExecRunner()); err != nil {
@@ -168,6 +178,14 @@ func main() {
 		log.Fatal(err)
 	}
 	go svc.RunUsageSampler(context.Background(), 10*time.Second)
+	// 宿主机内核设置每 30 秒检查一次（踩坑 #58）
+	if cfg.HostGuard {
+		go func() {
+			for range time.Tick(30 * time.Second) {
+				hostguard.Fix()
+			}
+		}()
+	}
 	// 上网健康检查：每 2 分钟从每台运行中的手机试连外网（踩坑 #34 断网一个小时才被发现）
 	go svc.RunInternetChecker(context.Background(), 2*time.Minute)
 	// 电池漂移：每 3 分钟把每台手机的电量/温度推一小步，别让电池冻在一个固定值（battery.go）

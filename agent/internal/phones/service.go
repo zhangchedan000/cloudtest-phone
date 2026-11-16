@@ -50,8 +50,10 @@ type Config struct {
 	HostMemMB int64
 	Lxcfs     bool
 	// Wifi 宿主机能做虚拟 WiFi（hwsim、hostapd、dnsmasq 都在）；WifiDNS 手机 WiFi 里的 DNS 转到哪（mihomo DNS）。
-	Wifi    bool
-	WifiDNS string
+	Wifi bool
+	// HostGuard 手机开机后把被改掉的宿主机内核设置改回来（hostguard，踩坑 #58）
+	HostGuard bool
+	WifiDNS   string
 	// DataImages 新手机的 /data 用按机型容量建的 ext4 磁盘镜像（手机里看到的总容量对得上机型，storage.go）。
 	DataImages bool
 	// InitHelper 开机时长归零的启动器（管家程序自己的路径，见 timens 包）；空 = 不用（内核不支持时间命名空间）。

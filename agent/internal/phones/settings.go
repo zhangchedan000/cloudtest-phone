@@ -3,6 +3,7 @@ package phones
 import (
 	"context"
 	"fmt"
+	"github.com/zhangchedan000/prism-phone/agent/internal/hostguard"
 	"regexp"
 	"strconv"
 	"strings"
@@ -149,6 +150,9 @@ func (s *Service) applySettings(ctx context.Context, id string) {
 	if !s.waitBooted(ctx, id) {
 		s.settings.set(id, SettingsStatus{State: "failed", Error: "等开机超时或设备已关机"})
 		return
+	}
+	if s.cfg.HostGuard {
+		hostguard.Fix() // 安卓开机刚改过宿主机的 kernel.* / vm.*（踩坑 #58），马上改回
 	}
 	st := s.store.Snapshot()
 	p, err := st.Phone(id)

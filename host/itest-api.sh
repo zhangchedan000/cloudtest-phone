@@ -103,6 +103,9 @@ r=$(api GET "/phones/$ID/logs?level=W&lines=50"); ! echo "$r" | grep -q '"error"
 sleep 12
 u=$(api GET /phones | jget "[p.get('usage') for p in d if p['id']=='$ID'][0]")
 echo "$u" | grep -q memMB && ok "资源占用：$u" || bad "资源占用没采到：$u"
+# 手机开机会改宿主机的内核设置（踩坑 #58），管家要改回来
+hk="$(cat /proc/sys/kernel/modprobe) $(cat /proc/sys/kernel/panic_on_oops) $(cat /proc/sys/vm/watermark_scale_factor)"
+[ "$hk" = "/sbin/modprobe 0 10" ] && ok "宿主机内核设置没被手机改掉" || bad "宿主机内核设置被改了：modprobe/panic_on_oops/watermark = [$hk]"
 r=$(api POST "/phones/$ID/reset" '{"renew":false}'); echo "$r" | grep -q '"ok":true' && ok "一键重置" || bad "重置：$r"
 r=$(api POST "/phones/$ID/stop"); echo "$r" | grep -q '"ok":true' && ok "关机" || bad "关机：$r"
 r=$(api DELETE "/phones/$ID"); echo "$r" | grep -q '"ok":true' && ok "删除（数据进回收站）" || bad "删除：$r"
