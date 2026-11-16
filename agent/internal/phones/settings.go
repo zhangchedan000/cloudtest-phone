@@ -182,6 +182,12 @@ func (s *Service) applySettings(ctx context.Context, id string) {
 	if cur, _ := s.run.Run(ctx, "docker", "exec", name, "settings", "get", "global", "bluetooth_on"); strings.TrimSpace(cur) != "0" {
 		_, _ = s.run.Run(ctx, "docker", "exec", name, "settings", "put", "global", "bluetooth_on", "0")
 	}
+	// 剪贴板访问提示关掉（踩坑 #62）：管理页的「剪贴板自动互通」以 shell 身份读手机剪贴板，
+	// 安卓 13 起别的 App 复制的内容被 shell 读一次，屏幕上就弹「Shell 已从剪贴板粘贴」；shell 又拿不到免提示权限。
+	// 这是系统设置里用户自己能关的隐私开关（设置 → 隐私 → 显示剪贴板访问通知），顺带中文打字粘贴也不弹提示了。
+	if cur, _ := s.run.Run(ctx, "docker", "exec", name, "settings", "get", "secure", "clipboard_show_access_notifications"); strings.TrimSpace(cur) != "0" {
+		_, _ = s.run.Run(ctx, "docker", "exec", name, "settings", "put", "secure", "clipboard_show_access_notifications", "0")
+	}
 	for _, prop := range cpuVariantProps {
 		if cur, _ := s.run.Run(ctx, "docker", "exec", name, "getprop", prop); cur != "" && cur != cpuVariant {
 			_, _ = s.run.Run(ctx, "docker", "exec", name, "setprop", prop, cpuVariant)
