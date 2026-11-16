@@ -1,6 +1,6 @@
 import { App } from 'antd'
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { getClipboard, setClipboard } from '@/data/api'
+import { getClipboard } from '@/data/api'
 import { useWorkspace } from '@/data/store'
 import { comboNames, keyNames, KeyQueue } from './keyboardBridge'
 
@@ -86,7 +86,7 @@ export function KeyboardInput({ id, enabled, children }: { id: string; enabled: 
           if (!text) return
           pushed.current = text
           void queue.then(async () => {
-            try { await setClipboard(id, text, true) } catch (error) { message.error((error as Error).message) }
+            await wsRef.current.paste(id, text)
           })
         }}
       />

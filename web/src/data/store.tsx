@@ -1,6 +1,7 @@
 import { App } from 'antd'
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
-import { api, ApiError, LOCAL, rememberPhoneServer, saveToken, savedToken, setRemoteServers, writeTokenCookie, type HostInfo, type InputRequest, type ServerRef } from './api'
+import { api, ApiError, LOCAL, rememberPhoneServer, saveToken, savedToken, setClipboard, setRemoteServers, writeTokenCookie, type HostInfo, type InputRequest, type ServerRef } from './api'
+import { scaleInput, screenOf } from './groupControl'
 import { models } from './catalog'
 import { checkPhone, type Issue } from './consistency'
 import * as mock from './mock'
@@ -45,6 +46,11 @@ interface Workspace {
   removeGroup: (id: string, serverId?: string) => Promise<void>
   importProxies: (req: { url?: string; text?: string; note?: string }, serverId?: string) => Promise<{ added: number; duplicates: number; skipped?: string[] }>
   input: (id: string, req: InputRequest) => Promise<void>
+  /** 粘贴文字到手机当前输入框（群控时其他手机一起粘贴）。 */
+  paste: (id: string, text: string) => Promise<void>
+  /** 群控：主控手机 → 跟着做的手机。 */
+  followers: Record<string, string[]>
+  setFollowers: (id: string, ids: string[]) => void
   login: (token: string) => Promise<void>
   refresh: () => Promise<void>
 }
@@ -74,6 +80,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [groups, setGroups] = useState<Group[]>([])
   const [hosts, setHosts] = useState<Host[]>([])
   const [servers, setServers] = useState<ServerRef[]>([])
+  const [followers, setFollowersState] = useState<Record<string, string[]>>({})
 
   const load = useCallback(async () => {
     try {
@@ -233,8 +240,26 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       },
       input: async (id, req) => {
         if (!live) return
+        const lead = phones.find((p) => p.id === id)
+        const from = screenOf(lead && modelOf(lead)?.values)
+        const others = (followers[id] ?? []).flatMap((fid) => {
+          const f = phones.find((p) => p.id === fid && p.status === 'running')
+          return f ? [api.input(fid, scaleInput(req, from, screenOf(modelOf(f)?.values))).then(() => true, () => false)] : []
+        })
         try { await api.input(id, req) } catch (error) { message.error((error as Error).message) }
+        const ok = await Promise.all(others)
+        if (ok.includes(false)) message.warning({ content: `群控：${ok.filter((x) => !x).length} 台没跟上`, key: 'pp-follow' })
       },
+      paste: async (id, text) => {
+        if (!live) return
+        const others = (followers[id] ?? []).filter((fid) => phones.some((p) => p.id === fid && p.status === 'running'))
+          .map((fid) => setClipboard(fid, text, true).then(() => true, () => false))
+        try { await setClipboard(id, text, true) } catch (error) { message.error((error as Error).message) }
+        const ok = await Promise.all(others)
+        if (ok.includes(false)) message.warning({ content: `群控：${ok.filter((x) => !x).length} 台没跟上`, key: 'pp-follow' })
+      },
+      followers,
+      setFollowers: (id, ids) => setFollowersState((m) => ({ ...m, [id]: ids.filter((x) => x !== id) })),
       login: async (token) => {
         saveToken(token)
         writeTokenCookie(token)
@@ -242,7 +267,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       },
       refresh: load
     }
-  }, [mode, phones, proxies, groups, hosts, servers, modelOf, proxyOf, hostOf, groupOf, issuesOf, load, message])
+  }, [mode, phones, proxies, groups, hosts, servers, followers, modelOf, proxyOf, hostOf, groupOf, issuesOf, load, message])
 
   return <WorkspaceContext.Provider value={value}>{children}</WorkspaceContext.Provider>
 }

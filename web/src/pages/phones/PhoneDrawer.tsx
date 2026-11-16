@@ -2,7 +2,7 @@ import {
   AppstoreAddOutlined, ArrowLeftOutlined, BorderOutlined, CameraOutlined, CodeOutlined, CopyOutlined, EditOutlined, HomeOutlined, MoreOutlined,
   PoweroffOutlined, RedoOutlined, RotateRightOutlined, SoundOutlined, UploadOutlined, VideoCameraOutlined
 } from '@ant-design/icons'
-import { App, Button, Descriptions, Drawer, Dropdown, Input, Modal, Space, Switch, Tabs, Tooltip } from 'antd'
+import { App, Button, Descriptions, Drawer, Dropdown, Input, Modal, Popover, Select, Space, Switch, Tabs, Tooltip } from 'antd'
 import { getClipboard, openRawScreenshot, serverUrl, setClipboard, upload, type InputRequest } from '@/data/api'
 import { useRef, useState } from 'react'
 import { PhoneScreen } from '@/components/PhoneScreen'
@@ -97,7 +97,25 @@ export function PhoneDrawer({ phone, mode = 'view', onClose, onEdit, bare = fals
   ]
 
   const title = <Space size={10}>{mode === 'edit' && <span className="pp-muted">编辑</span>}<b>{live.name}</b><StatusDot status={live.status} />{mode === 'edit' && <span className="pp-muted">{String(model?.values.marketName ?? '')} · Android {live.androidVersion}</span>}</Space>
+  const followers = ws.followers[live.id] ?? []
+  const others = ws.phones.filter((p) => p.id !== live.id)
+  const groupPicker = (
+    <div style={{ width: 300 }}>
+      <p className="pp-small pp-muted" style={{ marginTop: 0 }}>在这个窗口里的点击、滑动、按键、打字、粘贴，下面选中的手机会同时跟着做（不同分辨率按比例换算）。只对开着的手机生效。</p>
+      <Select mode="multiple" style={{ width: '100%' }} placeholder="选要跟着做的手机" value={followers} allowClear
+        options={others.map((p) => ({ value: p.id, label: `${p.name}${p.status === 'running' ? '' : '（没开机）'}` }))}
+        onChange={(ids: string[]) => ws.setFollowers(live.id, ids)} />
+      <Space style={{ marginTop: 8 }}>
+        <Button size="small" onClick={() => ws.setFollowers(live.id, others.filter((p) => p.status === 'running').map((p) => p.id))}>全部开着的</Button>
+        {live.groupId && <Button size="small" onClick={() => ws.setFollowers(live.id, others.filter((p) => p.groupId === live.groupId && p.status === 'running').map((p) => p.id))}>同组开着的</Button>}
+        <Button size="small" onClick={() => ws.setFollowers(live.id, [])}>停止群控</Button>
+      </Space>
+    </div>
+  )
   const extra = (<Space size={6}>
+          {mode === 'view' && liveMode && <Popover trigger="click" placement="bottomRight" title="群控（一控多）" content={groupPicker}>
+            <Button type={followers.length ? 'primary' : 'default'}>{followers.length ? `群控中 ${followers.length} 台` : '群控'}</Button>
+          </Popover>}
           {mode === 'view' && onEdit && <Button icon={<EditOutlined />} onClick={onEdit}>编辑</Button>}
           {running || live.status === 'starting'
             ? <Button danger icon={<PoweroffOutlined />} onClick={() => ws.setStatus([live.id], 'stopped')}>关机</Button>
