@@ -41,7 +41,7 @@ func SetupPowerSupply(b Battery) error {
 		return err
 	}
 	if PowerSupplyDir == "/sys/class/power_supply" {
-		if err := syscall.Mount("tmpfs", PowerSupplyDir, "tmpfs", syscall.MS_NOSUID|syscall.MS_NODEV|syscall.MS_NOEXEC, "mode=755,size=64k"); err != nil {
+		if err := syscall.Mount("tmpfs", PowerSupplyDir, "tmpfs", syscall.MS_NOSUID|syscall.MS_NODEV|syscall.MS_NOEXEC, "mode=755,size=1m"); err != nil {
 			return fmt.Errorf("挂 tmpfs：%w", err)
 		}
 	}
