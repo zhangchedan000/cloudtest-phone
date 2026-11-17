@@ -202,7 +202,29 @@ static int pp_rewrite_mountinfo(const char *in, int len, char *out, int max, con
 	return -1;
 }
 
-/* /proc/mounts：来源 挂载点 类型 选项 0 0（没有 root 列，靠挂载点判断是不是 /data） */
+/* /proc/mounts 和 mountstats 没有 root 列，只能按「来源 + 挂载点 + 类型」判断 */
+enum { PP_KEEP, PP_DROP, PP_SYS, PP_DATA };
+
+static int pp_classify(struct pp_tok src, struct pp_tok mnt, struct pp_tok fstype, const struct pp_cfg *c)
+{
+	if (pp_always_drop(fstype, mnt))
+		return PP_DROP;
+	if (pp_eq(fstype, "overlay"))
+		return PP_SYS;
+	if (c->src[0] && pp_eq(src, c->src)) {
+		/* 同一块盘上挂到系统目录的是管家伪造的文件（cpuinfo、build.prop…）：删；其余是 /data 的各种 bind（/storage 等）：改 */
+		if (pp_starts(mnt, "/proc/") || pp_starts(mnt, "/sys/") || pp_starts(mnt, "/system/") ||
+		    pp_starts(mnt, "/etc/") || pp_starts(mnt, "/vendor/") || pp_starts(mnt, "/dev/") ||
+		    pp_starts(mnt, "/product/") || pp_starts(mnt, "/odm/"))
+			return PP_DROP;
+		return PP_DATA;
+	}
+	if (pp_host_dev(src))
+		return PP_DROP;
+	return PP_KEEP;
+}
+
+/* /proc/mounts：来源 挂载点 类型 选项 0 0 */
 static int pp_rewrite_mounts(const char *in, int len, char *out, int max, const struct pp_cfg *c)
 {
 	struct pp_tok t[8];
@@ -211,20 +233,15 @@ static int pp_rewrite_mounts(const char *in, int len, char *out, int max, const 
 
 	if (k < 4)
 		return -1;
-	if (pp_always_drop(t[2], t[1]))
+	switch (pp_classify(t[0], t[1], t[2], c)) {
+	case PP_DROP:
 		return 0;
-	if (pp_eq(t[2], "overlay")) {
+	case PP_SYS:
 		pp_puts(&o, PP_SYS_DEV " ");
 		pp_putt(&o, t[1]);
 		pp_puts(&o, " ext4 " PP_SYS_OPTS " 0 0\n");
 		return o.bad ? -1 : o.n;
-	}
-	if (c->src[0] && pp_eq(t[0], c->src)) {
-		/* 同一块盘上挂到系统目录的是管家伪造的文件（cpuinfo、build.prop…）：删；其余是 /data 的各种 bind（/storage 等）：改 */
-		if (pp_starts(t[1], "/proc/") || pp_starts(t[1], "/sys/") || pp_starts(t[1], "/system/") ||
-		    pp_starts(t[1], "/etc/") || pp_starts(t[1], "/vendor/") || pp_starts(t[1], "/dev/") ||
-		    pp_starts(t[1], "/product/") || pp_starts(t[1], "/odm/"))
-			return 0;
+	case PP_DATA:
 		pp_puts(&o, PP_DATA_DEV " ");
 		pp_putt(&o, t[1]);
 		pp_puts(&o, " ");
@@ -232,14 +249,50 @@ static int pp_rewrite_mounts(const char *in, int len, char *out, int max, const 
 		pp_puts(&o, " " PP_DATA_OPTS " 0 0\n");
 		return o.bad ? -1 : o.n;
 	}
-	if (pp_host_dev(t[0]))
-		return 0;
 	return -1;
 }
 
-static int pp_rewrite(const char *in, int len, char *out, int max, int mi, const struct pp_cfg *c)
+/* /proc/<pid>/mountstats：device 来源 mounted on 挂载点 with fstype 类型[ 统计…]（nfs 等会多几行，这里只有本地盘） */
+static int pp_rewrite_mountstats(const char *in, int len, char *out, int max, const struct pp_cfg *c)
 {
-	return mi ? pp_rewrite_mountinfo(in, len, out, max, c) : pp_rewrite_mounts(in, len, out, max, c);
+	struct pp_tok t[8];
+	struct pp_out o = { out, 0, max, 0 };
+	int k = pp_split(in, len, t, 8), cls;
+
+	if (k < 8 || !pp_eq(t[0], "device") || !pp_eq(t[2], "mounted") || !pp_eq(t[5], "with") || !pp_eq(t[6], "fstype"))
+		return -1;
+	cls = pp_classify(t[1], t[4], t[7], c);
+	if (cls == PP_DROP)
+		return 0;
+	if (cls == PP_KEEP)
+		return -1;
+	pp_puts(&o, "device ");
+	pp_puts(&o, cls == PP_SYS ? PP_SYS_DEV : PP_DATA_DEV);
+	pp_puts(&o, " mounted on ");
+	pp_putt(&o, t[4]);
+	pp_puts(&o, " with fstype ");
+	if (cls == PP_SYS)
+		pp_puts(&o, "ext4");
+	else
+		pp_putt(&o, t[7]);
+	pp_puts(&o, "\n");
+	return o.bad ? -1 : o.n;
+}
+
+/* mode：PP_MOUNTS / PP_MOUNTINFO / PP_MOUNTSTATS */
+#define PP_MOUNTS 0
+#define PP_MOUNTINFO 1
+#define PP_MOUNTSTATS 2
+
+static int pp_rewrite(const char *in, int len, char *out, int max, int mode, const struct pp_cfg *c)
+{
+	switch (mode) {
+	case PP_MOUNTINFO:
+		return pp_rewrite_mountinfo(in, len, out, max, c);
+	case PP_MOUNTSTATS:
+		return pp_rewrite_mountstats(in, len, out, max, c);
+	}
+	return pp_rewrite_mounts(in, len, out, max, c);
 }
 
 #endif

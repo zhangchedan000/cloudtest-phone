@@ -6,10 +6,10 @@
  * （lowerdir=/var/lib/containerd/...）、宿主机目录（/opt/prism-phone/...）、Docker 塞的 resolv.conf 等——一眼就是容器。
  * 容器里用 bind 遮不住（/proc/mounts 是链接，各进程读各自的），只能在内核里改。
  *
- * 做法：kretprobe 挂在内核输出这两个文件每一行的函数（show_mountinfo / show_vfsmnt）上。进入时记下这一行在
+ * 做法：kretprobe 挂在内核输出这几个文件每一行的函数（show_mountinfo / show_vfsmnt / show_vfsstat）上。进入时记下这一行在
  * seq_file 缓冲区里的起点；返回时如果读的进程属于登记过的云手机（按 PID 命名空间认：安卓给每个 App 单开挂载命名空间，
  * 但不开 PID 命名空间，容器里所有进程都在同一个），就按 rewrite.h 的规则改写 / 删掉刚输出的这一行。
- * 只改读到的文字，不动真实的挂载；宿主机和别的容器读到的不变。
+ * 只改读到的文字，不动真实的挂载；宿主机和别的容器读到的不变。另外 statfs() 返回的 overlay 类型号改成 ext4（和挂载表一致）。
  *
  * 管家开机后写 /proc/pp_mnt（只有 root 能写）：
  *     add <容器 init 的 pid>|<这台手机 /data 在宿主机上的目录>|<那块盘在挂载表里的名字，如 /dev/sda1>
@@ -28,6 +28,7 @@
 #include <linux/spinlock.h>
 #include <linux/percpu.h>
 #include <linux/string.h>
+#include <linux/statfs.h>
 
 #include "rewrite.h"
 
@@ -92,7 +93,7 @@ static int pp_entry(struct kretprobe_instance *ri, struct pt_regs *regs)
 	return d->m ? 0 : 1;
 }
 
-static void pp_done(struct kretprobe_instance *ri, int mi)
+static void pp_done(struct kretprobe_instance *ri, int mode)
 {
 	struct pp_ri *d = (struct pp_ri *)ri->data;
 	struct seq_file *m = d->m;
@@ -107,7 +108,7 @@ static void pp_done(struct kretprobe_instance *ri, int mi)
 	read_lock(&slots_lock);
 	s = pp_find(task_active_pid_ns(current));
 	if (s)
-		n = pp_rewrite(m->buf + d->start, (int)(m->count - d->start), out, PP_LINE_MAX, mi, &s->cfg);
+		n = pp_rewrite(m->buf + d->start, (int)(m->count - d->start), out, PP_LINE_MAX, mode, &s->cfg);
 	read_unlock(&slots_lock);
 	if (n < 0)
 		return;
@@ -121,13 +122,56 @@ static void pp_done(struct kretprobe_instance *ri, int mi)
 
 static int pp_ret_mountinfo(struct kretprobe_instance *ri, struct pt_regs *regs)
 {
-	pp_done(ri, 1);
+	pp_done(ri, PP_MOUNTINFO);
 	return 0;
 }
 
 static int pp_ret_mounts(struct kretprobe_instance *ri, struct pt_regs *regs)
 {
-	pp_done(ri, 0);
+	pp_done(ri, PP_MOUNTS);
+	return 0;
+}
+
+static int pp_ret_mountstats(struct kretprobe_instance *ri, struct pt_regs *regs)
+{
+	pp_done(ri, PP_MOUNTSTATS);
+	return 0;
+}
+
+/*
+ * statfs()/fstatfs()：根目录、/apex 等是 overlay，返回的文件系统类型号是 OVERLAYFS_SUPER_MAGIC，
+ * 和改写后挂载表说的 ext4 对不上。vfs_statfs 返回后把这个类型号改成 ext4 的（只改登记过的手机里的进程）。
+ */
+#define PP_OVERLAYFS_MAGIC 0x794c7630
+#define PP_EXT4_MAGIC 0xEF53
+
+struct pp_sf {
+	struct kstatfs *buf;
+};
+
+static int pp_statfs_entry(struct kretprobe_instance *ri, struct pt_regs *regs)
+{
+	struct pp_sf *d = (struct pp_sf *)ri->data;
+	struct pid_namespace *ns = task_active_pid_ns(current);
+	bool hit;
+
+	if (!ns || ns == &init_pid_ns)
+		return 1;
+	read_lock(&slots_lock);
+	hit = pp_find(ns) != NULL;
+	read_unlock(&slots_lock);
+	if (!hit)
+		return 1;
+	d->buf = (struct kstatfs *)regs_get_kernel_argument(regs, 1);
+	return d->buf ? 0 : 1;
+}
+
+static int pp_statfs_ret(struct kretprobe_instance *ri, struct pt_regs *regs)
+{
+	struct pp_sf *d = (struct pp_sf *)ri->data;
+
+	if (regs_return_value(regs) == 0 && d->buf && d->buf->f_type == PP_OVERLAYFS_MAGIC)
+		d->buf->f_type = PP_EXT4_MAGIC;
 	return 0;
 }
 
@@ -146,6 +190,24 @@ static struct kretprobe rp_mounts = {
 	.data_size = sizeof(struct pp_ri),
 	.maxactive = 64,
 };
+
+static struct kretprobe rp_mountstats = {
+	.kp.symbol_name = "show_vfsstat",
+	.entry_handler = pp_entry,
+	.handler = pp_ret_mountstats,
+	.data_size = sizeof(struct pp_ri),
+	.maxactive = 64,
+};
+
+static struct kretprobe rp_statfs = {
+	.kp.symbol_name = "vfs_statfs",
+	.entry_handler = pp_statfs_entry,
+	.handler = pp_statfs_ret,
+	.data_size = sizeof(struct pp_sf),
+	.maxactive = 128,
+};
+
+static struct kretprobe *probes[] = { &rp_mountinfo, &rp_mounts, &rp_mountstats, &rp_statfs };
 
 /* ---------- /proc/pp_mnt ---------- */
 
@@ -279,21 +341,15 @@ static int __init pp_mnt_init(void)
 {
 	int ret;
 
-	ret = register_kretprobe(&rp_mountinfo);
+	/* 全挂上或全不挂 */
+	ret = register_kretprobes(probes, ARRAY_SIZE(probes));
 	if (ret) {
-		pr_err("pp_mnt: 挂 show_mountinfo 失败 %d\n", ret);
-		return ret;
-	}
-	ret = register_kretprobe(&rp_mounts);
-	if (ret) {
-		pr_err("pp_mnt: 挂 show_vfsmnt 失败 %d\n", ret);
-		unregister_kretprobe(&rp_mountinfo);
+		pr_err("pp_mnt: 挂内核函数失败 %d（show_mountinfo / show_vfsmnt / show_vfsstat / vfs_statfs）\n", ret);
 		return ret;
 	}
 	entry = proc_create("pp_mnt", 0600, NULL, &pp_mnt_ops);
 	if (!entry) {
-		unregister_kretprobe(&rp_mounts);
-		unregister_kretprobe(&rp_mountinfo);
+		unregister_kretprobes(probes, ARRAY_SIZE(probes));
 		return -ENOMEM;
 	}
 	return 0;
@@ -304,8 +360,7 @@ static void __exit pp_mnt_exit(void)
 	int i;
 
 	proc_remove(entry);
-	unregister_kretprobe(&rp_mounts);
-	unregister_kretprobe(&rp_mountinfo);
+	unregister_kretprobes(probes, ARRAY_SIZE(probes));
 	for (i = 0; i < PP_SLOTS; i++)
 		if (slots[i].ns) {
 			put_pid_ns(slots[i].ns);

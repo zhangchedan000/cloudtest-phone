@@ -76,6 +76,15 @@ int main(void)
 	check(0, "shm /dev/shm tmpfs rw,nosuid 0 0\n", "");
 	check(0, "proc /proc proc rw,relatime 0 0\n", "proc /proc proc rw,relatime 0 0\n");
 
+	/* mountstats */
+	check(2, "device overlay mounted on / with fstype overlay\n", "device /dev/block/dm-0 mounted on / with fstype ext4\n");
+	check(2, "device /dev/sda1 mounted on /data with fstype ext4\n", "device /dev/block/dm-34 mounted on /data with fstype ext4\n");
+	check(2, "device /dev/sda1 mounted on /proc/cpuinfo with fstype ext4\n", "");
+	check(2, "device lxcfs mounted on /proc/meminfo with fstype fuse.lxcfs\n", "");
+	check(2, "device mqueue mounted on /dev/mqueue with fstype mqueue\n", "");
+	check(2, "device proc mounted on /proc with fstype proc\n", "device proc mounted on /proc with fstype proc\n");
+	check(2, "device /dev/fuse mounted on /storage/emulated with fstype fuse\n", "device /dev/fuse mounted on /storage/emulated with fstype fuse\n");
+
 	/* 磁盘镜像的手机：/data 是整块 /dev/loop5，build.prop 在另一块盘 /dev/sda1 */
 	{
 		static const struct pp_cfg c = { "/", "/dev/loop5" };
