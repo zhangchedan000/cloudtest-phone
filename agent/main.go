@@ -167,6 +167,7 @@ func main() {
 			}
 			return nil
 		})
+		svc.SetConnectionCloser(net.CloseConnections)
 	} else {
 		log.Printf("网络模块没开（-mihomo-api 为空）：云手机直接用宿主机网络，只能用来开发测试")
 	}

@@ -60,6 +60,12 @@ func (s *Service) SwitchProxy(ctx context.Context, id, proxyID string) (ProxySwi
 	if err != nil {
 		return res, nil
 	}
+	// 已经建好的连接还挂在老节点上（mihomo 只把新连接按新规则走）：全部断开，让 App 用新节点重连（踩坑 #70）
+	if s.closeConns != nil && p.IP != "" {
+		if _, err := s.closeConns(ctx, p.IP); err != nil && res.Warning == "" {
+			res.Warning = "老连接没断开（正在用的 App 可能还走老节点，重开一下 App）：" + err.Error()
+		}
+	}
 	for _, r := range s.resolve(*p, st) {
 		if r.Key != "timezone" || r.Value == nil {
 			continue

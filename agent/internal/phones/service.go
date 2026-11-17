@@ -90,6 +90,8 @@ type Service struct {
 	settings settingsTracker
 	// netGuard 网络模块开着时检查这台设备有没有出口；返回错误就禁止开机（绝不走宿主机网络）。
 	netGuard func(id string) error
+	// closeConns 断开某个来源 IP 的所有代理连接（切换代理后让长连接改走新节点，踩坑 #70）
+	closeConns func(ctx context.Context, ip string) (int, error)
 	// proxyChecker 检测代理出口（时区 / 语言跟随代理要用），见 proxyauto.go。
 	proxyChecker func(ctx context.Context, proxyID string) error
 	fakes        fakeTracker
@@ -105,6 +107,11 @@ func NewService(cfg Config, d Docker, st *store.Store, cat *Catalog, models []Mo
 
 // SetNetworkGuard 接上网络模块（mihomo）的开机前检查。
 func (s *Service) SetNetworkGuard(fn func(id string) error) { s.netGuard = fn }
+
+// SetConnectionCloser 网络模块断开某台手机所有连接的函数（main 里接 network.Syncer.CloseConnections）。
+func (s *Service) SetConnectionCloser(fn func(ctx context.Context, ip string) (int, error)) {
+	s.closeConns = fn
+}
 
 // NetworkEnabled 网络模块（mihomo）开没开。没开时云手机直接用宿主机网络，只适合开发测试。
 func (s *Service) NetworkEnabled() bool { return s.netGuard != nil }

@@ -104,3 +104,54 @@ func (s *Syncer) reload(ctx context.Context) error {
 	}
 	return nil
 }
+
+// CloseConnections 断开某台手机（按来源 IP）现在开着的所有连接（mihomo 控制接口 GET / DELETE /connections）。
+// 切换代理后用：mihomo 只把新连接按新规则分流，已经建好的长连接（谷歌登录页、推送等）还挂在老节点上，
+// 同一次登录里出现两个出口 IP，网站会当成可疑（踩坑 #70）。断开后 App 会用新节点重连。返回断开了几条。
+func (s *Syncer) CloseConnections(ctx context.Context, srcIP string) (int, error) {
+	if s.Opt.APIListen == "" || srcIP == "" {
+		return 0, nil
+	}
+	client := s.Client
+	if client == nil {
+		client = &http.Client{Timeout: 10 * time.Second}
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+s.Opt.APIListen+"/connections", nil)
+	if err != nil {
+		return 0, err
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return 0, fmt.Errorf("网络模块（mihomo）没在运行：%w", err)
+	}
+	var list struct {
+		Connections []struct {
+			ID       string `json:"id"`
+			Metadata struct {
+				SourceIP string `json:"sourceIP"`
+			} `json:"metadata"`
+		} `json:"connections"`
+	}
+	err = json.NewDecoder(resp.Body).Decode(&list)
+	resp.Body.Close()
+	if err != nil {
+		return 0, fmt.Errorf("读连接列表：%w", err)
+	}
+	n := 0
+	for _, c := range list.Connections {
+		if c.Metadata.SourceIP != srcIP || c.ID == "" {
+			continue
+		}
+		del, err := http.NewRequestWithContext(ctx, http.MethodDelete, "http://"+s.Opt.APIListen+"/connections/"+c.ID, nil)
+		if err != nil {
+			continue
+		}
+		if r, err := client.Do(del); err == nil {
+			r.Body.Close()
+			if r.StatusCode < 300 {
+				n++
+			}
+		}
+	}
+	return n, nil
+}
