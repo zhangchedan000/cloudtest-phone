@@ -83,3 +83,60 @@ func TestSimIO(t *testing.T) {
 		t.Fatalf("没有的文件：%s", got)
 	}
 }
+
+// 运营商表：每一家 MCC 3 位、MNC 2~3 位、国际区号是数字；生成的 IMSI 15 位、ICCID 19~20 位、开头对得上。
+func TestCarriersWellFormed(t *testing.T) {
+	isDigits := func(s string) bool {
+		for _, c := range s {
+			if c < '0' || c > '9' {
+				return false
+			}
+		}
+		return s != ""
+	}
+	for country, list := range carriers {
+		for _, c := range list {
+			if len(c.MCC) != 3 || len(c.MNC) < 2 || len(c.MNC) > 3 || !isDigits(c.MCC+c.MNC+c.ICCIDCountry) || c.Long == "" {
+				t.Fatalf("%s %+v 格式不对", country, c)
+			}
+		}
+		for seed := int64(0); seed < 20; seed++ {
+			s := Pick(country, "", seed)
+			if s.Absent || len(s.IMSI) != 15 || !strings.HasPrefix(s.IMSI, s.MCC+s.MNC) || len(s.IMEI) != 15 || len(s.ICCID) < 19 {
+				t.Fatalf("%s：%+v", country, s)
+			}
+		}
+	}
+	for _, c := range []string{"MX", "KR", "FR", "TH", "BR", "AU"} {
+		if carriers[c] == nil {
+			t.Fatalf("热门国家 %s 没有运营商", c)
+		}
+	}
+}
+
+// 不在表里的国家：没插卡（不能随便塞香港的卡）
+func TestAbsentSIM(t *testing.T) {
+	s := Pick("ZZ", "", 1)
+	if !s.Absent || s.IMSI != "" || len(s.IMEI) != 15 {
+		t.Fatalf("%+v", s)
+	}
+	if s2 := Pick("", "", 1); !s2.Absent {
+		t.Fatal("代理还没检测出国家时也当没插卡")
+	}
+	var out strings.Builder
+	m := New(s, &out)
+	cases := map[string]string{
+		"AT+CPIN?":          "+CME ERROR: 10",
+		"AT+CIMI":           "+CME ERROR: 10",
+		`AT+CLCK="SC",2,""`: "+CME ERROR: 10",
+		"AT+CREG?":          "+CREG: 2,0|OK",
+		"AT+COPS?":          "+COPS: 0|OK",
+		"AT+CGSN":           s.IMEI + "|OK",
+		"AT+CFUN?":          "+CFUN: 1|OK",
+	}
+	for cmd, want := range cases {
+		if got := strings.Join(m.Handle(cmd), "|"); got != want {
+			t.Fatalf("%s → %q，想要 %q", cmd, got, want)
+		}
+	}
+}

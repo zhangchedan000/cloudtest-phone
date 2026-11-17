@@ -55,6 +55,108 @@ var carriers = map[string][]Carrier{
 		{"Maxis", "Maxis", "Maxis", "502", "12", "60"},
 		{"CelcomDigi", "CelcomDigi", "CelcomDigi", "502", "13", "60"},
 	},
+	// 2026-11-17 补热门国家（用户：主要就是几个热门国家，都要做）。MCC/MNC 是各家公开的真实值；
+	// 美洲常见 3 位 MNC（墨西哥、加拿大），EF_AD 里按位数写（sim.go）。
+	"KR": {
+		{"SK Telecom", "SKTelecom", "SKTelecom", "450", "05", "82"},
+		{"KT", "olleh", "KT", "450", "08", "82"},
+		{"LG U+", "LG U+", "LG U+", "450", "06", "82"},
+	},
+	"MX": {
+		{"TELCEL", "TELCEL", "TELCEL", "334", "020", "52"},
+		{"AT&T MX", "AT&T", "AT&T", "334", "090", "52"},
+		{"Movistar", "Movistar", "Movistar", "334", "030", "52"},
+	},
+	"CA": {
+		{"Rogers Wireless", "Rogers", "Rogers", "302", "720", "1"},
+		{"Bell", "Bell", "Bell", "302", "610", "1"},
+		{"TELUS", "TELUS", "TELUS", "302", "220", "1"},
+	},
+	"AU": {
+		{"Telstra", "Telstra", "Telstra", "505", "01", "61"},
+		{"Optus", "Optus", "Optus", "505", "02", "61"},
+		{"vodafone AU", "vodafone", "vodafone AU", "505", "03", "61"},
+	},
+	"NZ": {
+		{"One NZ", "One NZ", "One NZ", "530", "01", "64"},
+		{"Spark NZ", "Spark", "Spark NZ", "530", "05", "64"},
+		{"2degrees", "2degrees", "2degrees", "530", "24", "64"},
+	},
+	"FR": {
+		{"Orange F", "Orange", "Orange F", "208", "01", "33"},
+		{"SFR", "SFR", "SFR", "208", "10", "33"},
+		{"Bouygues Telecom", "BYTEL", "Bouygues Telecom", "208", "20", "33"},
+		{"Free", "Free", "Free", "208", "15", "33"},
+	},
+	"IT": {
+		{"TIM", "TIM", "TIM", "222", "01", "39"},
+		{"vodafone IT", "vodafone", "vodafone IT", "222", "10", "39"},
+		{"WINDTRE", "WINDTRE", "WINDTRE", "222", "88", "39"},
+	},
+	"ES": {
+		{"Movistar", "Movistar", "Movistar", "214", "07", "34"},
+		{"vodafone ES", "vodafone", "vodafone ES", "214", "01", "34"},
+		{"Orange", "Orange", "Orange", "214", "03", "34"},
+	},
+	"NL": {
+		{"KPN", "KPN", "KPN", "204", "08", "31"},
+		{"vodafone NL", "vodafone", "vodafone NL", "204", "04", "31"},
+		{"Odido", "Odido", "Odido", "204", "16", "31"},
+	},
+	"PL": {
+		{"Plus", "Plus", "Plus", "260", "01", "48"},
+		{"T-Mobile.pl", "T-Mobile", "T-Mobile.pl", "260", "02", "48"},
+		{"Orange", "Orange", "Orange", "260", "03", "48"},
+		{"Play", "Play", "Play", "260", "06", "48"},
+	},
+	"TR": {
+		{"Turkcell", "Turkcell", "Turkcell", "286", "01", "90"},
+		{"Vodafone TR", "Vodafone", "Vodafone TR", "286", "02", "90"},
+		{"Turk Telekom", "TT", "Turk Telekom", "286", "03", "90"},
+	},
+	"BR": {
+		{"VIVO", "VIVO", "VIVO", "724", "10", "55"},
+		{"Claro BR", "Claro", "Claro BR", "724", "05", "55"},
+		{"TIM BRASIL", "TIM", "TIM BRASIL", "724", "04", "55"},
+	},
+	"TH": {
+		{"AIS", "AIS", "AIS", "520", "03", "66"},
+		{"TRUE-H", "TRUE-H", "TRUE-H", "520", "04", "66"},
+		{"dtac", "dtac", "dtac", "520", "05", "66"},
+	},
+	"VN": {
+		{"Viettel Mobile", "Viettel", "Viettel", "452", "04", "84"},
+		{"VINAPHONE", "VINAPHONE", "VINAPHONE", "452", "02", "84"},
+		{"MOBIFONE", "MOBIFONE", "MOBIFONE", "452", "01", "84"},
+	},
+	"ID": {
+		{"TELKOMSEL", "TSEL", "TELKOMSEL", "510", "10", "62"},
+		{"INDOSAT", "IM3", "INDOSAT", "510", "01", "62"},
+		{"XL Axiata", "XL", "XL", "510", "11", "62"},
+	},
+	"PH": {
+		{"Globe Telecom", "Globe", "Globe", "515", "02", "63"},
+		{"SMART", "SMART", "SMART", "515", "03", "63"},
+		{"DITO", "DITO", "DITO", "515", "66", "63"},
+	},
+	"AE": {
+		{"Etisalat", "etisalat", "Etisalat", "424", "02", "971"},
+		{"du", "du", "du", "424", "03", "971"},
+	},
+	"SA": {
+		{"STC", "STC", "STC", "420", "01", "966"},
+		{"Mobily", "Mobily", "Mobily", "420", "03", "966"},
+		{"Zain SA", "Zain", "Zain SA", "420", "04", "966"},
+	},
+	"CN": {
+		{"CHINA MOBILE", "CMCC", "中国移动", "460", "00", "86"},
+		{"CHN-UNICOM", "UNICOM", "中国联通", "460", "01", "86"},
+		{"CHINA TELECOM", "CTCC", "中国电信", "460", "11", "86"},
+	},
+	"MO": {
+		{"CTM", "CTM", "CTM", "455", "01", "853"},
+		{"3 Macau", "3", "3", "455", "03", "853"},
+	},
 }
 
 // Pick 按国家选一家运营商、生成这张 SIM 卡和基带的身份。seed 相同结果相同（一键新机换 seed 就换卡）。
@@ -62,7 +164,10 @@ var carriers = map[string][]Carrier{
 func Pick(country, tac string, seed int64) Spec {
 	r := rand.New(rand.NewSource(seed))
 	list := carriers[strings.ToUpper(country)]
-	if len(list) == 0 {
+	absent := len(list) == 0
+	if absent {
+		// 表里没有这个国家（或者代理还没检测出国家）：当成没插 SIM 卡（真手机也常见），
+		// 不要随便塞一张别国的卡——墨西哥的 IP 配香港的卡一眼就露馅。IMEI 照样有（没卡的手机也有 IMEI）。
 		list = carriers["HK"]
 	}
 	c := list[r.Intn(len(list))]
@@ -79,6 +184,10 @@ func Pick(country, tac string, seed int64) Spec {
 	imei := tac + digits(6)
 	imsi := c.MCC + c.MNC + digits(15-len(c.MCC)-len(c.MNC))
 	iccid := "89" + c.ICCIDCountry + c.MNC + digits(19-2-len(c.ICCIDCountry)-len(c.MNC)-1)
+	if absent {
+		return Spec{IMEI: imei + luhn(imei), Absent: true, Signal: 16 + r.Intn(10), RSRP: 85 + r.Intn(20),
+			Version: "MOLY.NR17.R1.TC8.PR1.SP.V1.P" + fmt.Sprint(10+r.Intn(40))}
+	}
 	return Spec{
 		IMEI: imei + luhn(imei), IMSI: imsi, ICCID: iccid + luhn(iccid),
 		MCC: c.MCC, MNC: c.MNC, Long: c.Long, Short: c.Short, SPN: c.SPN,

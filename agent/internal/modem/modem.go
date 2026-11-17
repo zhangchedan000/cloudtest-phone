@@ -34,6 +34,8 @@ type Spec struct {
 	Signal  int    `json:"rssi"`  // 0~31
 	RSRP    int    `json:"rsrp"`  // LTE 参考信号功率（正数，-dBm）
 	Version string `json:"ver"`   // 基带版本
+	// Absent 没插 SIM 卡（代理国家不在运营商表里时）：基带在、有 IMEI，SIM 相关查询回「没插卡」，不注册网络
+	Absent bool `json:"absent,omitempty"`
 }
 
 // Modem 一个基带。
@@ -106,6 +108,11 @@ func (m *Modem) Handle(line string) []string {
 func (m *Modem) one(c string) (res []string, ok bool) {
 	s := m.spec
 	up := strings.ToUpper(c)
+	if s.Absent {
+		if res, ok, handled := m.absent(up); handled {
+			return res, ok
+		}
+	}
 	switch {
 	case strings.HasPrefix(up, "E") || strings.HasPrefix(up, "S0") || strings.HasPrefix(up, "Q") || strings.HasPrefix(up, "V"):
 		return nil, true
@@ -207,4 +214,24 @@ func clckMode(up string) string {
 		return ""
 	}
 	return strings.TrimSpace(f[1])
+}
+
+// absent 没插 SIM 卡时和 SIM / 注册有关的命令（handled=false 的照常处理：IMEI、信号、开关射频等）。
+// 27.007：没卡时 +CPIN? 回 +CME ERROR: 10（SIM not inserted）；注册状态 0（没注册、也不在搜）。
+func (m *Modem) absent(up string) (res []string, ok, handled bool) {
+	notInserted := []string{"+CME ERROR: 10"}
+	switch {
+	case up == "+CPIN?", up == "+CIMI", up == "+CICCID", strings.HasPrefix(up, "+CRSM="), strings.HasPrefix(up, "+CLCK="),
+		strings.HasPrefix(up, "+CPINR"), strings.HasPrefix(up, "+CSIM"), strings.HasPrefix(up, "+CPIN="):
+		return notInserted, false, true
+	case up == "+CREG?":
+		return []string{"+CREG: 2,0"}, true, true
+	case up == "+CGREG?":
+		return []string{"+CGREG: 2,0"}, true, true
+	case up == "+CEREG?":
+		return []string{"+CEREG: 2,0"}, true, true
+	case up == "+COPS?":
+		return []string{"+COPS: 0"}, true, true
+	}
+	return nil, false, false
 }

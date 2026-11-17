@@ -341,6 +341,9 @@ var countryLocale = map[string]string{
 	"US": "en-US", "GB": "en-GB", "CA": "en-CA", "AU": "en-AU", "SG": "en-SG", "MY": "ms-MY", "PH": "en-PH",
 	"TH": "th-TH", "VN": "vi-VN", "ID": "id-ID", "JP": "ja-JP", "KR": "ko-KR", "DE": "de-DE", "FR": "fr-FR",
 	"ES": "es-ES", "IT": "it-IT", "MX": "es-MX", "BR": "pt-BR", "HK": "zh-HK", "TW": "zh-TW", "CN": "zh-CN",
+	// 2026-11-17 补热门国家
+	"NZ": "en-NZ", "IE": "en-IE", "IN": "en-IN", "NL": "nl-NL", "PL": "pl-PL", "TR": "tr-TR", "RU": "ru-RU",
+	"PT": "pt-PT", "AR": "es-AR", "CL": "es-CL", "CO": "es-CO", "MO": "zh-MO", "AE": "en-AE", "SA": "ar-SA",
 }
 
 func localeFor(country string) string {
