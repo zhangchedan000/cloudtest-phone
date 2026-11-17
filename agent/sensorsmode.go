@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -85,6 +86,14 @@ func runSensors() {
 	if spec.Modem != nil {
 		go serveModemTCP(*spec.Modem)
 	}
+	// 蓝牙（踩坑 #48）：HAL 的串口 ↔ rootcanal 的 HCI 端口，都是 H4，原样转
+	if spec.BT {
+		if master, slave, err := sensors.SetupBT(); err != nil {
+			fmt.Fprintf(os.Stderr, "vendor.sensord：蓝牙串口没配好：%v\n", err)
+		} else {
+			go bridgeBT(master, slave)
+		}
+	}
 	// 管家的命令通道：触摸 + 系统属性（开机后藏 ro.boot.redroid_* 等，踩坑 #63）
 	go func() { _ = touch.Serve(func(cmd string) error { return helperCommand(dev, cmd) }, func(string) {}) }()
 	sensors.Serve(spec, os.NewFile(3, "ptmx"), os.NewFile(4, "pts"), func(string) {})
@@ -134,5 +143,48 @@ func serveModemTCP(spec modem.Spec) {
 			}(c)
 		}
 		ln.Close()
+	}
+}
+
+// BTPort 这台手机网络里 rootcanal 的 HCI 端口（H4 over TCP，管家起的，host/build-rootcanal.sh）。
+const BTPort = "127.0.0.1:6402"
+
+// bridgeBT 蓝牙 HAL 的串口（伪终端主端）和 rootcanal 之间原样转发。rootcanal 断了就重连
+// （它每来一个连接新建一块芯片，安卓的蓝牙会超时后自己重新初始化）。没连上时 HAL 发的数据丢掉。
+func bridgeBT(master, slave *os.File) {
+	defer slave.Close() // 一直开着：HAL 重启时主端读写不会出错
+	var mu sync.Mutex
+	var cur net.Conn
+	go func() { // 只有这一个 goroutine 读串口
+		buf := make([]byte, 4096)
+		for {
+			n, err := master.Read(buf)
+			if err != nil {
+				time.Sleep(200 * time.Millisecond)
+				continue
+			}
+			mu.Lock()
+			c := cur
+			mu.Unlock()
+			if c != nil {
+				_, _ = c.Write(buf[:n])
+			}
+		}
+	}()
+	for {
+		c, err := net.DialTimeout("tcp", BTPort, 2*time.Second)
+		if err != nil {
+			time.Sleep(time.Second)
+			continue
+		}
+		mu.Lock()
+		cur = c
+		mu.Unlock()
+		_, _ = io.Copy(master, c)
+		mu.Lock()
+		cur = nil
+		mu.Unlock()
+		c.Close()
+		time.Sleep(500 * time.Millisecond)
 	}
 }

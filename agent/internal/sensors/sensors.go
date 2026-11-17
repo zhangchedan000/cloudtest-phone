@@ -66,6 +66,8 @@ type Spec struct {
 	TouchName string `json:"touch,omitempty"`
 	// 基带和 SIM 卡（internal/modem，同一个小助手进程负责）；空就不模拟
 	Modem *modem.Spec `json:"modem,omitempty"`
+	// 蓝牙（踩坑 #48）：把蓝牙 HAL 的串口接到这台手机网络里的 rootcanal（管家起的）；false 不接
+	BT bool `json:"bt,omitempty"`
 }
 
 // Encode / Decode 命令行参数格式。

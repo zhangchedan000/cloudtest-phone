@@ -35,5 +35,9 @@ sed -i '/use_redroid_c2/d' $V/build.prop
 # 电话打开（踩坑 #65）：去掉 ro.radio.noril=yes；有模拟器的新版 rild 就去掉 Redroid 自带的老 rild（服务同名会冲突）
 sed -i '/ro.radio.noril/d' $V/build.prop
 if [ -f $V/etc/init/rild_goldfish.rc ]; then rm -f $V/etc/init/rild.rc $V/bin/hw/rild; fi
+# 蓝牙（踩坑 #48）：有模拟器的串口蓝牙 HAL 就去掉 Redroid 自带的坏 HAL（内嵌的 rootcanal 一启动就崩）
+if [ -f $V/bin/hw/android.hardware.bluetooth-service.default ]; then
+  rm -f $V/etc/init/android.hardware.bluetooth@1.1-service.sim.rc $V/bin/hw/android.hardware.bluetooth@1.1-service.sim
+fi
 echo "redroid 名字处理完：$HWS"
 find / -xdev -iname '*redroid*' 2>/dev/null | grep -v '^/proc' || true

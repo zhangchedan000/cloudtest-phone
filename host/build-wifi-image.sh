@@ -98,6 +98,20 @@ else
 fi
 cp "$here/ril/android.hardware.telephony.xml" "$B/vendor/etc/permissions/"
 
+# 蓝牙（踩坑 #48）：安卓 14 起模拟器的蓝牙 HAL（AIDL）通过串口说 H4，串口路径看 vendor.ser.bt-uart。
+# 手机里的小助手开一个伪终端放在 /dev/ttyS1，接到管家在这台手机网络里起的 rootcanal（host/build-rootcanal.sh）。
+# 安卓 13 模拟器的蓝牙 HAL 走 Linux 内核蓝牙，容器里用不了（内核蓝牙不分网络命名空间）→ 不换，照旧关着。
+bt=0
+if [ -f "$V/bin/hw/android.hardware.bluetooth-service.default" ]; then
+  log "蓝牙：换成串口蓝牙 HAL（接手机自己的 rootcanal）"
+  cp -a "$V/bin/hw/android.hardware.bluetooth-service.default" "$B/vendor/bin/hw/"
+  for f in "$V"/etc/init/bluetooth-service-default.rc "$V"/etc/vintf/manifest/bluetooth-service-default.xml; do
+    [ -f "$f" ] && cp -a "$f" "$B/vendor/${f#$V/}"
+  done
+  cp "$here/bluetooth/init.bluetooth.rc" "$B/vendor/etc/init/init.bluetooth.rc"
+  bt=1
+fi
+
 log "补齐 vendor 命名空间里缺的库（递归）"
 id=$(docker create "$base"); mkdir -p "$R"
 docker export "$id" | tar -x -C "$R" --wildcards 'vendor/lib64/*' 'system/apex/com.android.vndk.current/*' 2>/dev/null || true
@@ -139,7 +153,7 @@ COPY vendor/ /vendor/
 COPY --from=bb /bin/busybox /.ppbb/busybox
 COPY fixup.sh /.ppbb/fixup.sh
 RUN ["/.ppbb/busybox", "sh", "-c", "/.ppbb/busybox --install -s /.ppbb && PATH=/.ppbb sh /.ppbb/fixup.sh '$HWS' && /.ppbb/busybox rm -rf /.ppbb"]
-LABEL prism.wifi=1 prism.sensors=1 prism.touch=1 prism.ril=1 prism.hw="$HWS"
+LABEL prism.wifi=1 prism.sensors=1 prism.touch=1 prism.ril=1 prism.bt=$bt prism.hw="$HWS"
 DF
 out="${base}-wifi"
 log "构建 $out"

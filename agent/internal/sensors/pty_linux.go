@@ -151,19 +151,32 @@ const ModemPath = "/dev/ttyC0"
 
 // SetupModem 开一个伪终端绑到 ModemPath，属主 root:radio 0660（rild 以 radio 身份打开）。
 func SetupModem() (master, slave *os.File, err error) {
+	return SetupTTY(ModemPath, 1001) // radio 组
+}
+
+// BTPath 蓝牙 HAL 打开的串口（镜像里 init.bluetooth.rc 设的 vendor.ser.bt-uart，踩坑 #48）。
+const BTPath = "/dev/ttyS1"
+
+// SetupBT 开一个伪终端绑到 BTPath，属主 root:bluetooth 0660（蓝牙 HAL 以 bluetooth 身份打开）。
+func SetupBT() (master, slave *os.File, err error) {
+	return SetupTTY(BTPath, 1002) // bluetooth 组
+}
+
+// SetupTTY 开一个伪终端，从端绑到 path（属主 root:gid 0660）。
+func SetupTTY(path string, gid int) (master, slave *os.File, err error) {
 	master, slave, err = OpenPTY()
 	if err != nil {
 		return nil, nil, fmt.Errorf("开伪终端：%w", err)
 	}
-	if f, err := os.OpenFile(ModemPath, os.O_CREATE|os.O_RDONLY, 0o660); err == nil {
+	if f, err := os.OpenFile(path, os.O_CREATE|os.O_RDONLY, 0o660); err == nil {
 		f.Close()
 	}
-	if err := syscall.Mount(slave.Name(), ModemPath, "", syscall.MS_BIND, ""); err != nil {
+	if err := syscall.Mount(slave.Name(), path, "", syscall.MS_BIND, ""); err != nil {
 		master.Close()
 		slave.Close()
-		return nil, nil, fmt.Errorf("绑到 %s：%w", ModemPath, err)
+		return nil, nil, fmt.Errorf("绑到 %s：%w", path, err)
 	}
-	_ = os.Chown(ModemPath, 0, 1001) // radio 组
-	_ = os.Chmod(ModemPath, 0o660)
+	_ = os.Chown(path, 0, gid)
+	_ = os.Chmod(path, 0o660)
 	return master, slave, nil
 }

@@ -1,0 +1,4 @@
+# 蓝牙（踩坑 #48）：模拟器的蓝牙 HAL 打开这个串口说 H4。手机里的小助手在这里放一个伪终端，
+# 接到管家在这台手机网络里起的蓝牙芯片模拟器（rootcanal）。
+on early-init
+    setprop vendor.ser.bt-uart /dev/ttyS1

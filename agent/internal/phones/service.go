@@ -788,6 +788,7 @@ func (s *Service) Start(ctx context.Context, id string) error {
 		if s.imageLabel(ctx, image, "prism.ril") == "1" {
 			spec.Modem = simSpec(*p, st, byKey)
 		}
+		spec.BT = btAvailable() && s.imageHasBT(ctx, image)
 		entrypoint = withSensors(entrypoint, spec)
 	}
 	if entrypoint != nil {
@@ -816,6 +817,9 @@ func (s *Service) Start(ctx context.Context, id string) error {
 	s.setupWifi(ctx, p.ID, image, byKey)
 	s.applyUname(ctx, p.ID, byKey)
 	s.applyMounts(ctx, p.ID)
+	if btAvailable() && s.cfg.Sensors && s.imageHasBT(ctx, image) {
+		s.startBT(ctx, p.ID, byKey)
+	}
 	if s.async {
 		go s.removeTraces(context.Background(), name)
 	} else {
@@ -861,6 +865,7 @@ func (s *Service) Stop(ctx context.Context, id string) error {
 	cancel()
 	err := s.docker.StopContainer(ctx, name, 25)
 	s.teardownWifi(ctx, id)
+	s.stopBT(ctx, id)
 	if docker.IsNotFound(err) {
 		return nil
 	}
@@ -873,6 +878,7 @@ func (s *Service) Delete(ctx context.Context, id string) error {
 		return err
 	}
 	s.teardownWifi(ctx, id)
+	s.stopBT(ctx, id)
 	if err := s.releaseData(ctx, id); err != nil {
 		return err
 	}
