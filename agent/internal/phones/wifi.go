@@ -24,7 +24,15 @@ func (s *Service) imageHasWifi(ctx context.Context, image string) bool {
 
 // wifiPlan 这台手机的 WiFi 配置（MAC 用机型档案的 wifiMac 字段）。
 func (s *Service) wifiPlan(id string, byKey map[string]any) (wifi.Plan, error) {
-	return wifi.PlanFor(id, str(byKey["wifiMac"]), s.cfg.DataDir)
+	// 路由器按代理出口国家选当地常见的牌子（没检测出国家用默认那套）
+	country := ""
+	st := s.store.Snapshot()
+	if p, err := st.Phone(id); err == nil {
+		if px := st.Proxy(p.ProxyID); px != nil && px.Check != nil {
+			country = px.Check.Country
+		}
+	}
+	return wifi.PlanForCountry(id, str(byKey["wifiMac"]), s.cfg.DataDir, country)
 }
 
 // setupWifi 容器启动后马上调用。返回 true = 这台手机现在走 WiFi。失败时清掉做了一半的，手机照旧用 eth0。

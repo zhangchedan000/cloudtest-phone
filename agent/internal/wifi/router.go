@@ -37,29 +37,61 @@ type Plan struct {
 }
 
 // 常见家用路由器：SSID 前缀和 MAC 前缀（OUI）一一对应，免得「TP-Link 的名字配华为的 MAC」。
-var routers = []struct {
-	ssid string
-	oui  [3]byte
-}{
-	{"TP-Link_", [3]byte{0x50, 0xc7, 0xbf}},
-	{"TP-LINK_", [3]byte{0x98, 0xda, 0xc4}},
-	{"NETGEAR", [3]byte{0x9c, 0x3d, 0xcf}},
-	{"ASUS_", [3]byte{0x04, 0xd9, 0xf5}},
-	{"HUAWEI-", [3]byte{0x48, 0x8e, 0xef}},
-	{"Xiaomi_", [3]byte{0x50, 0x64, 0x2b}},
-	{"Linksys", [3]byte{0x58, 0xef, 0x68}},
+// style：名字后缀怎么生成（hex4：4 位十六进制；num2：两位数字；fritz：FRITZ!Box 型号 + 两个字母；plain5g：原名或加 5G）。
+type router struct {
+	ssid, style string
+	oui         [3]byte
+}
+
+var (
+	tplink  = router{"TP-Link_", "hex4", [3]byte{0x50, 0xc7, 0xbf}}
+	tplink2 = router{"TP-LINK_", "hex4", [3]byte{0x98, 0xda, 0xc4}}
+	netgear = router{"NETGEAR", "num2", [3]byte{0x9c, 0x3d, 0xcf}}
+	asus    = router{"ASUS_", "hex4", [3]byte{0x04, 0xd9, 0xf5}}
+	huawei  = router{"HUAWEI-", "hex4", [3]byte{0x48, 0x8e, 0xef}}
+	xiaomi  = router{"Xiaomi_", "hex4", [3]byte{0x50, 0x64, 0x2b}}
+	linksys = router{"Linksys", "num2", [3]byte{0x58, 0xef, 0x68}}
+)
+
+// routers 默认（香港、台湾、东南亚等，以及没检测出国家时）。
+var routers = []router{tplink, tplink2, netgear, asus, huawei, xiaomi, linksys}
+
+// routersByCountry 当地家里常见的路由器（2026-11-17 用户：主要做热门国家）。没列的国家用 routers。
+var routersByCountry = map[string][]router{
+	"US": {netgear, netgear, tplink, linksys, asus},
+	"CA": {netgear, tplink, linksys, asus},
+	"MX": {{"INFINITUM", "hex4", [3]byte{0x48, 0x8e, 0xef}}, {"INFINITUM", "hex4", [3]byte{0x48, 0x8e, 0xef}}, tplink, huawei}, // Telmex 光猫多是华为
+	"JP": {{"Buffalo-G-", "hex4", [3]byte{0x10, 0x6f, 0x3f}}, {"Buffalo-A-", "hex4", [3]byte{0x10, 0x6f, 0x3f}}, tplink, asus},
+	"KR": {{"iptime", "plain5g", [3]byte{0x00, 0x26, 0x66}}, {"iptime", "plain5g", [3]byte{0x00, 0x26, 0x66}}, tplink, asus},
+	"DE": {{"FRITZ!Box ", "fritz", [3]byte{0x3c, 0xa6, 0x2f}}, {"FRITZ!Box ", "fritz", [3]byte{0x3c, 0xa6, 0x2f}}, tplink, netgear},
+	"GB": {tplink, netgear, asus, huawei},
+	"AU": {netgear, tplink, asus, huawei},
+}
+
+// routersFor 按代理出口国家选路由器列表。
+func routersFor(country string) []router {
+	if l, ok := routersByCountry[strings.ToUpper(country)]; ok {
+		return l
+	}
+	return routers
 }
 
 var subnets = []int{0, 1, 1, 0, 31, 3, 50, 100, 8, 2}
 
-// PlanFor 按手机 ID 和 WiFi MAC 生成配置。
+// PlanFor 按手机 ID 和 WiFi MAC 生成配置（路由器用默认列表）。
 func PlanFor(phoneID, wifiMAC, dataDir string) (Plan, error) {
+	return PlanForCountry(phoneID, wifiMAC, dataDir, "")
+}
+
+// PlanForCountry 同上，路由器按代理出口国家选当地常见的牌子（换了国家的代理，下次开机连的是那边的「家里路由器」）。
+func PlanForCountry(phoneID, wifiMAC, dataDir, country string) (Plan, error) {
 	mac, err := ParseMAC(wifiMAC)
 	if err != nil {
 		return Plan{}, err
 	}
 	h := sha256.Sum256([]byte("prism-wifi:" + phoneID))
-	r := routers[int(h[0])%len(routers)]
+	list := routersFor(country)
+	r := list[int(h[0])%len(list)]
 	short := phoneID
 	if len(short) > 10 {
 		short = short[:10]
@@ -77,9 +109,14 @@ func PlanFor(phoneID, wifiMAC, dataDir string) (Plan, error) {
 		Dir:       filepath.Join(dataDir, "phones", phoneID, "wifi"),
 	}
 	suffix := strings.ToUpper(fmt.Sprintf("%02x%02x", h[7], h[8]))
-	switch r.ssid {
-	case "NETGEAR", "Linksys":
+	switch r.style {
+	case "num2":
 		p.SSID = r.ssid + strconv.Itoa(10+int(h[7])%90)
+	case "fritz":
+		models := []string{"7590", "7530", "7590 AX", "6660 Cable", "7490"}
+		p.SSID = r.ssid + models[int(h[7])%len(models)] + " " + string(rune('A'+int(h[8])%26)) + string(rune('A'+int(h[9])%26))
+	case "plain5g":
+		p.SSID = r.ssid + []string{"", "", "5G", "_5G"}[int(h[7])%4]
 	default:
 		p.SSID = r.ssid + suffix
 	}
