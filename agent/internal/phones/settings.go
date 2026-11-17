@@ -184,6 +184,8 @@ func (s *Service) applySettings(ctx context.Context, id string) {
 	}
 	// USB 调试按手机的开关（默认关，adbtoggle.go）
 	s.applyAdb(ctx, id)
+	// /dev 里服务器的硬件节点删掉（devclean.go，踩坑 #74）
+	s.cleanDev(ctx, id)
 	// 蓝牙：这台有模拟的蓝牙芯片（bluetooth.go）就不管，开关随用户；没有就关掉——安卓默认 bluetooth_on=1，
 	// 开机自动开蓝牙，没芯片时蓝牙 HAL 和 com.android.bluetooth 会连崩几次才放弃（踩坑 #48）。
 	if cur, _ := s.run.Run(ctx, "docker", "exec", name, "settings", "get", "global", "bluetooth_on"); strings.TrimSpace(cur) != "0" && !s.btRunning(ctx, id) {
