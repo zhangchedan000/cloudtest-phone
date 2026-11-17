@@ -103,6 +103,14 @@ else hid "/proc/mounts 没有 overlay / 宿主机路径（pp_mnt 改写生效）
 echo "$mnt" | grep -qiE '/dev/null .* (cpuinfo|midr|version|osrelease)' && info "fakefs 的 bind mount 挂载点本身也在 /proc/mounts 里（遮了内容、露了手法）——同上，遮不住"
 bindcnt=$(echo "$mnt" | grep -cE 'cpuinfo|midr_el1|osrelease|/proc/version'); [ "$bindcnt" -gt 0 ] && info "可疑 bind mount 行数：$bindcnt"
 
+# statfs("/") 的文件系统类型号：根目录是 overlay 一看就是容器（踩坑 #80）；pp_mnt 会把它改成 ext4
+st=$(ax 'stat -f -c %T /')
+case "$st" in
+  overlay|*794c7630*) now "statfs(\"/\") 返回 overlay 类型号（容器特征）：装/重载 pp_mnt 内核模块后重启手机（踩坑 #80）" ;;
+  "") info "statfs(\"/\") 读不到（容器没在跑？）" ;;
+  *) hid "statfs(\"/\") = $st（不是 overlay，pp_mnt statfs 改写生效）" ;;
+esac
+
 # cgroup：容器路径
 cg=$(ax 'cat /proc/1/cgroup'); echo "$cg" | grep -qiE 'docker|containerd|/pp-' && now "/proc/1/cgroup 露出 docker/containerd 路径"
 
