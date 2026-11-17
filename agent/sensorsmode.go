@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/zhangchedan000/prism-phone/agent/internal/h4"
 	"github.com/zhangchedan000/prism-phone/agent/internal/modem"
 	"github.com/zhangchedan000/prism-phone/agent/internal/props"
 	"github.com/zhangchedan000/prism-phone/agent/internal/sensors"
@@ -149,26 +150,37 @@ func serveModemTCP(spec modem.Spec) {
 // BTPort 这台手机网络里 rootcanal 的 HCI 端口（H4 over TCP，管家起的，host/build-rootcanal.sh）。
 const BTPort = "127.0.0.1:6402"
 
-// bridgeBT 蓝牙 HAL 的串口（伪终端主端）和 rootcanal 之间原样转发。rootcanal 断了就重连
+// bridgeBT 蓝牙 HAL 的串口（伪终端主端）和 rootcanal 之间转发 H4 包。rootcanal 断了就重连
 // （它每来一个连接新建一块芯片，安卓的蓝牙会超时后自己重新初始化）。没连上时 HAL 发的数据丢掉。
+// 按整包写串口；HAL 每次初始化发 HCI_Reset 时先清掉串口里没读走的旧包（蓝牙关了再开，
+// 上一轮芯片发的事件还留在串口里，HAL 读到会对不上、初始化超时崩溃，踩坑 #48）。
 func bridgeBT(master, slave *os.File) {
 	defer slave.Close() // 一直开着：HAL 重启时主端读写不会出错
-	var mu sync.Mutex
+	var mu sync.Mutex   // 管 cur
+	var wmu sync.Mutex  // 写串口和清串口不能交错
 	var cur net.Conn
-	go func() { // 只有这一个 goroutine 读串口
+	go func() { // 只有这一个 goroutine 读串口（HAL → 芯片）
 		buf := make([]byte, 4096)
+		var rest []byte
 		for {
 			n, err := master.Read(buf)
 			if err != nil {
 				time.Sleep(200 * time.Millisecond)
 				continue
 			}
-			mu.Lock()
-			c := cur
-			mu.Unlock()
-			if c != nil {
-				_, _ = c.Write(buf[:n])
-			}
+			rest = h4.Split(append(rest, buf[:n]...), func(pkt []byte) {
+				if h4.IsReset(pkt) {
+					wmu.Lock()
+					sensors.FlushInput(slave)
+					wmu.Unlock()
+				}
+				mu.Lock()
+				c := cur
+				mu.Unlock()
+				if c != nil {
+					_, _ = c.Write(pkt)
+				}
+			})
 		}
 	}()
 	for {
@@ -180,7 +192,21 @@ func bridgeBT(master, slave *os.File) {
 		mu.Lock()
 		cur = c
 		mu.Unlock()
-		_, _ = io.Copy(master, c)
+		buf := make([]byte, 4096)
+		var rest []byte
+		for { // 芯片 → HAL：拆成整包再写
+			n, err := c.Read(buf)
+			if n > 0 {
+				rest = h4.Split(append(rest, buf[:n]...), func(pkt []byte) {
+					wmu.Lock()
+					_, _ = master.Write(pkt)
+					wmu.Unlock()
+				})
+			}
+			if err != nil {
+				break
+			}
+		}
 		mu.Lock()
 		cur = nil
 		mu.Unlock()

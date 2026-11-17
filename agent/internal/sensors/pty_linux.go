@@ -154,6 +154,9 @@ func SetupModem() (master, slave *os.File, err error) {
 	return SetupTTY(ModemPath, 1001) // radio 组
 }
 
+// FlushInput 清掉伪终端从端还没被读走的输入（TCIFLUSH）。
+func FlushInput(slave *os.File) { _ = ioctl(slave.Fd(), tcflsh, 0) }
+
 // BTPath 蓝牙 HAL 打开的串口（镜像里 init.bluetooth.rc 设的 vendor.ser.bt-uart，踩坑 #48）。
 const BTPath = "/dev/ttyS1"
 
