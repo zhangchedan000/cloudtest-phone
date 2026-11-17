@@ -155,6 +155,18 @@ check_phone() {
 
 for id in "${ids[@]}"; do check_phone "$id"; done
 
+# 多台手机互查：身份值不能重复（踩坑 #79：容器共用宿主机内核，boot_id 曾经全一样）
+if [ ${#ids[@]} -gt 1 ]; then
+  echo; echo "== 多台手机互查（不能有重复的身份值）"
+  for item in "boot_id|cat /proc/sys/kernel/random/boot_id" "androidId|settings get secure android_id" "序列号|getprop ro.serialno" \
+              "WiFi MAC|cat /sys/class/net/wlan0/address" "蓝牙地址|settings get secure bluetooth_address"; do
+    label=${item%%|*}; cmd=${item#*|}
+    vals=$(for id in "${ids[@]}"; do v=$(docker exec "pp-$id" sh -c "$cmd" 2>/dev/null | tr -d '\r'); [ -n "$v" ] && [ "$v" != null ] && echo "$v"; done)
+    dup=$(echo "$vals" | sort | uniq -d | head -1)
+    [ -n "$dup" ] && bad "$label 有重复：$dup" || ok "$label 各不相同（$(echo "$vals" | grep -c .) 台）"
+  done
+fi
+
 # 主动测试：切换节点（老连接要断、新连接走新节点）、节点断了（要断网，不能直连）
 if [ $switch = 1 ]; then
   id=${ids[0]}; C="pp-$id"
