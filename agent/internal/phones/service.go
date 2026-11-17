@@ -829,6 +829,7 @@ func (s *Service) Start(ctx context.Context, id string) error {
 	s.setupWifi(ctx, p.ID, image, byKey)
 	s.applyUname(ctx, p.ID, byKey)
 	s.applyMounts(ctx, p.ID)
+	s.guardLocalPorts(ctx, p.ID)
 	if btAvailable() && s.cfg.Sensors && s.imageHasBT(ctx, image) {
 		s.startBT(ctx, p.ID, byKey)
 	}
