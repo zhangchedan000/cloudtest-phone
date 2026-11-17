@@ -97,6 +97,15 @@ int main(void)
 	check(3, "   4: 00000000000000000000000000000000:1F90 00000000000000000000000000000000:0000 0A 0 0\n",
 	      "   4: 00000000000000000000000000000000:1F90 00000000000000000000000000000000:0000 0A 0 0\n");
 
+	/* /proc/bus/input/devices：QEMU / virtio 的输入设备整块删，真机的（fts_ts、电源键）原样 */
+	check(4, "I: Bus=0003 Vendor=0627 Product=0001\nN: Name=\"QEMU QEMU USB Tablet\"\nH: Handlers=mouse0 event1\n\n", "");
+	check(4, "I: Bus=0003 Vendor=0627\nN: Name=\"QEMU QEMU USB Keyboard\"\nH: Handlers=kbd event2\n\n", "");
+	check(4, "I: Bus=0018 Vendor=0000\nN: Name=\"fts_ts\"\nH: Handlers=event3\n\n",
+	      "I: Bus=0018 Vendor=0000\nN: Name=\"fts_ts\"\nH: Handlers=event3\n\n");
+	check(4, "I: Bus=0019 Vendor=0000\nN: Name=\"Power Button\"\nH: Handlers=kbd event0\n\n",
+	      "I: Bus=0019 Vendor=0000\nN: Name=\"Power Button\"\nH: Handlers=kbd event0\n\n");
+	check(4, "I: Bus=0006 Vendor=0000\nN: Name=\"virtio_input\"\nH: Handlers=event4\n\n", "");
+
 	/* 磁盘镜像的手机：/data 是整块 /dev/loop5，build.prop 在另一块盘 /dev/sda1 */
 	{
 		static const struct pp_cfg c = { "/", "/dev/loop5" };

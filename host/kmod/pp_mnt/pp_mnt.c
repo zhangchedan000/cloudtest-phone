@@ -218,6 +218,21 @@ PP_NET_PROBE(rp_udp6, "udp6_seq_show");
 static struct kretprobe *net_probes[] = { &rp_tcp4, &rp_tcp6, &rp_udp4, &rp_udp6 };
 static bool net_ok[ARRAY_SIZE(net_probes)];
 
+/* /proc/bus/input/devices：删掉 QEMU / virtio 等虚拟机输入设备那几块（踩坑 #82）。 */
+static int pp_ret_input(struct kretprobe_instance *ri, struct pt_regs *regs)
+{
+	pp_done(ri, PP_INPUT);
+	return 0;
+}
+static struct kretprobe rp_input = {
+	.kp.symbol_name = "input_devices_seq_show",
+	.entry_handler = pp_entry,
+	.handler = pp_ret_input,
+	.data_size = sizeof(struct pp_ri),
+	.maxactive = 64,
+};
+static bool input_ok;
+
 /* ---------- /proc/pp_mnt ---------- */
 
 static struct pid_namespace *pp_ns_of(long nr)
@@ -374,6 +389,9 @@ static int __init pp_mnt_init(void)
 			if (!statfs_ok[i])
 				pr_info("pp_mnt: 没挂上 %s（statfs 类型号照旧）\n", statfs_probes[i].symbol_name);
 		}
+		input_ok = register_kretprobe(&rp_input) == 0;
+		if (!input_ok)
+			pr_info("pp_mnt: 没挂上 input_devices_seq_show（/proc/bus/input/devices 照旧）\n");
 	}
 	return 0;
 }
@@ -383,6 +401,8 @@ static void __exit pp_mnt_exit(void)
 	int i;
 
 	proc_remove(entry);
+	if (input_ok)
+		unregister_kretprobe(&rp_input);
 	for (i = 0; i < ARRAY_SIZE(statfs_probes); i++)
 		if (statfs_ok[i])
 			unregister_kprobe(&statfs_probes[i]);

@@ -330,11 +330,42 @@ static int pp_rewrite_net(const char *in, int len)
 	return -1;
 }
 
-/* mode：PP_MOUNTS / PP_MOUNTINFO / PP_MOUNTSTATS / PP_NET */
+/* 在 h[0..hn) 里找子串 n（内核里没有 memmem，自己写一个短的）。 */
+static int pp_mem(const char *h, int hn, const char *n)
+{
+	int nn = 0, i, j;
+
+	while (n[nn])
+		nn++;
+	for (i = 0; i + nn <= hn; i++) {
+		for (j = 0; j < nn && h[i + j] == n[j]; j++)
+			;
+		if (j == nn)
+			return 1;
+	}
+	return 0;
+}
+
+/*
+ * /proc/bus/input/devices（踩坑 #82）：每次 input_devices_seq_show 输出一块输入设备信息。
+ * 名字带 QEMU / virtio / VMware / VirtualBox / goldfish 的是虚拟机/模拟器的输入设备——真机里
+ * 不该有「QEMU QEMU USB Tablet/Keyboard/Mouse」这种，整块删掉；触摸屏 fts_ts、电源键等原样保留。
+ */
+static int pp_rewrite_input(const char *in, int len)
+{
+	if (pp_mem(in, len, "QEMU") || pp_mem(in, len, "virtio") ||
+	    pp_mem(in, len, "VMware") || pp_mem(in, len, "VirtualBox") ||
+	    pp_mem(in, len, "Goldfish") || pp_mem(in, len, "goldfish"))
+		return 0; /* 整块删掉 */
+	return -1; /* 其余原样 */
+}
+
+/* mode：PP_MOUNTS / PP_MOUNTINFO / PP_MOUNTSTATS / PP_NET / PP_INPUT */
 #define PP_MOUNTS 0
 #define PP_MOUNTINFO 1
 #define PP_MOUNTSTATS 2
 #define PP_NET 3
+#define PP_INPUT 4
 
 static int pp_rewrite(const char *in, int len, char *out, int max, int mode, const struct pp_cfg *c)
 {
@@ -345,6 +376,8 @@ static int pp_rewrite(const char *in, int len, char *out, int max, int mode, con
 		return pp_rewrite_mountstats(in, len, out, max, c);
 	case PP_NET:
 		return pp_rewrite_net(in, len);
+	case PP_INPUT:
+		return pp_rewrite_input(in, len);
 	}
 	return pp_rewrite_mounts(in, len, out, max, c);
 }
