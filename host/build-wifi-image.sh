@@ -137,6 +137,9 @@ if [ "$emu_ril" = 1 ] && [ -f "$R/vendor/lib64/libbase.so" ] && [ -f "$V/lib64/l
   python3 "$here/ril/private-libbase.py" "$V/lib64/libbase.so" "$R/vendor/lib64/libbase.so" "$B/vendor/lib64" "$B/vendor/bin/hw"
 fi
 
+log "模拟器字样的文件名换成像真机的（踩坑 #75）"
+python3 "$here/image/rename-emu.py" "$B/vendor"
+
 log "编译时钟垫片 libppclock.so"
 gcc -shared -fPIC -nostdlib -O2 -Wl,-z,max-page-size=16384 -Wl,--hash-style=both -Wl,-soname,libppclock.so \
   -o "$B/vendor/lib64/libppclock.so" "$here/wifi/ppclock.c"
@@ -153,7 +156,7 @@ COPY vendor/ /vendor/
 COPY --from=bb /bin/busybox /.ppbb/busybox
 COPY fixup.sh /.ppbb/fixup.sh
 RUN ["/.ppbb/busybox", "sh", "-c", "/.ppbb/busybox --install -s /.ppbb && PATH=/.ppbb sh /.ppbb/fixup.sh '$HWS' && /.ppbb/busybox rm -rf /.ppbb"]
-LABEL prism.wifi=1 prism.sensors=1 prism.touch=1 prism.ril=1 prism.bt=$bt prism.hw="$HWS"
+LABEL prism.wifi=1 prism.sensors=1 prism.touch=1 prism.ril=1 prism.bt=$bt prism.names=1 prism.hw="$HWS"
 DF
 out="${base}-wifi"
 log "构建 $out"

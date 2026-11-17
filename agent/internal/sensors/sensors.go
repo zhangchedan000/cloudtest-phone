@@ -68,6 +68,8 @@ type Spec struct {
 	Modem *modem.Spec `json:"modem,omitempty"`
 	// 蓝牙（踩坑 #48）：把蓝牙 HAL 的串口接到这台手机网络里的 rootcanal（管家起的）；false 不接
 	BT bool `json:"bt,omitempty"`
+	// RealNames 镜像把模拟器字样的设备名改成了真机的（标签 prism.names=1，踩坑 #75）：传感器管道用 RealPipePaths
+	RealNames bool `json:"names,omitempty"`
 }
 
 // Encode / Decode 命令行参数格式。

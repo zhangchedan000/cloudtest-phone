@@ -804,6 +804,7 @@ func (s *Service) Start(ctx context.Context, id string) error {
 			spec.Modem = simSpec(*p, st, byKey)
 		}
 		spec.BT = btAvailable() && s.imageHasBT(ctx, image)
+		spec.RealNames = s.imageLabel(ctx, image, "prism.names") == "1"
 		entrypoint = withSensors(entrypoint, spec)
 	}
 	if entrypoint != nil {

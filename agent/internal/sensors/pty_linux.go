@@ -16,6 +16,10 @@ const tcflsh = 0x540B
 // 安卓 13 的 HAL 连 vsock 失败会自己退回 /dev/goldfish_pipe。两个都绑到同一个伪终端，哪个版本都能用。
 var PipePaths = []string{"/dev/goldfish_pipe_dprctd", "/dev/goldfish_pipe"}
 
+// RealPipePaths 新镜像（标签 prism.names=1）里传感器驱动打开的路径：host/image/rename-emu.py 把上面两个换成了
+// 联发科手机真实的设备名（App 列 /dev 看不到 goldfish 字样，踩坑 #75）。
+var RealPipePaths = []string{"/dev/hwmsensor", "/dev/sensorlist"}
+
 func ioctl(fd uintptr, req uintptr, arg uintptr) error {
 	if _, _, e := syscall.Syscall(syscall.SYS_IOCTL, fd, req, arg); e != 0 {
 		return e
@@ -67,13 +71,16 @@ func OpenPTY() (master, slave *os.File, err error) {
 	return master, slave, nil
 }
 
-// Setup 开伪终端并把从端绑到 PipePath（在容器的挂载命名空间里、安卓 init 启动之前调用）。
-func Setup() (master, slave *os.File, err error) {
+// Setup 开伪终端并把从端绑到 PipePaths（在容器的挂载命名空间里、安卓 init 启动之前调用）。
+func Setup() (master, slave *os.File, err error) { return SetupPaths(PipePaths) }
+
+// SetupPaths 同上，绑到给定的路径。
+func SetupPaths(paths []string) (master, slave *os.File, err error) {
 	master, slave, err = OpenPTY()
 	if err != nil {
 		return nil, nil, fmt.Errorf("开伪终端：%w", err)
 	}
-	for _, path := range PipePaths {
+	for _, path := range paths {
 		if f, err := os.OpenFile(path, os.O_CREATE|os.O_RDONLY, 0o666); err == nil {
 			f.Close()
 		}

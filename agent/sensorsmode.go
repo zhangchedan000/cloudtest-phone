@@ -21,7 +21,11 @@ import (
 // startSensors pp-init 里调用（容器里、安卓 init 之前）：开伪终端绑到 HAL 的管道路径，起喂数据子进程。
 // 出错只打印，绝不影响开机。
 func startSensors(spec string) {
-	master, slave, err := sensors.Setup()
+	paths := sensors.PipePaths
+	if sp, err := sensors.Decode(spec); err == nil && sp.RealNames {
+		paths = sensors.RealPipePaths // 新镜像：传感器驱动开的是真机的设备名（踩坑 #75）
+	}
+	master, slave, err := sensors.SetupPaths(paths)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "pp-init：传感器没配好（手机照常开机，只是没有传感器数据）：%v\n", err)
 		return
