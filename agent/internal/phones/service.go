@@ -849,7 +849,7 @@ func (s *Service) Start(ctx context.Context, id string) error {
 		byKey := s.resolvedValues(*p, st)
 		spec := sensorSpec(*p, st, byKey)
 		if s.imageLabel(ctx, image, "prism.ril") == "1" {
-			spec.Modem = simSpec(*p, st, byKey)
+			spec.Modem = s.simSpec(*p, st, byKey)
 		}
 		spec.BT = btAvailable() && s.imageHasBT(ctx, image)
 		spec.RealNames = s.imageLabel(ctx, image, "prism.names") == "1"

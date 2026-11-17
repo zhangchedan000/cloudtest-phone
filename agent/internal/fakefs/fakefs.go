@@ -27,6 +27,9 @@ type Spec struct {
 	KernelRelease string // 例如 5.10.198-android12-9-gc2f7e1a40b6d
 	KernelBuild   string // 例如 #1 SMP PREEMPT Mon Jun 3 08:12:45 UTC 2025
 	HostCPUInfo   string // 宿主机真实 /proc/cpuinfo（用来照抄 Features 等能力字段）
+	// BootID 这次开机的 boot_id（每台手机每次开机一个新的 UUID）。容器共用宿主机内核，
+	// /proc/sys/kernel/random/boot_id 所有手机读到的都一样——App 不要权限就能读，一对比就知道是同一台机器（踩坑 #79）。
+	BootID string
 }
 
 // File 一个伪造文件：容器里的路径 → 内容。
@@ -46,6 +49,9 @@ func Build(s Spec) ([]File, error) {
 		Name:    "cmdline",
 		Content: "bootopt=64S3,32N2,64N2 androidboot.verifiedbootstate=green androidboot.veritymode=enforcing buildvariant=user\n",
 	})
+	if s.BootID != "" {
+		files = append(files, File{Target: "/proc/sys/kernel/random/boot_id", Name: "boot_id", Content: s.BootID + "\n"})
+	}
 	if len(s.CPUParts) > 0 {
 		cpuinfo, midrs, err := cpuInfo(s.CPUParts, s.HostCPUInfo)
 		if err != nil {

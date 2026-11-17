@@ -69,3 +69,16 @@ func TestEmptySpecOnlyMakesCmdline(t *testing.T) {
 		t.Fatalf("cmdline 不该含云主机痕迹：%s", files[0].Content)
 	}
 }
+
+func TestBootID(t *testing.T) {
+	files, err := Build(Spec{BootID: "0f1e2d3c-4b5a-4698-8776-5a4b3c2d1e0f"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range files {
+		if f.Target == "/proc/sys/kernel/random/boot_id" && f.Content == "0f1e2d3c-4b5a-4698-8776-5a4b3c2d1e0f\n" {
+			return
+		}
+	}
+	t.Fatal("没有 boot_id")
+}

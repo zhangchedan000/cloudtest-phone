@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"hash/fnv"
+	"sort"
 	"strings"
 	"time"
 
@@ -31,7 +32,46 @@ func (s *Service) imageLabel(ctx context.Context, image, key string) string {
 
 // simSpec 这台手机的 SIM 卡（踩坑 #65）：运营商按 SIM 国家（跟随代理出口）选，IMEI / IMSI / ICCID 按 androidId 播种
 // （一键新机换 androidId，就换卡）。
-func simSpec(p store.Phone, st store.State, byKey map[string]any) *modem.Spec {
+// 不能和别的手机撞号（踩坑 #79）：IMEI 前 8 位是机型型号码，后面只有 6 位随机——同一机型开几百台就可能撞上。
+// 跟同一台服务器上比它先建的手机（ID 更小）的号比，IMEI / IMSI / ICCID 任何一个撞了就换个种子再生成；规则固定，
+// 每次开机算出来一样。
+func (s *Service) simSpec(p store.Phone, st store.State, byKey map[string]any) *modem.Spec {
+	// 按 ID 从小到大依次分配：每台都跟前面所有手机「最终用的号」比（不只是原来的号，种子一样时也不会连环撞）
+	var earlier []store.Phone
+	for _, o := range st.Phones {
+		if o.ID < p.ID {
+			earlier = append(earlier, o)
+		}
+	}
+	sort.Slice(earlier, func(i, j int) bool { return earlier[i].ID < earlier[j].ID })
+	taken := map[string]bool{}
+	assign := func(ph store.Phone, keys map[string]any) modem.Spec {
+		var sp modem.Spec
+		for try := 0; try < 20; try++ {
+			sp = simPick(ph, st, keys, try)
+			if !taken[sp.IMEI] && (sp.Absent || (!taken[sp.IMSI] && !taken[sp.ICCID])) {
+				break
+			}
+		}
+		taken[sp.IMEI] = true
+		if !sp.Absent {
+			taken[sp.IMSI], taken[sp.ICCID] = true, true
+		}
+		return sp
+	}
+	for _, o := range earlier {
+		keys := map[string]any{}
+		for _, r := range s.resolve(o, st) {
+			keys[r.Key] = r.Value
+		}
+		assign(o, keys)
+	}
+	spec := assign(p, byKey)
+	return &spec
+}
+
+// simPick 第 try 次生成（try=0 就是原来的号，老手机号码不变）。
+func simPick(p store.Phone, st store.State, byKey map[string]any, try int) modem.Spec {
 	country, _ := byKey["simCountry"].(string)
 	if country == "" {
 		if px := st.Proxy(p.ProxyID); px != nil && px.Check != nil {
@@ -44,9 +84,11 @@ func simSpec(p store.Phone, st store.State, byKey map[string]any) *modem.Spec {
 	}
 	h := fnv.New64a()
 	h.Write([]byte("sim:" + seedSrc))
+	if try > 0 {
+		fmt.Fprintf(h, "#%d", try)
+	}
 	tac, _ := byKey["imeiTac"].(string)
-	spec := modem.Pick(country, tac, int64(h.Sum64()>>1))
-	return &spec
+	return modem.Pick(country, tac, int64(h.Sum64()>>1))
 }
 
 // sensorSpec 这台手机的传感器配置。

@@ -88,6 +88,7 @@ func (s *Service) prepareFakes(p store.Phone, st store.State) (bool, error) {
 		KernelRelease: str(byKey["kernelRelease"]),
 		KernelBuild:   str(byKey["kernelBuild"]),
 		HostCPUInfo:   readHost("/proc/cpuinfo"),
+		BootID:        randUUID(), // 每次开机一个新的（踩坑 #79）
 	}
 	_ = convert(byKey["cpuParts"], &spec.CPUParts)
 	_ = convert(byKey["cpuMaxFreq"], &spec.CPUMaxFreqKHz)
