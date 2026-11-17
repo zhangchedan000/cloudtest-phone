@@ -2,8 +2,11 @@ package phones
 
 import (
 	"context"
+	"fmt"
 	"strconv"
 	"time"
+
+	"github.com/zhangchedan000/prism-phone/agent/internal/sensors"
 )
 
 // 电池漂移：真机电池一直在变，固定一个值反而是破绽。
@@ -60,7 +63,30 @@ func (s *Service) driftBattery(ctx context.Context, id string) {
 	name := containerName(id)
 	_, _ = s.run.Run(ctx, "docker", "exec", name, "dumpsys", "battery", "set", "level", strconv.Itoa(next.Level))
 	_, _ = s.run.Run(ctx, "docker", "exec", name, "dumpsys", "battery", "set", "temp", strconv.Itoa(next.TempDeci))
+	s.syncBatteryFiles(ctx, name, next)
 	s.batt.put(id, next)
+}
+
+// syncBatteryFiles 电池 sysfs（小助手开机前造的，踩坑 #78）跟着改，App 直接读文件和读系统接口一致。老手机没有这个目录就跳过。
+func (s *Service) syncBatteryFiles(ctx context.Context, name string, b batteryState) {
+	cmd := fmt.Sprintf("d=/sys/class/power_supply/battery; [ -f $d/capacity ] && echo %d > $d/capacity && echo %d > $d/temp && echo %s > $d/status",
+		b.Level, b.TempDeci, sensors.BatteryStatus(b.Level, b.Charging))
+	_, _ = s.run.Run(ctx, "docker", "exec", name, "sh", "-c", cmd)
+}
+
+// batterySeed 机型档案里的起始电量和温度（0.1℃）；没填用 50% / 35℃，电量至少 1（0 且没插电安卓会马上关机，踩坑 #47）。
+func batterySeed(v map[string]any) (level, tempDeci int) {
+	level, tempDeci = 50, 350
+	if lv, ok := toInt(v["batteryLevel"]); ok && lv >= 0 && lv <= 100 {
+		level = lv
+	}
+	if t, ok := toFloat(v["batteryTemp"]); ok && t > -50 && t < 150 {
+		tempDeci = int(t * 10)
+	}
+	if level < 1 {
+		level = 1
+	}
+	return level, tempDeci
 }
 
 // batteryValues 从档案里取这台手机的电池字段值（agent 重启后重新播种用）。

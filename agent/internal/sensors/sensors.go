@@ -70,6 +70,8 @@ type Spec struct {
 	BT bool `json:"bt,omitempty"`
 	// RealNames 镜像把模拟器字样的设备名改成了真机的（标签 prism.names=1，踩坑 #75）：传感器管道用 RealPipePaths
 	RealNames bool `json:"names,omitempty"`
+	// Battery 电池的 sysfs（踩坑 #78）：给了就在 /sys/class/power_supply 造电池目录
+	Battery *Battery `json:"battery,omitempty"`
 }
 
 // Encode / Decode 命令行参数格式。

@@ -22,8 +22,15 @@ import (
 // 出错只打印，绝不影响开机。
 func startSensors(spec string) {
 	paths := sensors.PipePaths
-	if sp, err := sensors.Decode(spec); err == nil && sp.RealNames {
-		paths = sensors.RealPipePaths // 新镜像：传感器驱动开的是真机的设备名（踩坑 #75）
+	if sp, err := sensors.Decode(spec); err == nil {
+		if sp.RealNames {
+			paths = sensors.RealPipePaths // 新镜像：传感器驱动开的是真机的设备名（踩坑 #75）
+		}
+		if sp.Battery != nil { // 电池的 sysfs（踩坑 #78）
+			if err := sensors.SetupPowerSupply(*sp.Battery); err != nil {
+				fmt.Fprintf(os.Stderr, "pp-init：电池目录没造好（照常开机）：%v\n", err)
+			}
+		}
 	}
 	master, slave, err := sensors.SetupPaths(paths)
 	if err != nil {

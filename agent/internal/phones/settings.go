@@ -51,16 +51,7 @@ func (s *Service) applyBattery(ctx context.Context, id, name string, v map[strin
 		}
 	}
 	// 记下起始状态，后台漂移循环（battery.go）从这里接着慢慢变。
-	seedLevel, seedTemp := 50, 350
-	if lv, ok := toInt(v["batteryLevel"]); ok && lv >= 0 && lv <= 100 {
-		seedLevel = lv
-	}
-	if t, ok := toFloat(v["batteryTemp"]); ok && t > -50 && t < 150 {
-		seedTemp = int(t * 10)
-	}
-	if seedLevel < 1 {
-		seedLevel = 1
-	}
+	seedLevel, seedTemp := batterySeed(v)
 	s.seedBattery(id, seedLevel, seedTemp, fmt.Sprint(v["batteryCharging"]))
 	// 电量一定要先设（档案没填就用起始值 50）：Redroid 刚开机电量是 0，后面设 present=1 时
 	// 如果还是 0 且没插电，安卓会当成没电马上关机（实测 3 秒内容器退出，踩坑 #47）。
