@@ -11,7 +11,7 @@
 # 每项前面的标签：
 #   [已遮住]  管家程序的 fakefs 已经改了这项的读取结果，验证它有没有生效
 #   [现在可做] 纯软件 / 配置问题，这台甲骨文机器上就能改
-#   [容器改不了] 实测在容器里没有干净办法（如 /proc/mounts 软链接遮不住、uname 系统调用），要拦系统调用或改镜像/容器运行方式
+#   [容器改不了] 实测在容器里没有干净办法（uname、挂载表已改用内核模块 pp_uts / pp_mnt 解决），要改镜像/自己编组件
 #   [等板子]  硬件缺的（显卡、摄像头等），和显卡一个性质，要等 RK3588 板子
 set -u
 
@@ -55,7 +55,7 @@ sect "2. 系统 / 容器特征"
 
 # ro.hardware：Redroid 容器经常直接写着 redroid，等于明牌
 rohw=$(gp ro.hardware); info "ro.hardware = ${rohw:-空}"
-echo "$rohw" | grep -qiE 'redroid|ranchu|goldfish|qemu' && brd "ro.hardware=$rohw 暴露是容器。启动参数改它会开不了机（实测），要编译镜像时连驱动文件名一起改——归到板子/镜像阶段" || info "ro.hardware 看起来已按机型设置"
+echo "$rohw" | grep -qiE 'redroid|ranchu|goldfish|qemu' && now "ro.hardware=$rohw 暴露是容器：用新镜像（host/build-wifi-image.sh 会按机型芯片名放一份显卡驱动）重建后重启手机，管家开机用 androidboot.hardware=<芯片名>（踩坑 #63）" || hid "ro.hardware=$rohw（按机型芯片名）"
 
 # qemu / 模拟器属性
 for p in ro.kernel.qemu ro.boot.qemu init.svc.qemu-props ro.kernel.android.qemud; do
@@ -88,7 +88,11 @@ desc=$(gp ro.build.description); echo "$desc" | grep -qiE 'redroid|userdebug|tes
 
 # 内核：App 直接调 uname() 拿到的是宿主机内核（fakefs 只改文件视图，改不了系统调用）
 unamer=$(ax 'uname -r'); info "uname -r（系统调用）：$unamer"
-cnt "uname() 系统调用返回宿主机内核 $unamer，fakefs 只改 /proc 文件、改不了这个；要拦系统调用（脆弱），真机上是对应机型内核"
+hostk=$(uname -r)
+if [ "$unamer" = "$hostk" ]; then
+  if [ -e /proc/pp_uts ]; then now "uname -r 还是宿主机内核 $unamer，但 pp_uts 模块装了：这台可能是装模块之前开的，重启手机（踩坑 #64）"
+  else now "uname -r 是宿主机内核 $unamer：装内核模块 pp_uts（bash host/build-kmod.sh pp_uts）后重启手机（踩坑 #64）"; fi
+else hid "uname -r = $unamer（按机型，宿主机是 $hostk）"; fi
 
 # /proc/mounts：overlay、docker、fakefs 自己的 bind mount 都会露
 mnt=$(ax 'cat /proc/mounts')
@@ -184,11 +188,11 @@ cam=$(ax 'dumpsys media.camera 2>/dev/null | grep -ciE "Camera [0-9]|device id"'
 simop=$(gp gsm.sim.operator.alpha); brd_sim=$(gp gsm.operator.alpha)
 tel=$(ax 'pm list features 2>/dev/null | grep -c "android.hardware.telephony"')
 if [ -n "$simop$brd_sim" ]; then hid "SIM 运营商：$simop$brd_sim"
-elif [ "${tel:-0}" -ge 1 ]; then cnt "有电话子系统（$tel 项电话能力），但显示没插 SIM 卡：Redroid 的电话驱动接口 1.1，安卓 13 起框架不认（踩坑 #65，下一步换模拟器配套驱动 + vsock）"
+elif [ "${tel:-0}" -ge 1 ]; then now "有电话子系统（$tel 项电话能力），但显示没插 SIM 卡：镜像是旧的（Redroid 自带 rild 安卓 13 起不认），用 host/build-wifi-image.sh 重建（默认开新 rild）后重启手机（踩坑 #65）"
 else now "没有电话子系统（ro.radio.noril=yes，真机即便无卡也有）：换新镜像（host/build-wifi-image.sh，踩坑 #65）"; fi
 
 # 蓝牙
-ax 'command -v dumpsys >/dev/null && dumpsys bluetooth_manager 2>/dev/null | grep -qi "enabled\|address" && echo yes' | grep -q yes && info "有蓝牙子系统" || brd "没有蓝牙"
+ax 'command -v dumpsys >/dev/null && dumpsys bluetooth_manager 2>/dev/null | grep -qi "enabled\|address" && echo yes' | grep -q yes && info "有蓝牙子系统" || cnt "蓝牙开不了：Redroid 自带的蓝牙 HAL（rootcanal）编译产物有问题，原版也崩（踩坑 #48）；要自己编 rootcanal + HAL。现在蓝牙保持关闭（真机常见状态）"
 
 # 电池：已由管家的电池漂移处理（随机 60% 放电/40% 充电，插口+status 一致，后台慢漂）。
 # 这里只做提示：显示 AC 本身不是破绽（真机充电时也是 AC）；真正的破绽是"永远 AC、电量不动"。
@@ -205,6 +209,6 @@ sect "小结"
 echo "  已遮住 $hide 项 · 现在可做 $nowfix 项 · 容器改不了 $cant 项 · 等板子 $board 项"
 echo
 echo "  · [现在可做] 的项，这台甲骨文机器上就能一项项改。"
-echo "  · [容器改不了] 的项，实测在容器里没有干净办法（uname/mounts/网卡都试过），要靠拦系统调用（脆弱）或改镜像/容器运行方式，归镜像/板子阶段。"
+echo "  · [容器改不了] 的项，容器里没有干净办法，要改镜像 / 自己编组件（uname、挂载表已用内核模块解决）。"
 echo "  · [等板子] 的项都是硬件缺的，和显卡一个性质，RK3588 板子到手插上真硬件后再处理，现在做了也白做。"
 echo "  · 这个脚本只读不改，可以随时跑。"
