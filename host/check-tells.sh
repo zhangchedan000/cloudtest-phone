@@ -207,7 +207,7 @@ fi
 # ========== 2026-11-17 App 视角全面体检补的项（踩坑 #73~#79） ==========
 sect "App 视角补充（#73~#79）"
 # DNS：fake-ip 的 198.18 段
-dnsr=$(ax 'ping -c1 -W2 www.google.com 2>&1 | head -1' | grep -oE '\([0-9.]+\)' | tr -d '()')
+dnsr=$(ax 'ping -c1 -W2 www.google.com 2>&1 | head -1' | grep -oE '\([0-9.]+\)' | head -1 | tr -d '()')
 case "$dnsr" in 198.18.*|198.19.*) now "域名解析出 Clash 假地址 $dnsr（App 一看就知道开了代理）：更新管家（网络模块改 redir-host，踩坑 #73）" ;;
   "") info "DNS：ping 不出地址（没网？）" ;; *) hid "域名解析出真实地址（$dnsr）" ;; esac
 # /dev 里服务器硬件
