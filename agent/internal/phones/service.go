@@ -424,6 +424,11 @@ func (s *Service) bootProps(p store.Phone, st store.State) ([]string, map[string
 			spaced[k] = v
 		}
 	}
+	// 蓝牙名字（踩坑 #48）：蓝牙第一次打开时取 bluetooth.device.default_name（没有就用 ro.product.model），
+	// 和设置里的设备名（deviceName）一致；之后蓝牙自己记住。走 build.prop（名字常带空格）。
+	if name := strings.TrimSpace(str(byKey["deviceName"])); name != "" {
+		spaced["bluetooth.device.default_name"] = name
+	}
 	// ro.build.description（flavor release id incremental tags，带空格）：真机数据里有就用，没有按最终值拼
 	if _, ok := spaced["ro.build.description"]; !ok {
 		final := map[string]string{}
