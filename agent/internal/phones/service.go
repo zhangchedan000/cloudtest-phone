@@ -429,6 +429,7 @@ func (s *Service) bootProps(p store.Phone, st store.State) ([]string, map[string
 		realFP = m.Fingerprints[fmt.Sprintf("%d", p.AndroidVersion)]
 	}
 	args = withBuildProps(append(args, fingerprintProps(byKey, realFP, p.AndroidVersion)...), realBP)
+	args = partitionIdentity(args, realBP)
 	for k, v := range realBP {
 		if strings.HasPrefix(k, "ro.") && strings.ContainsAny(v, " \t") && !strings.Contains(k, "security_patch") {
 			spaced[k] = v
@@ -456,6 +457,52 @@ func (s *Service) bootProps(p store.Phone, st store.State) ([]string, map[string
 
 // withBuildProps 用真机的分区属性替换兜底值：fingerprintProps 里同名的去掉，真机的整套加在后面；
 // 真机数据里没有的（某些分区没有对应文件）仍保留兜底值，保证不漏 redroid 默认值。值带空格的跳过（启动参数会截断）。
+// partitionIdentity 各分区的 ro.product.<分区>.brand/name/device 跟这个分区的指纹对上（2026-11-17 体检发现：
+// 真机数据里 system 分区指纹是 Android/missi_phone_global/missi，ro.product.system.device 却还是镜像的 generic）。
+// 指纹格式 品牌/产品名/设备名:版本/…；真机数据里本来就有的 ro.product.<分区>.* 不动。
+func partitionIdentity(args []string, realBP map[string]string) []string {
+	final := map[string]string{}
+	for _, a := range args {
+		if k, v, ok := strings.Cut(a, "="); ok {
+			final[k] = v
+		}
+	}
+	set := map[string]string{}
+	for _, part := range []string{"system", "vendor", "odm", "product", "system_ext", "vendor_dlkm", "odm_dlkm", "system_dlkm"} {
+		fp := final["ro."+part+".build.fingerprint"]
+		head, _, ok := strings.Cut(fp, ":")
+		f := strings.Split(head, "/")
+		if !ok || len(f) != 3 || f[0] == "" || f[1] == "" || f[2] == "" {
+			continue
+		}
+		for i, field := range []string{"brand", "name", "device"} {
+			k := "ro.product." + part + "." + field
+			if _, real := realBP[k]; !real {
+				set[k] = f[i]
+			}
+		}
+	}
+	if len(set) == 0 {
+		return args
+	}
+	out := make([]string, 0, len(args)+len(set))
+	for _, a := range args {
+		k, _, _ := strings.Cut(a, "=")
+		if _, ok := set[k]; !ok {
+			out = append(out, a)
+		}
+	}
+	keys := make([]string, 0, len(set))
+	for k := range set {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		out = append(out, k+"="+set[k])
+	}
+	return out
+}
+
 func withBuildProps(base []string, bp map[string]string) []string {
 	if len(bp) == 0 {
 		return base
@@ -607,6 +654,7 @@ func disguiseProps() []string {
 		// 都是 Cortex-A76 一类，指令集一致（dotprod / fp16），按 a76 编译不会出错。
 		// dalvik.vm.isa.*.variant 不是只读属性，开机参数会被 build.prop 盖回去，在开机设置里 setprop（cpuVariantProps）。
 		"ro.bionic.cpu_variant=" + cpuVariant,
+		"ro.bionic.2nd_cpu_variant=" + cpuVariant, // 2026-11-17 体检：还是 generic
 	}
 }
 
