@@ -111,6 +111,10 @@ case "$st" in
   *) hid "statfs(\"/\") = $st（不是 overlay，pp_mnt statfs 改写生效）" ;;
 esac
 
+# /proc/bus/input/devices：QEMU/virtio 虚拟机输入设备（踩坑 #82）
+inp=$(ax 'cat /proc/bus/input/devices 2>/dev/null | grep -icE "QEMU|virtio|VMware|VirtualBox|goldfish"')
+[ "${inp:-0}" -gt 0 ] && now "/proc/bus/input/devices 有 $inp 行虚拟机输入设备（QEMU/virtio 等）：装/重载 pp_mnt 后重启手机（踩坑 #82）" || hid "/proc/bus/input/devices 没有虚拟机输入设备（pp_mnt 过滤生效）"
+
 # cgroup：容器路径
 cg=$(ax 'cat /proc/1/cgroup'); echo "$cg" | grep -qiE 'docker|containerd|/pp-' && now "/proc/1/cgroup 露出 docker/containerd 路径"
 
