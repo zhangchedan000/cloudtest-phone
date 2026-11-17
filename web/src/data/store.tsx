@@ -40,7 +40,8 @@ interface Workspace {
   resetPhones: (ids: string[], androidVersion?: number) => Promise<void>
   renewPhones: (ids: string[]) => Promise<void>
   addProxy: (proxy: Proxy) => Promise<void>
-  checkProxies: (ids: string[], serverId?: string) => Promise<void>
+  /** 检测代理：同时最多 6 个，每测完一个马上更新那一行；onProgress(已完成, 总数) */
+  checkProxies: (ids: string[], serverId?: string, onProgress?: (done: number, total: number) => void) => Promise<void>
   removeProxy: (id: string, serverId?: string) => Promise<void>
   saveGroup: (group: Omit<Group, 'id'> & { id?: string }) => Promise<void>
   removeGroup: (id: string, serverId?: string) => Promise<void>
@@ -210,9 +211,27 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         if (!live) { setProxies((list) => [...list, proxy]); return }
         await each([proxy.id], '添加代理', () => api.createProxy({ name: proxy.name, protocol: proxy.protocol, address: proxy.address, note: proxy.note }, proxy.serverId))
       },
-      checkProxies: async (ids, sid) => {
+      checkProxies: async (ids, sid, onProgress) => {
         if (!live) { message.info('预览模式：接上管家程序后才能检测'); return }
-        await each(ids, '检测', (id) => api.checkProxy(id, sid))
+        // 以前一次全发出去、全部测完才刷新页面：一百多个节点要等好几分钟，期间一直显示「未检测」，像是测不通。
+        // 现在同时最多 6 个，测完一个这一行马上显示结果（不通的显示原因）
+        let next = 0, done = 0
+        const failed: string[] = []
+        const worker = async () => {
+          while (next < ids.length) {
+            const id = ids[next++]
+            try {
+              const check = await api.checkProxy(id, sid)
+              setProxies((list) => list.map((p) => (p.id === id && (p.serverId ?? LOCAL) === (sid ?? p.serverId ?? LOCAL) ? { ...p, check } : p)))
+            } catch (error) {
+              failed.push(`${proxies.find((p) => p.id === id)?.name ?? id}：${(error as Error).message}`)
+            }
+            onProgress?.(++done, ids.length)
+          }
+        }
+        await Promise.all(Array.from({ length: Math.min(6, ids.length) }, worker))
+        if (failed.length) message.error(`检测出错：${failed.slice(0, 5).join('；')}${failed.length > 5 ? ` 等 ${failed.length} 个` : ''}`)
+        await load().catch(() => undefined)
       },
       removeProxy: async (id, sid) => {
         if (!live) { setProxies((list) => list.filter((p) => p.id !== id)); return }

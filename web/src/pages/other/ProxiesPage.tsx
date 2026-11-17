@@ -38,18 +38,25 @@ export function ProxiesPage() {
       setImportBusy(false)
     }
   }
+  const [progress, setProgress] = useState<{ done: number; total: number }>()
   const check = async (ids: string[]) => {
     setChecking(ids)
-    try { await ws.checkProxies(ids, sid) } finally { setChecking([]) }
+    if (ids.length > 1) setProgress({ done: 0, total: ids.length })
+    try {
+      await ws.checkProxies(ids, sid, (done, total) => {
+        if (total > 1) setProgress({ done, total })
+        setChecking((list) => list.filter((id) => id !== ids[0] || total > 1))
+      })
+    } finally { setChecking([]); setProgress(undefined) }
   }
 
   return (
     <div className="pp-page">
       <div className="pp-toolbar">
-        <span className="pp-muted">代理不通时，用它的云手机禁止开机，不会走本机网络。HTTP / HTTPS / SOCKS5 随时能检测；vless、trojan、Clash 节点等要开网络模块才能检测。</span>
+        <span className="pp-muted">代理不通时，用它的云手机禁止开机，不会走本机网络。「全部检测」同时测 6 个，测完一个显示一个；节点多时要等几分钟。</span>
         <Space>
           <ServerSelect value={sid} onChange={setSid} />
-          <Button icon={<ReloadOutlined />} loading={checking.length > 1} onClick={() => void check(proxies.filter((p) => p.id !== 'direct-dev').map((p) => p.id))}>全部检测</Button>
+          <Button icon={<ReloadOutlined />} loading={!!progress} onClick={() => void check(proxies.filter((p) => p.id !== 'direct-dev').map((p) => p.id))}>{progress ? `检测中 ${progress.done}/${progress.total}` : '全部检测'}</Button>
           <Button icon={<CloudDownloadOutlined />} onClick={() => setImporting(true)}>导入订阅</Button>
           <Button type="primary" icon={<PlusOutlined />} onClick={() => setAdding(true)}>添加代理</Button>
         </Space>
@@ -71,7 +78,7 @@ export function ProxiesPage() {
           {
             title: '操作', render: (_, p) => (
               <Space size={4}>
-                <Button size="small" loading={checking.includes(p.id)} onClick={() => void check([p.id])}>检测</Button>
+                <Button size="small" loading={!progress && checking.includes(p.id)} onClick={() => void check([p.id])}>检测</Button>
                 <Button size="small" danger icon={<DeleteOutlined />} disabled={usage(p.id) > 0} title={usage(p.id) > 0 ? '还有设备在用，先换代理' : '删除'} onClick={() => Modal.confirm({ title: `删除代理「${p.name}」？`, okButtonProps: { danger: true }, onOk: () => ws.removeProxy(p.id, sid) })} />
               </Space>
             )
