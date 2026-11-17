@@ -226,7 +226,7 @@ emu=$(ax 'ls /vendor/bin /vendor/bin/hw /vendor/lib64 /vendor/lib64/hw /vendor/e
 [ "${emu:-0}" -gt 0 ] && now "/vendor、/dev 里还有 $emu 个带模拟器代号的文件名：用新镜像（prism.names=1）重启手机（踩坑 #75）" || hid "/vendor、/dev 文件名没有模拟器代号"
 # 无线网卡名
 phy=$(ax 'cat /sys/class/net/wlan0/phy80211/name 2>/dev/null')
-case "$phy" in "") ;; phy[0-9]*) hid "无线网卡名 $phy" ;; *) now "无线网卡名 $phy（真机是 phyN）：更新管家后重启手机（踩坑 #76）" ;; esac
+case "$phy" in "") ;; phy[0-9]*) hid "无线网卡名 $phy" ;; *) now "无线网卡名 $phy（真机是 phyN）：这内核不许把 wiphy 改名成 phy%d，正确改法要动 WiFi 关机清理、有网卡泄漏风险，暂缓到板子上能反复开关机测时再做（踩坑 #76）" ;; esac
 # /proc/net 里自己的端口、Docker DNS
 lst=$(ax 'cat /proc/net/tcp /proc/net/tcp6 /proc/net/udp 2>/dev/null' | awk '{print $2}' | grep -ciE ':(1901|1902|1903|1904|2580)$|^0B00007F:')
 [ "${lst:-0}" -gt 0 ] && now "/proc/net 里能看到 $lst 个自己的监听端口 / Docker DNS（127.0.0.11）：装 pp_mnt 后重启手机（踩坑 #77）" || hid "/proc/net 里看不到自己的端口和 Docker DNS"
