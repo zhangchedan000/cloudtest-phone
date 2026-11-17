@@ -236,6 +236,12 @@ func Setup(ctx context.Context, run Runner, newRadio NewRadioFunc, p Plan, conta
 		return err
 	}
 	movedToPhone = true
+	// 手机里看到的网卡名（/sys/class/ieee80211、/sys/class/net/wlan0/phy80211/name）改成真机那样的 phyN（踩坑 #76：
+	// 原来是 ppsc3406…，一看就是我们建的）。wiphy 名字全内核唯一，phy0 被别的手机占了就往后试；改不成就留原名，不影响 WiFi。
+	if name := renamePhy(ctx, run, pid); name != "" {
+		p.StaPhy = name
+		_ = os.WriteFile(filepath.Join(p.Dir, "radios"), []byte(p.StaPhy+" "+p.APPhy+"\n"), 0o600)
+	}
 	if err := step("路由器 wlan1", "ip", in("iw", "phy", p.APPhy, "interface", "add", "wlan1", "type", "managed")...); err != nil {
 		return err
 	}
@@ -502,4 +508,30 @@ func HostReady(ctx context.Context, run Runner) error {
 		}
 	}
 	return nil
+}
+
+// renamePhy 在手机的网络命名空间里把 wlan0 所在的无线网卡改名成第一个空着的 phyN，返回新名字（失败返回 ""）。
+// 按 wiphy 编号（phy#N）操作：iw 按名字找要读 /sys，从外面看不到手机里的网卡。
+func renamePhy(ctx context.Context, run Runner, pid string) string {
+	out, err := run.Run(ctx, "nsenter", "-t", pid, "-n", "iw", "dev", "wlan0", "info")
+	if err != nil {
+		return ""
+	}
+	idx := ""
+	for _, line := range strings.Split(out, "\n") {
+		f := strings.Fields(line)
+		if len(f) == 2 && f[0] == "wiphy" {
+			idx = f[1]
+		}
+	}
+	if idx == "" {
+		return ""
+	}
+	for i := 0; i < 64; i++ {
+		name := fmt.Sprintf("phy%d", i)
+		if _, err := run.Run(ctx, "nsenter", "-t", pid, "-n", "iw", "phy#"+idx, "set", "name", name); err == nil {
+			return name
+		}
+	}
+	return ""
 }
