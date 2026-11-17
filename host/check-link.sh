@@ -107,7 +107,11 @@ check_phone() {
 
   # DNS：解析得到、而且外面看到的解析来源不是服务器
   a=$(nx python3 -I "$W/net.py" dns "$gw" api.ipify.org A)
-  case "$a" in ""|ERR*) bad "DNS 解析失败（问网关 $gw：${a:-无结果}）"; return ;; *) ok "DNS 能解析（api.ipify.org → ${a%% *}）" ;; esac
+  case "$a" in
+    ""|ERR*) bad "DNS 解析失败（问网关 $gw：${a:-无结果}）"; return ;;
+    198.18.*|198.19.*) bad "DNS 返回 Clash 假地址 ${a%% *}（App 一看就知道开了代理，踩坑 #73）" ;;
+    *) ok "DNS 返回真实地址（api.ipify.org → ${a%% *}）" ;;
+  esac
   res=$(nx python3 -I "$W/net.py" dns "$gw" o-o.myaddr.l.google.com TXT)
   if [ "$pxid" != direct-dev ] && echo "$res" | grep -qw "$host_ip"; then bad "DNS 泄露：谷歌看到的解析来源是服务器 IP（$res）"
   else ok "DNS 不泄露服务器 IP（谷歌看到的解析来源：${res:-无}）"; fi

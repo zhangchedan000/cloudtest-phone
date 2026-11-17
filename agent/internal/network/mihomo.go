@@ -165,9 +165,13 @@ func Build(st store.State, opt Options) Result {
 	b.WriteString("profile:\n  store-selected: false\n  store-fake-ip: false\n")
 	b.WriteString("dns:\n  enable: true\n")
 	fmt.Fprintf(&b, "  listen: %s\n", yamlString(opt.DNSListen))
-	b.WriteString("  ipv6: false\n  enhanced-mode: fake-ip\n  fake-ip-range: 198.18.0.1/16\n")
-	// fake-ip：手机拿到假地址，真正的域名解析在代理那头做，不经宿主机的 DNS。
+	// 2026-11-17 改：以前用 fake-ip，App 解析任何域名都拿到 198.18.x.x（Clash 假地址段，一看就是开了代理，踩坑 #73）。
+	// 现在手机拿到真实的公网 IP（DoH 查的，不走宿主机系统 DNS）；连接时下面的 sniffer 从 TLS / HTTP / QUIC 里读出域名，
+	// 交给节点按域名去连（节点那头解析）——访问的服务器还是节点当地的，和以前 fake-ip 效果一样。
+	b.WriteString("  ipv6: false\n  enhanced-mode: redir-host\n")
 	b.WriteString("  default-nameserver: [1.1.1.1, 8.8.8.8]\n  nameserver: [\"https://1.1.1.1/dns-query\"]\n")
+	b.WriteString("sniffer:\n  enable: true\n  force-dns-mapping: true\n  parse-pure-ip: true\n  override-destination: true\n")
+	b.WriteString("  sniff:\n    HTTP: {ports: [80, 8080-8880], override-destination: true}\n    TLS: {ports: [443, 8443]}\n    QUIC: {ports: [443, 8443]}\n")
 	ids := make([]string, 0, len(used))
 	for id := range used {
 		ids = append(ids, id)
