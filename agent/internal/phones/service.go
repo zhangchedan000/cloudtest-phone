@@ -477,7 +477,9 @@ func partitionIdentity(args []string, realBP map[string]string) []string {
 		}
 		for i, field := range []string{"brand", "name", "device"} {
 			k := "ro.product." + part + "." + field
-			if _, real := realBP[k]; !real {
+			// 真机数据里有就不动——除非它本身就是镜像留下的占位符 generic / 空（比如小米 mainline
+			// 镜像的 ro.product.system.device 写死成 generic，和指纹里的 missi 对不上，是破绽）。这时用指纹里的盖掉。
+			if rv, real := realBP[k]; !real || rv == "generic" || rv == "" {
 				set[k] = f[i]
 			}
 		}

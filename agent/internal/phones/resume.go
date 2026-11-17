@@ -28,6 +28,11 @@ func (s *Service) ResumeRunning(ctx context.Context) int {
 		work := func() {
 			s.removeTraces(ctx, containerName(id))
 			s.ensureWifi(ctx, id)
+			// 挂载表改写的登记（/proc/pp_mnt）和本机端口防护，跟 Start 一样补一遍：
+			// 平时管家重启这些登记在内核模块里还在，不用补；但自动更新重新编译、重载了 pp_mnt
+			// 内核模块后，登记会全丢，只有在这里补登记才能自愈（否则要逐台重启手机，踩坑 #80）。都是幂等的。
+			s.applyMounts(ctx, id)
+			s.guardLocalPorts(ctx, id)
 			s.applySettings(ctx, id)
 			s.resumeFakes(ctx, id)
 		}

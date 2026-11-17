@@ -140,41 +140,37 @@ static int pp_ret_mountstats(struct kretprobe_instance *ri, struct pt_regs *regs
 }
 
 /*
- * statfs()/fstatfs()：根目录、/apex 等是 overlay，返回的文件系统类型号是 OVERLAYFS_SUPER_MAGIC，
- * 和改写后挂载表说的 ext4 对不上。vfs_statfs 返回后把这个类型号改成 ext4 的（只改登记过的手机里的进程）。
+ * statfs()/fstatfs()：容器的根目录、/apex 等是 overlay，文件系统类型号是 OVERLAYFS_SUPER_MAGIC，
+ * 和改写后挂载表说的 ext4 对不上。本内核里 vfs_statfs 被内联进了系统调用路径，挂它的返回只能抓到对下层
+ * ext4 的那次调用（返回的已经是 ext4 类型号），抓不到带 overlay 类型号的那层（踩坑 #80）。真正带 overlay
+ * 类型号的是 do_statfs_native / do_statfs64——把内核填好的 kstatfs 拷给用户前的最后一步，所以挂这两个函数的
+ * 入口，进去前把 overlay 类型号改成 ext4（只改登记过的手机里的进程）。
  */
 #define PP_OVERLAYFS_MAGIC 0x794c7630
 #define PP_EXT4_MAGIC 0xEF53
 
-struct pp_sf {
-	struct kstatfs *buf;
-};
-
-static int pp_statfs_entry(struct kretprobe_instance *ri, struct pt_regs *regs)
+static int pp_statfs_pre(struct kprobe *p, struct pt_regs *regs)
 {
-	struct pp_sf *d = (struct pp_sf *)ri->data;
+	struct kstatfs *st = (struct kstatfs *)regs_get_kernel_argument(regs, 0);
 	struct pid_namespace *ns = task_active_pid_ns(current);
 	bool hit;
 
-	if (!ns || ns == &init_pid_ns)
-		return 1;
+	if (!ns || ns == &init_pid_ns || !st || st->f_type != PP_OVERLAYFS_MAGIC)
+		return 0;
 	read_lock(&slots_lock);
 	hit = pp_find(ns) != NULL;
 	read_unlock(&slots_lock);
-	if (!hit)
-		return 1;
-	d->buf = (struct kstatfs *)regs_get_kernel_argument(regs, 1);
-	return d->buf ? 0 : 1;
-}
-
-static int pp_statfs_ret(struct kretprobe_instance *ri, struct pt_regs *regs)
-{
-	struct pp_sf *d = (struct pp_sf *)ri->data;
-
-	if (regs_return_value(regs) == 0 && d->buf && d->buf->f_type == PP_OVERLAYFS_MAGIC)
-		d->buf->f_type = PP_EXT4_MAGIC;
+	if (hit)
+		st->f_type = PP_EXT4_MAGIC;
 	return 0;
 }
+
+/* 不同内核这两个符号可能有一个不存在，best-effort 挂：哪个在挂哪个。 */
+static struct kprobe statfs_probes[] = {
+	{ .symbol_name = "do_statfs_native", .pre_handler = pp_statfs_pre },
+	{ .symbol_name = "do_statfs64", .pre_handler = pp_statfs_pre },
+};
+static bool statfs_ok[ARRAY_SIZE(statfs_probes)];
 
 static struct kretprobe rp_mountinfo = {
 	.kp.symbol_name = "show_mountinfo",
@@ -200,15 +196,7 @@ static struct kretprobe rp_mountstats = {
 	.maxactive = 64,
 };
 
-static struct kretprobe rp_statfs = {
-	.kp.symbol_name = "vfs_statfs",
-	.entry_handler = pp_statfs_entry,
-	.handler = pp_statfs_ret,
-	.data_size = sizeof(struct pp_sf),
-	.maxactive = 128,
-};
-
-static struct kretprobe *probes[] = { &rp_mountinfo, &rp_mounts, &rp_mountstats, &rp_statfs };
+static struct kretprobe *probes[] = { &rp_mountinfo, &rp_mounts, &rp_mountstats };
 
 /*
  * /proc/net/tcp、tcp6、udp、udp6（踩坑 #77）：云手机自己的本机端口（蓝牙芯片 6401~6404、基带 9600）和 Docker 的内置 DNS
@@ -365,7 +353,7 @@ static int __init pp_mnt_init(void)
 	/* 全挂上或全不挂 */
 	ret = register_kretprobes(probes, ARRAY_SIZE(probes));
 	if (ret) {
-		pr_err("pp_mnt: 挂内核函数失败 %d（show_mountinfo / show_vfsmnt / show_vfsstat / vfs_statfs）\n", ret);
+		pr_err("pp_mnt: 挂内核函数失败 %d（show_mountinfo / show_vfsmnt / show_vfsstat）\n", ret);
 		return ret;
 	}
 	entry = proc_create("pp_mnt", 0600, NULL, &pp_mnt_ops);
@@ -381,6 +369,11 @@ static int __init pp_mnt_init(void)
 			if (!net_ok[i])
 				pr_info("pp_mnt: 没挂上 %s（这个连接表照旧）\n", net_probes[i]->kp.symbol_name);
 		}
+		for (i = 0; i < ARRAY_SIZE(statfs_probes); i++) {
+			statfs_ok[i] = register_kprobe(&statfs_probes[i]) == 0;
+			if (!statfs_ok[i])
+				pr_info("pp_mnt: 没挂上 %s（statfs 类型号照旧）\n", statfs_probes[i].symbol_name);
+		}
 	}
 	return 0;
 }
@@ -390,6 +383,9 @@ static void __exit pp_mnt_exit(void)
 	int i;
 
 	proc_remove(entry);
+	for (i = 0; i < ARRAY_SIZE(statfs_probes); i++)
+		if (statfs_ok[i])
+			unregister_kprobe(&statfs_probes[i]);
 	for (i = 0; i < ARRAY_SIZE(net_probes); i++)
 		if (net_ok[i])
 			unregister_kretprobe(net_probes[i]);
