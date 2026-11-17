@@ -204,6 +204,36 @@ else
   hid "电池为放电态（AC=false），电池漂移已生效"
 fi
 
+# ========== 2026-11-17 App 视角全面体检补的项（踩坑 #73~#79） ==========
+sect "App 视角补充（#73~#79）"
+# DNS：fake-ip 的 198.18 段
+dnsr=$(ax 'ping -c1 -W2 www.google.com 2>&1 | head -1' | grep -oE '\([0-9.]+\)' | tr -d '()')
+case "$dnsr" in 198.18.*|198.19.*) now "域名解析出 Clash 假地址 $dnsr（App 一看就知道开了代理）：更新管家（网络模块改 redir-host，踩坑 #73）" ;;
+  "") info "DNS：ping 不出地址（没网？）" ;; *) hid "域名解析出真实地址（$dnsr）" ;; esac
+# /dev 里服务器硬件
+hostdev=$(ax 'ls /dev' | grep -cE '^(loop[0-9]+|sd[a-z]+[0-9]*|kvm|vhost-net|vfio|vmci|zfs|vcs|tty[1-9][0-9]*)$')
+[ "${hostdev:-0}" -gt 0 ] && now "/dev 里还有 $hostdev 个服务器硬件节点（sda、loop、kvm…）：更新管家后重启手机（踩坑 #74）" || hid "/dev 里没有服务器硬件节点"
+# 模拟器字样的文件名
+emu=$(ax 'ls /vendor/bin /vendor/bin/hw /vendor/lib64 /vendor/lib64/hw /vendor/etc/init /dev 2>/dev/null' | grep -ciE 'goldfish|cuttlefish|ranchu|redroid|qemu')
+[ "${emu:-0}" -gt 0 ] && now "/vendor、/dev 里还有 $emu 个带模拟器代号的文件名：用新镜像（prism.names=1）重启手机（踩坑 #75）" || hid "/vendor、/dev 文件名没有模拟器代号"
+# 无线网卡名
+phy=$(ax 'cat /sys/class/net/wlan0/phy80211/name 2>/dev/null')
+case "$phy" in "") ;; phy[0-9]*) hid "无线网卡名 $phy" ;; *) now "无线网卡名 $phy（真机是 phyN）：更新管家后重启手机（踩坑 #76）" ;; esac
+# /proc/net 里自己的端口、Docker DNS
+lst=$(ax 'cat /proc/net/tcp /proc/net/tcp6 /proc/net/udp 2>/dev/null' | awk '{print $2}' | grep -ciE ':(1901|1902|1903|1904|2580)$|^0B00007F:')
+[ "${lst:-0}" -gt 0 ] && now "/proc/net 里能看到 $lst 个自己的监听端口 / Docker DNS（127.0.0.11）：装 pp_mnt 后重启手机（踩坑 #77）" || hid "/proc/net 里看不到自己的端口和 Docker DNS"
+# 电池类型
+tech=$(ax 'dumpsys battery 2>/dev/null' | sed -n 's/^ *technology: *//p' | head -1)
+[ -z "$tech" ] && now "电池类型是空的（真机 Li-ion / Li-poly）：更新管家后重启手机（踩坑 #78）" || hid "电池类型 $tech"
+# 分区属性里的 generic
+gen=$(ax 'getprop' | grep -E '^\[ro\.(product\.[a-z_]+\.device|bionic\.2nd_cpu_variant|bionic\.cpu_variant)\]: \[generic\]' | head -3 | tr '\n' ' ')
+[ -n "$gen" ] && now "属性里还有 generic：$gen" || hid "分区设备名、CPU 类型属性没有 generic"
+# boot_id（单台看不出重复，多台互查在 check-link.sh）
+info "boot_id：$(ax 'cat /proc/sys/kernel/random/boot_id')（多台手机互查用 bash host/check-link.sh，踩坑 #79）"
+# 服务器内核模块（板子阶段）
+vm=$(ax 'ls /sys/module' | grep -cE '^(xen|kvm|virtio_|vmw_|mac80211_hwsim)')
+[ "${vm:-0}" -gt 0 ] && cnt "/sys/module 里能看到 $vm 个服务器 / 虚拟机的内核模块（xen、kvm、virtio、hwsim）：要改内核，板子不是虚拟机，大部分自然没有"
+
 # ========== 小结 ==========
 sect "小结"
 echo "  已遮住 $hide 项 · 现在可做 $nowfix 项 · 容器改不了 $cant 项 · 等板子 $board 项"
