@@ -279,10 +279,62 @@ static int pp_rewrite_mountstats(const char *in, int len, char *out, int max, co
 	return o.bad ? -1 : o.n;
 }
 
-/* mode：PP_MOUNTS / PP_MOUNTINFO / PP_MOUNTSTATS */
+/*
+ * /proc/net/tcp、tcp6、udp、udp6 的一行：「  序号: 本地地址:端口 远端地址:端口 状态 …」（十六进制）。
+ * 删掉云手机自己用的本机端口（踩坑 #77）：6401~6404 蓝牙芯片模拟器、9600 模拟基带；
+ * 以及 Docker 的内置 DNS（本地地址 127.0.0.11，四字节小端写成 0B00007F）——真手机没有，看到就知道是 Docker。
+ */
+static int pp_hex(struct pp_tok t, unsigned long *v)
+{
+	int i;
+
+	*v = 0;
+	if (t.n == 0 || t.n > 16)
+		return -1;
+	for (i = 0; i < t.n; i++) {
+		char c = t.p[i];
+
+		*v <<= 4;
+		if (c >= '0' && c <= '9')
+			*v |= c - '0';
+		else if (c >= 'A' && c <= 'F')
+			*v |= c - 'A' + 10;
+		else if (c >= 'a' && c <= 'f')
+			*v |= c - 'a' + 10;
+		else
+			return -1;
+	}
+	return 0;
+}
+
+static int pp_rewrite_net(const char *in, int len)
+{
+	struct pp_tok t[4], addr, port;
+	unsigned long p;
+	int k = pp_split(in, len, t, 4), i;
+
+	if (k < 2 || !pp_ends(t[0], ":"))
+		return -1; /* 表头那行（sl local_address …）原样 */
+	for (i = t[1].n - 1; i >= 0 && t[1].p[i] != ':'; i--)
+		;
+	if (i <= 0)
+		return -1;
+	addr.p = t[1].p; addr.n = i;
+	port.p = t[1].p + i + 1; port.n = t[1].n - i - 1;
+	if (pp_hex(port, &p))
+		return -1;
+	if ((p >= 6401 && p <= 6404) || p == 9600)
+		return 0;
+	if (pp_eq(addr, "0B00007F") || pp_eq(addr, "0000000000000000FFFF00000B00007F"))
+		return 0;
+	return -1;
+}
+
+/* mode：PP_MOUNTS / PP_MOUNTINFO / PP_MOUNTSTATS / PP_NET */
 #define PP_MOUNTS 0
 #define PP_MOUNTINFO 1
 #define PP_MOUNTSTATS 2
+#define PP_NET 3
 
 static int pp_rewrite(const char *in, int len, char *out, int max, int mode, const struct pp_cfg *c)
 {
@@ -291,6 +343,8 @@ static int pp_rewrite(const char *in, int len, char *out, int max, int mode, con
 		return pp_rewrite_mountinfo(in, len, out, max, c);
 	case PP_MOUNTSTATS:
 		return pp_rewrite_mountstats(in, len, out, max, c);
+	case PP_NET:
+		return pp_rewrite_net(in, len);
 	}
 	return pp_rewrite_mounts(in, len, out, max, c);
 }

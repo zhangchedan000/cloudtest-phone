@@ -9,7 +9,8 @@
  * 做法：kretprobe 挂在内核输出这几个文件每一行的函数（show_mountinfo / show_vfsmnt / show_vfsstat）上。进入时记下这一行在
  * seq_file 缓冲区里的起点；返回时如果读的进程属于登记过的云手机（按 PID 命名空间认：安卓给每个 App 单开挂载命名空间，
  * 但不开 PID 命名空间，容器里所有进程都在同一个），就按 rewrite.h 的规则改写 / 删掉刚输出的这一行。
- * 只改读到的文字，不动真实的挂载；宿主机和别的容器读到的不变。另外 statfs() 返回的 overlay 类型号改成 ext4（和挂载表一致）。
+ * 只改读到的文字，不动真实的挂载；宿主机和别的容器读到的不变。另外 statfs() 返回的 overlay 类型号改成 ext4（和挂载表一致）；
+ * /proc/net/tcp、udp 里删掉云手机自己的本机端口和 Docker 内置 DNS 那几行（踩坑 #77）。
  *
  * 管家开机后写 /proc/pp_mnt（只有 root 能写）：
  *     add <容器 init 的 pid>|<这台手机 /data 在宿主机上的目录>|<那块盘在挂载表里的名字，如 /dev/sda1>
@@ -209,6 +210,26 @@ static struct kretprobe rp_statfs = {
 
 static struct kretprobe *probes[] = { &rp_mountinfo, &rp_mounts, &rp_mountstats, &rp_statfs };
 
+/*
+ * /proc/net/tcp、tcp6、udp、udp6（踩坑 #77）：云手机自己的本机端口（蓝牙芯片 6401~6404、基带 9600）和 Docker 的内置 DNS
+ * （127.0.0.11）那几行删掉。尽量挂：哪个内核函数不存在就跳过那一个，不影响挂载表那几个。
+ */
+static int pp_ret_net(struct kretprobe_instance *ri, struct pt_regs *regs)
+{
+	pp_done(ri, PP_NET);
+	return 0;
+}
+
+#define PP_NET_PROBE(var, sym) \
+	static struct kretprobe var = { .kp.symbol_name = sym, .entry_handler = pp_entry, .handler = pp_ret_net, \
+					 .data_size = sizeof(struct pp_ri), .maxactive = 64 }
+PP_NET_PROBE(rp_tcp4, "tcp4_seq_show");
+PP_NET_PROBE(rp_tcp6, "tcp6_seq_show");
+PP_NET_PROBE(rp_udp4, "udp4_seq_show");
+PP_NET_PROBE(rp_udp6, "udp6_seq_show");
+static struct kretprobe *net_probes[] = { &rp_tcp4, &rp_tcp6, &rp_udp4, &rp_udp6 };
+static bool net_ok[ARRAY_SIZE(net_probes)];
+
 /* ---------- /proc/pp_mnt ---------- */
 
 static struct pid_namespace *pp_ns_of(long nr)
@@ -352,6 +373,15 @@ static int __init pp_mnt_init(void)
 		unregister_kretprobes(probes, ARRAY_SIZE(probes));
 		return -ENOMEM;
 	}
+	{
+		int i;
+
+		for (i = 0; i < ARRAY_SIZE(net_probes); i++) {
+			net_ok[i] = register_kretprobe(net_probes[i]) == 0;
+			if (!net_ok[i])
+				pr_info("pp_mnt: 没挂上 %s（这个连接表照旧）\n", net_probes[i]->kp.symbol_name);
+		}
+	}
 	return 0;
 }
 
@@ -360,6 +390,9 @@ static void __exit pp_mnt_exit(void)
 	int i;
 
 	proc_remove(entry);
+	for (i = 0; i < ARRAY_SIZE(net_probes); i++)
+		if (net_ok[i])
+			unregister_kretprobe(net_probes[i]);
 	unregister_kretprobes(probes, ARRAY_SIZE(probes));
 	for (i = 0; i < PP_SLOTS; i++)
 		if (slots[i].ns) {

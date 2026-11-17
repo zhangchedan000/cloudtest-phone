@@ -85,6 +85,18 @@ int main(void)
 	check(2, "device proc mounted on /proc with fstype proc\n", "device proc mounted on /proc with fstype proc\n");
 	check(2, "device /dev/fuse mounted on /storage/emulated with fstype fuse\n", "device /dev/fuse mounted on /storage/emulated with fstype fuse\n");
 
+	/* /proc/net/tcp、udp：云手机自己的端口和 Docker 的 DNS 删掉，别的原样 */
+	check(3, "  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode\n",
+	      "  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode\n");
+	check(3, "   0: 00000000:1902 00000000:0000 0A 00000000:00000000 00:00000000 00000000     0        0 123 1\n", "");
+	check(3, "   1: 0100007F:2580 00000000:0000 0A 00000000:00000000 00:00000000 00000000     0        0 124 1\n", "");
+	check(3, "   2: 0B00007F:9A7F 00000000:0000 0A 00000000:00000000 00:00000000 00000000     0        0 125 1\n", "");
+	check(3, "11233: 0B00007F:C879 00000000:0000 07 00000000:00000000 00:00000000 00000000     0        0 76663959 2\n", "");
+	check(3, "   3: C508A8C0:DF19 040012C6:01BB 01 00000000:00000000 00:00000000 00000000 10105 0 77310736 2\n",
+	      "   3: C508A8C0:DF19 040012C6:01BB 01 00000000:00000000 00:00000000 00000000 10105 0 77310736 2\n");
+	check(3, "   4: 00000000000000000000000000000000:1F90 00000000000000000000000000000000:0000 0A 0 0\n",
+	      "   4: 00000000000000000000000000000000:1F90 00000000000000000000000000000000:0000 0A 0 0\n");
+
 	/* 磁盘镜像的手机：/data 是整块 /dev/loop5，build.prop 在另一块盘 /dev/sda1 */
 	{
 		static const struct pp_cfg c = { "/", "/dev/loop5" };
