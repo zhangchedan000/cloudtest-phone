@@ -95,8 +95,9 @@ check_phone() {
   [ -n "$pid" ] && [ "$pid" -gt 0 ] || { bad "容器没在运行"; return; }
   ip=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$C")
   nx() { nsenter -t "$pid" -n "$@"; }
-  gw=$(nx ip route show default | awk '{print $3; exit}')
-  dev=$(nx ip route show default | awk '{print $5; exit}')
+  # 安卓用策略路由（默认路由不在主表里）：问内核去外网走哪
+  route=$(nx ip route get 1.1.1.1 2>/dev/null | head -1)
+  gw=$(echo "$route" | sed -n 's/.* via \([0-9.]*\).*/\1/p'); dev=$(echo "$route" | sed -n 's/.* dev \([^ ]*\).*/\1/p')
   [ "$dev" = wlan0 ] && ok "手机走 WiFi（wlan0，网关 $gw）" || note "默认路由走 ${dev:-?}（不是 WiFi）"
 
   # 规则：这台手机的流量走哪个出口
@@ -168,7 +169,7 @@ print(len(cs), sum(1 for c in cs if 'px-$1' in c.get('chains',[])))"; }
     sleep 2
     read -r n_after n_old < <(conns "$orig")
     [ "${n_old:-1}" = 0 ] && ok "切换后老节点上的连接都断了（切换前 $n_before 条）" || bad "切换后还有 $n_old 条连接挂在老节点上"
-    gw=$(nsenter -t "$pid" -n ip route show default | awk '{print $3; exit}')
+    gw=$(nsenter -t "$pid" -n ip route get 1.1.1.1 | sed -n 's/.* via \([0-9.]*\).*/\1/p')
     a=$(nsenter -t "$pid" -n python3 -I "$W/net.py" dns "$gw" api.ipify.org A | awk '{print $1}')
     e=$(nsenter -t "$pid" -n curl -s -m 20 --resolve "api.ipify.org:443:$a" https://api.ipify.org)
     w=$(field "$proxies" "$other" check.exitIp)
@@ -178,7 +179,7 @@ print(len(cs), sum(1 for c in cs if 'px-$1' in c.get('chains',[])))"; }
   dead=$(api POST /proxies '{"name":"链路体检-坏节点","protocol":"socks5","address":"socks5://127.0.0.1:9","note":"check-link 临时"}' | python3 -c "import json,sys; print(json.load(sys.stdin).get('id',''))" 2>/dev/null)
   if [ -n "$dead" ]; then
     api POST "/phones/$id/proxy" "{\"proxyId\":\"$dead\"}" >/dev/null; sleep 3
-    gw=$(nsenter -t "$pid" -n ip route show default | awk '{print $3; exit}')
+    gw=$(nsenter -t "$pid" -n ip route get 1.1.1.1 | sed -n 's/.* via \([0-9.]*\).*/\1/p')
     a=$(nsenter -t "$pid" -n python3 -I "$W/net.py" dns "$gw" api.ipify.org A | awk '{print $1}')
     e=$(nsenter -t "$pid" -n curl -s -m 15 --resolve "api.ipify.org:443:${a:-104.26.12.205}" https://api.ipify.org)
     [ -z "$e" ] && ok "节点断了 → 手机断网（没有退回服务器网络）" || bad "节点断了手机还能上网，出口 $e（应该断网！）"
