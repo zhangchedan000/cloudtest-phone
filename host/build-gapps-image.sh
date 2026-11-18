@@ -24,7 +24,7 @@ command -v python3 >/dev/null || die "没有 python3"
 ver=${1:-14}
 force=0
 [ "${2:-}" = "--force" ] && force=1
-case "$ver" in 14) full=14.0.0 ;; 13) full=13.0.0 ;; 12) full=12.0.0 ;; *) die "不支持的安卓版本 $ver（redroid-script 目前支持 12/13/14）" ;; esac
+case "$ver" in 15) full=15.0.0 ;; 14) full=14.0.0 ;; 13) full=13.0.0 ;; 12) full=12.0.0 ;; *) die "不支持的安卓版本 $ver（支持 12/13/14/15）" ;; esac
 
 image="redroid/redroid:${full}_mindthegapps"
 if [ "$force" = 0 ] && docker image inspect "$image" >/dev/null 2>&1; then
@@ -51,6 +51,10 @@ if [ -f "$work/requirements.txt" ]; then
   log "装 python 依赖"
   python3 -m pip install -q -r "$work/requirements.txt" 2>/dev/null || python3 -m pip install -q --break-system-packages -r "$work/requirements.txt" || true
 fi
+
+# redroid.py 的 -a 选项把安卓 15 挡掉了（choices 没列），但底层 MindTheGapps 支持 15（stuff/mindthegapps.py 有 15.0.0 的 arm64 包）。
+# 把 $full 加进 choices 再跑（安卓 15 的整版底座 redroid/redroid:15.0.0-latest dockerhub 上有）。
+grep -q "'$full'" "$work/redroid.py" || sed -i "s/choices=\['14.0.0'/choices=['$full', '14.0.0'/" "$work/redroid.py"
 
 log "构建 $image（安卓 $full + MindTheGapps），这步较慢……"
 ( cd "$work" && python3 redroid.py -a "$full" -mtg -c docker ) || die "构建失败（看上面的日志；常见原因：下载 GApps 包的网络不通）"
