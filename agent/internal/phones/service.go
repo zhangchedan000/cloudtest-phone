@@ -1202,9 +1202,12 @@ func redroidFPS(v any) int {
 func (s *Service) removeTraces(ctx context.Context, name string) {
 	deadline := time.Now().Add(s.bootTimeout())
 	for {
-		// 启动器（/pp-init）开机后用不着了：卸掉挂载再删掉挂载点留下的空文件。
-		// 传感器喂数据进程就是从它启动的，普通 umount 会报「忙」：用 -l（立刻从挂载表摘掉，正在跑的进程不受影响）。
-		if _, err := s.run.Run(ctx, "docker", "exec", name, "sh", "-c", "umount -l "+initMount+" 2>/dev/null; rm -f "+initMount+" /system/xbin/su /.dockerenv"); err == nil {
+		// 启动器（/pp-init）开机后用不着了：卸掉挂载再删掉挂载点留下的空文件。喂数据进程现在从 memfd 跑、
+		// 不再占着 /pp-init（踩坑 #87），但 umount -l 落地是异步的，刚卸完 rm 可能还报「忙」。所以不能只看 rm
+		// 返回值，要盯到 /pp-init 真没了才算完（否则会偶尔残留一个空文件，踩坑 #87 的尾巴）。
+		out, err := s.run.Run(ctx, "docker", "exec", name, "sh", "-c",
+			"rm -f /system/xbin/su /.dockerenv; umount -l "+initMount+" 2>/dev/null; rm -f "+initMount+" 2>/dev/null; [ -e "+initMount+" ] && echo LEFT || echo GONE")
+		if err == nil && strings.Contains(out, "GONE") {
 			return
 		}
 		if time.Now().After(deadline) || ctx.Err() != nil {
