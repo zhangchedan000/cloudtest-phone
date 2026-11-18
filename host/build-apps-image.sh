@@ -124,8 +124,9 @@ docker rm "$cid" >/dev/null
 log "编译自定义 default_workspace 并换进 Launcher3，用平台 testkey 重签"
 # 改桌面布局是 best-effort：安卓 15（API 35）的资源表格式较新，系统自带的 aapt2(2.19) 读不了会崩，
 # 这时就跳过布局、只保留原桌面（拨号/短信照样装）。安卓 14 实测正常。
-make_launcher() (
-  set -e
+# 注意：别靠 set -e——函数在 if 条件里时 set -e 会被忽略，aapt2 失败也不会中断。
+# 每一步都显式 || return 1，并在最后验证确实换进去了。
+make_launcher() {
   mkdir -p "$W/wsc"
   for g in 5x5 4x4; do
     src="$here/apps/default_workspace_${g}.xml"
@@ -135,17 +136,18 @@ make_launcher() (
     cat > "$W/ws_$g/AndroidManifest.xml" <<'M'
 <manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.prism.wsbuild"><application/></manifest>
 M
-    aapt2 compile "$W/ws_$g/res/xml/default_workspace_${g}.xml" -o "$W/wsc/"
+    aapt2 compile "$W/ws_$g/res/xml/default_workspace_${g}.xml" -o "$W/wsc/" || return 1
   done
   aapt2 link -I "$W/fw.apk" -I "$W/L3.apk" --manifest "$W/ws_5x5/AndroidManifest.xml" \
-    -o "$W/ws-linked.apk" "$W"/wsc/*.flat
+    -o "$W/ws-linked.apk" "$W"/wsc/*.flat || return 1
+  mkdir -p "$W/wsx"
+  ( cd "$W/wsx" && unzip -o -q "$W/ws-linked.apk" 'res/xml/default_workspace_*.xml' ) || return 1
+  ls "$W"/wsx/res/xml/default_workspace_*.xml >/dev/null 2>&1 || return 1   # 真取到布局了才算数
   cp "$W/L3.apk" "$W/L3-mod.apk"
   zip -d "$W/L3-mod.apk" 'META-INF/*.SF' 'META-INF/*.RSA' 'META-INF/*.MF' >/dev/null 2>&1 || true
-  mkdir -p "$W/wsx"
-  ( cd "$W/wsx" && unzip -o -q "$W/ws-linked.apk" 'res/xml/default_workspace_*.xml' \
-     && zip -X "$W/L3-mod.apk" res/xml/default_workspace_*.xml >/dev/null )
-  sign "$W/L3-mod.apk" "$W/stage/L3-signed.apk"
-)
+  ( cd "$W/wsx" && zip -X "$W/L3-mod.apk" res/xml/default_workspace_*.xml >/dev/null ) || return 1
+  sign "$W/L3-mod.apk" "$W/stage/L3-signed.apk" || return 1
+}
 L3_OK=0
 if make_launcher >"$W/launcher.log" 2>&1; then L3_OK=1; else
   log "警告：改桌面布局没成功（多半是镜像资源太新、aapt2 读不了，安卓 15 常见），跳过布局、只装拨号/短信。日志：$W/launcher.log"
