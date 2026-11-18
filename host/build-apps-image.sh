@@ -122,36 +122,46 @@ docker cp "$cid:/$L3PATH" "$W/L3.apk"
 docker cp "$cid:/system/framework/framework-res.apk" "$W/fw.apk"
 docker rm "$cid" >/dev/null
 log "编译自定义 default_workspace 并换进 Launcher3，用平台 testkey 重签"
-mkdir -p "$W/wsc"
-for g in 5x5 4x4; do
-  src="$here/apps/default_workspace_${g}.xml"
-  [ -f "$src" ] || continue
-  mkdir -p "$W/ws_$g/res/xml"
-  cp "$src" "$W/ws_$g/res/xml/default_workspace_${g}.xml"
-  cat > "$W/ws_$g/AndroidManifest.xml" <<'M'
+# 改桌面布局是 best-effort：安卓 15（API 35）的资源表格式较新，系统自带的 aapt2(2.19) 读不了会崩，
+# 这时就跳过布局、只保留原桌面（拨号/短信照样装）。安卓 14 实测正常。
+make_launcher() (
+  set -e
+  mkdir -p "$W/wsc"
+  for g in 5x5 4x4; do
+    src="$here/apps/default_workspace_${g}.xml"
+    [ -f "$src" ] || continue
+    mkdir -p "$W/ws_$g/res/xml"
+    cp "$src" "$W/ws_$g/res/xml/default_workspace_${g}.xml"
+    cat > "$W/ws_$g/AndroidManifest.xml" <<'M'
 <manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.prism.wsbuild"><application/></manifest>
 M
-  aapt2 compile "$W/ws_$g/res/xml/default_workspace_${g}.xml" -o "$W/wsc/"
-done
-aapt2 link -I "$W/fw.apk" -I "$W/L3.apk" --manifest "$W/ws_5x5/AndroidManifest.xml" \
-  -o "$W/ws-linked.apk" "$W"/wsc/*.flat
-cp "$W/L3.apk" "$W/L3-mod.apk"
-zip -d "$W/L3-mod.apk" 'META-INF/*.SF' 'META-INF/*.RSA' 'META-INF/*.MF' >/dev/null 2>&1 || true
-mkdir -p "$W/wsx"
-( cd "$W/wsx" && unzip -o -q "$W/ws-linked.apk" 'res/xml/default_workspace_*.xml' \
-   && zip -X "$W/L3-mod.apk" res/xml/default_workspace_*.xml >/dev/null )
-sign "$W/L3-mod.apk" "$W/stage/L3-signed.apk"
+    aapt2 compile "$W/ws_$g/res/xml/default_workspace_${g}.xml" -o "$W/wsc/"
+  done
+  aapt2 link -I "$W/fw.apk" -I "$W/L3.apk" --manifest "$W/ws_5x5/AndroidManifest.xml" \
+    -o "$W/ws-linked.apk" "$W"/wsc/*.flat
+  cp "$W/L3.apk" "$W/L3-mod.apk"
+  zip -d "$W/L3-mod.apk" 'META-INF/*.SF' 'META-INF/*.RSA' 'META-INF/*.MF' >/dev/null 2>&1 || true
+  mkdir -p "$W/wsx"
+  ( cd "$W/wsx" && unzip -o -q "$W/ws-linked.apk" 'res/xml/default_workspace_*.xml' \
+     && zip -X "$W/L3-mod.apk" res/xml/default_workspace_*.xml >/dev/null )
+  sign "$W/L3-mod.apk" "$W/stage/L3-signed.apk"
+)
+L3_OK=0
+if make_launcher >"$W/launcher.log" 2>&1; then L3_OK=1; else
+  log "警告：改桌面布局没成功（多半是镜像资源太新、aapt2 读不了，安卓 15 常见），跳过布局、只装拨号/短信。日志：$W/launcher.log"
+  tail -3 "$W/launcher.log" >&2 || true
+fi
 
 # ---- 3) 打进镜像 ----
-log "docker build $out"
-cat > "$W/Dockerfile" <<DF
-FROM $base
-COPY stage/L3-signed.apk /$L3PATH
-COPY stage/product/priv-app/Dialer/Dialer.apk /product/priv-app/Dialer/Dialer.apk
-COPY stage/product/etc/permissions/com.android.dialer.xml /product/etc/permissions/com.android.dialer.xml
-COPY stage/product/app/messaging/messaging.apk /product/app/messaging/messaging.apk
-LABEL prism.apps=1
-DF
+log "docker build $out（桌面布局：$([ "$L3_OK" = 1 ] && echo 改了 || echo 跳过)）"
+{
+  echo "FROM $base"
+  [ "$L3_OK" = 1 ] && echo "COPY stage/L3-signed.apk /$L3PATH"
+  echo "COPY stage/product/priv-app/Dialer/Dialer.apk /product/priv-app/Dialer/Dialer.apk"
+  echo "COPY stage/product/etc/permissions/com.android.dialer.xml /product/etc/permissions/com.android.dialer.xml"
+  echo "COPY stage/product/app/messaging/messaging.apk /product/app/messaging/messaging.apk"
+  echo "LABEL prism.apps=1 prism.appslayout=$L3_OK"
+} > "$W/Dockerfile"
 (cd "$W" && docker build -q -t "$out" .) >/dev/null
 log "完成：$out"
 echo "$out"
