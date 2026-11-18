@@ -420,6 +420,11 @@ func (s *Service) bootProps(p store.Phone, st store.State) ([]string, map[string
 	sort.Strings(props)
 	args = append(args, props...)
 	args = append(args, disguiseProps()...)
+	// ro.kernel.version 要和伪造的 uname 内核版本大小版本一致（2026-11-18 体检：露了宿主机的 6.17，
+	// 真机该是 5.10 / 5.15 之类，和 uname 对得上）。取伪造内核版本号的「主.次」。
+	if mm := kernelMajorMinor(str(byKey["kernelRelease"])); mm != "" {
+		args = append(args, "ro.kernel.version="+mm)
+	}
 	// 指纹来源：手动填写 / 导入真参的优先（fingerprint 字段非空就用它），
 	// 否则按手机安卓版本取机型库里的真实指纹（版本必须一致）。
 	var realFP string
@@ -652,6 +657,9 @@ func disguiseProps() []string {
 		"ro.boot.veritymode=enforcing",
 		"ro.boot.vbmeta.device_state=locked",
 		"ro.secure=1",
+		// 开机模式：Redroid 没设 androidboot.mode，init 就把 ro.bootmode 置成 unknown；真机正常开机是 normal
+		// （2026-11-18 体检：ro.bootmode=unknown）。设 ro.boot.mode，ro.bootmode 跟着变 normal。
+		"ro.boot.mode=normal",
 		// 设备类型：Redroid 是 default（模拟器 / 通用），手机出厂多是 nosdcard。
 		"ro.build.characteristics=nosdcard",
 		// CPU 类型：Redroid 是 generic（模拟器 / 通用编译），真机写具体核心。开发机 Neoverse N1 和板子 RK3588
@@ -660,6 +668,21 @@ func disguiseProps() []string {
 		"ro.bionic.cpu_variant=" + cpuVariant,
 		"ro.bionic.2nd_cpu_variant=" + cpuVariant, // 2026-11-17 体检：还是 generic
 	}
+}
+
+// kernelMajorMinor 从伪造的内核版本号里取「主.次」，如 "5.10.187-android12-9" → "5.10"。拿不到返回 ""。
+func kernelMajorMinor(rel string) string {
+	rel = strings.TrimSpace(rel)
+	f := strings.SplitN(rel, ".", 3)
+	if len(f) < 2 || f[0] == "" || f[1] == "" {
+		return ""
+	}
+	for _, c := range f[0] + f[1] {
+		if c < '0' || c > '9' {
+			return ""
+		}
+	}
+	return f[0] + "." + f[1]
 }
 
 func propValue(f Field, v any) string {
