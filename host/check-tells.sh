@@ -94,6 +94,14 @@ if [ "$unamer" = "$hostk" ]; then
   else now "uname -r 是宿主机内核 $unamer：装内核模块 pp_uts（bash host/build-kmod.sh pp_uts）后重启手机（踩坑 #64）"; fi
 else hid "uname -r = $unamer（按机型，宿主机是 $hostk）"; fi
 
+# ro.kernel.version 要和 uname 的大小版本一致（踩坑 #84：原来露宿主机的 6.17）
+rkv=$(gp ro.kernel.version); umm=$(echo "$unamer" | grep -oE '^[0-9]+\.[0-9]+')
+if [ -n "$rkv" ] && [ -n "$umm" ] && [ "$rkv" != "$umm" ]; then now "ro.kernel.version=$rkv 和 uname($umm) 对不上（踩坑 #84）：更新管家后重启手机"
+else hid "ro.kernel.version=$rkv 和 uname 一致"; fi
+
+# ro.bootmode：Redroid 默认 unknown，真机正常开机是 normal（踩坑 #84）
+bm=$(gp ro.bootmode); [ "$bm" = unknown ] && now "ro.bootmode=unknown（真机是 normal，踩坑 #84）：更新管家后重启手机" || hid "ro.bootmode=$bm"
+
 # /proc/mounts：overlay、docker、fakefs 自己的 bind mount 都会露
 mnt=$(ax 'cat /proc/mounts')
 if echo "$mnt" | grep -qiE 'overlay|/opt/prism-phone|lxcfs|mqueue'; then
