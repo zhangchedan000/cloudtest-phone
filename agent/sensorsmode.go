@@ -10,6 +10,7 @@ import (
 	"sync"
 	"syscall"
 	"time"
+	"unsafe"
 
 	"github.com/zhangchedan000/prism-phone/agent/internal/h4"
 	"github.com/zhangchedan000/prism-phone/agent/internal/modem"
@@ -48,8 +49,18 @@ func startSensors(spec string) {
 		fmt.Fprintf(os.Stderr, "pp-init：传感器没配好：%v\n", err)
 		return
 	}
-	cmd := &exec.Cmd{Path: "/proc/self/exe", Args: []string{"vendor.sensord"}, Env: []string{"PP_MODE=pp-sensors"}}
-	cmd.ExtraFiles = []*os.File{master, slave, r} // 子进程里是 3、4、5
+	// 从 /proc/self/exe（= /pp-init 这个 bind mount）起子进程，子进程会一直占着 /pp-init，
+	// 开机后 removeTraces 就卸不掉、删不掉它，留个空文件当破绽（踩坑 #87）。
+	// 所以先把启动器复制进一块匿名内存文件（memfd），从内存文件起子进程，/pp-init 就没人占了。
+	extra := []*os.File{master, slave, r} // 子进程里是 3、4、5
+	path := "/proc/self/exe"
+	mem := execImage()
+	if mem != nil {
+		extra = append(extra, mem)                           // 子进程里是 6
+		path = fmt.Sprintf("/proc/self/fd/%d", 2+len(extra)) // 3 起算，即 6
+	}
+	cmd := &exec.Cmd{Path: path, Args: []string{"vendor.sensord"}, Env: []string{"PP_MODE=pp-sensors"}}
+	cmd.ExtraFiles = extra
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	if err := cmd.Start(); err != nil {
 		fmt.Fprintf(os.Stderr, "pp-init：起传感器进程失败：%v\n", err)
@@ -59,6 +70,35 @@ func startSensors(spec string) {
 	r.Close()
 	master.Close()
 	slave.Close()
+	if mem != nil {
+		mem.Close()
+	}
+}
+
+// execImage 把当前可执行文件复制进一块匿名内存文件（memfd_create）。喂数据子进程从它启动，
+// 就不再占着 /pp-init（bind mount 进来的启动器），removeTraces 的 umount -l 才能落地、把 /pp-init 删掉（踩坑 #87）。
+// 任何一步出错都返回 nil，调用方退回 /proc/self/exe：照常开机，只是 /pp-init 要等手机关掉才清得干净。
+func execImage() *os.File {
+	name, err := syscall.BytePtrFromString("") // 匿名，/proc/<pid>/exe 显示「/memfd: (deleted)」
+	if err != nil {
+		return nil
+	}
+	fd, _, errno := syscall.Syscall(sysMemfdCreate, uintptr(unsafe.Pointer(name)), 0, 0) // flags=0：不设 CLOEXEC，要跨 exec 保留
+	if errno != 0 {
+		return nil
+	}
+	mem := os.NewFile(fd, "")
+	src, err := os.Open("/proc/self/exe")
+	if err != nil {
+		mem.Close()
+		return nil
+	}
+	defer src.Close()
+	if _, err := io.Copy(mem, src); err != nil {
+		mem.Close()
+		return nil
+	}
+	return mem
 }
 
 // runSensors 喂数据进程（不返回）：配置从 fd 5 读。
