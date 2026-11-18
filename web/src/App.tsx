@@ -24,7 +24,7 @@ const PAGES: { key: string; label: string; icon: ReactNode; render: () => ReactN
 function PhoneWindow({ id }: { id: string }) {
   const ws = useWorkspace()
   const phone = ws.phones.find((p) => p.id === id)
-  useEffect(() => { if (phone) document.title = `${phone.name} · 云手机` }, [phone?.name])
+  useEffect(() => { if (phone) document.title = `${phone.name} · 云测机` }, [phone?.name])
   if (ws.mode === 'loading') return <Spin className="pp-login" />
   if (ws.mode === 'login') return <div className="pp-login"><b>请先在主页面登录</b></div>
   if (!phone) return <div className="pp-login"><b>找不到这台手机（可能已经删除）</b></div>
@@ -52,7 +52,7 @@ function MainApp() {
   return (
     <div className="pp-shell">
       <aside className="pp-sidebar">
-        <div className="pp-brand"><MobileOutlined /> 云手机</div>
+        <div className="pp-brand"><MobileOutlined /> 云测机</div>
         <nav>
           {PAGES.map((p) => (
             <button key={p.key} className={`pp-nav ${p.key === current.key ? 'pp-nav-active' : ''}`} onClick={() => go(p.key)}>{p.icon}<span>{p.label}</span></button>
