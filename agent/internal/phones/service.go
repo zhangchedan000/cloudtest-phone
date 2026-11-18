@@ -1200,14 +1200,15 @@ func redroidFPS(v any) int {
 // 刚启动时安卓的动态链接器（/apex）还没挂好，docker exec 跑不了任何命令（踩坑 #44），所以重试到成功为止，
 // 一般开机后几秒就能删掉，早于 App 启动。
 func (s *Service) removeTraces(ctx context.Context, name string) {
+	// 启动器（/pp-init）开机后用不着了：卸掉挂载再删掉挂载点留下的空文件。喂数据进程现在从 memfd 跑、不再占着
+	// /pp-init（踩坑 #87），但 umount -l 落地是异步的，刚卸完 rm 可能还报「忙」。所以在容器里循环卸+删，直到
+	// /pp-init 真没了（最多 ~15 秒），别只删一次就走（否则偶尔残留一个 0 字节空文件，踩坑 #87 的尾巴）。
+	cleanup := "rm -f /system/xbin/su /.dockerenv; i=0; while [ $i -lt 15 ]; do umount -l " + initMount +
+		" 2>/dev/null; rm -f " + initMount + " 2>/dev/null; [ -e " + initMount + " ] || break; i=$((i+1)); sleep 1; done; [ -e " + initMount + " ] && exit 1 || exit 0"
 	deadline := time.Now().Add(s.bootTimeout())
 	for {
-		// 启动器（/pp-init）开机后用不着了：卸掉挂载再删掉挂载点留下的空文件。喂数据进程现在从 memfd 跑、
-		// 不再占着 /pp-init（踩坑 #87），但 umount -l 落地是异步的，刚卸完 rm 可能还报「忙」。所以不能只看 rm
-		// 返回值，要盯到 /pp-init 真没了才算完（否则会偶尔残留一个空文件，踩坑 #87 的尾巴）。
-		out, err := s.run.Run(ctx, "docker", "exec", name, "sh", "-c",
-			"rm -f /system/xbin/su /.dockerenv; umount -l "+initMount+" 2>/dev/null; rm -f "+initMount+" 2>/dev/null; [ -e "+initMount+" ] && echo LEFT || echo GONE")
-		if err == nil && strings.Contains(out, "GONE") {
+		// 刚启动时安卓的动态链接器还没挂好，docker exec 跑不了命令（踩坑 #44），重试到成功为止。
+		if _, err := s.run.Run(ctx, "docker", "exec", name, "sh", "-c", cleanup); err == nil {
 			return
 		}
 		if time.Now().After(deadline) || ctx.Err() != nil {
