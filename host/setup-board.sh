@@ -44,7 +44,7 @@ case "$kr" in 5.10.*|6.1.*) good "内核" "$kr（redroid 支持的版本）" ;; 
 
 # 4. 真 Mali GPU 驱动（最关键——这是 beat 软件渲染的根本）
 if [ -e /dev/mali0 ]; then good "Mali GPU" "/dev/mali0 在（真显卡驱动已加载）"
-else fail "Mali GPU" "/dev/mali0 不在！Mali CSF 驱动没装/没加载，redroid 会退回软件渲染（最大破绽）。装 Mali CSF 内核驱动（cnflysky 用 g18p0）"; fi
+else fail "Mali GPU" "/dev/mali0 不在！Mali CSF 驱动没装/没加载，redroid 会退回软件渲染（最大差异项）。装 Mali CSF 内核驱动（cnflysky 用 g18p0）"; fi
 # Mali 固件
 if ls /lib/firmware/mali_csffw.bin >/dev/null 2>&1; then good "Mali 固件" "mali_csffw.bin 在 /lib/firmware"
 else note "Mali 固件" "/lib/firmware/mali_csffw.bin 没找到（有的驱动要它，没有可能 GPU 起不来；可从 redroid 容器里拷）"; fi

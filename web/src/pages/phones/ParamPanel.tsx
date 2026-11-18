@@ -73,13 +73,13 @@ export function ParamPanel({ phone, onSaved }: { phone: Phone; onSaved?: (restar
             options={ws.models.map((m) => ({ value: m.id, label: `${String(m.values.marketName)}（${String(m.values.model)}）${m.verified ? '' : ' · 待核实'}` }))}
           />
           <Tooltip title="所有「随机」模式、没锁定的字段重新生成一次（相当于一键新机，不改机型）"><Button icon={<ReloadOutlined />} onClick={randomizeAll}>随机字段全部重新生成</Button></Tooltip>
-          <Tooltip title="粘贴一份真机的 getprop 输出（买来的「真参」或自己扒的真机 dump），自动把品牌/型号/指纹/序列号/MAC 等身份套到这台手机上"><Button icon={<ImportOutlined />} onClick={() => setImportOpen(true)}>导入真机身份（真参）</Button></Tooltip>
+          <Tooltip title="粘贴一份真机的 getprop 输出（买来的「真机参数」或自己扒的真机 dump），自动把品牌/型号/指纹/序列号/MAC 等身份套到这台手机上"><Button icon={<ImportOutlined />} onClick={() => setImportOpen(true)}>导入真机身份（真机参数）</Button></Tooltip>
         </Space>
       </div>
 
       <Modal
         open={importOpen}
-        title="导入真机身份（真参）"
+        title="导入真机身份（真机参数）"
         onCancel={() => setImportOpen(false)}
         onOk={() => void doImport()}
         okText="导入"

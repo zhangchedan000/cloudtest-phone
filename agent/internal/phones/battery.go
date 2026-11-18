@@ -9,7 +9,7 @@ import (
 	"github.com/zhangchedan000/prism-phone/agent/internal/sensors"
 )
 
-// 电池漂移：真机电池一直在变，固定一个值反而是破绽。
+// 电池漂移：真机电池一直在变，固定一个值反而是差异项。
 // 开机时按机型档案的随机值播种（applyBattery），之后后台每隔几分钟推一下：
 // 充电的往上爬、用电的往下掉，温度小幅抖动，每台各走各的。
 // dumpsys battery set 会把电池冻在设定值，所以要靠这个循环持续更新。

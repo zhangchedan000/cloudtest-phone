@@ -32,7 +32,7 @@ func (s *Service) imageLabel(ctx context.Context, image, key string) string {
 
 // simSpec 这台手机的 SIM 卡（踩坑 #65）：运营商按 SIM 国家（跟随代理出口）选，IMEI / IMSI / ICCID 按 androidId 播种
 // （一键新机换 androidId，就换卡）。
-// 不能和别的手机撞号（踩坑 #79）：IMEI 前 8 位是机型型号码，后面只有 6 位随机——同一机型开几百台就可能撞上。
+// 不能和别的手机标识重复（踩坑 #79）：IMEI 前 8 位是机型型号码，后面只有 6 位随机——同一机型开几百台就可能撞上。
 // 跟同一台服务器上比它先建的手机（ID 更小）的号比，IMEI / IMSI / ICCID 任何一个撞了就换个种子再生成；规则固定，
 // 每次开机算出来一样。
 func (s *Service) simSpec(p store.Phone, st store.State, byKey map[string]any) *modem.Spec {

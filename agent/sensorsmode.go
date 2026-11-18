@@ -50,7 +50,7 @@ func startSensors(spec string) {
 		return
 	}
 	// 从 /proc/self/exe（= /pp-init 这个 bind mount）起子进程，子进程会一直占着 /pp-init，
-	// 开机后 removeTraces 就卸不掉、删不掉它，留个空文件当破绽（踩坑 #87）。
+	// 开机后 removeTraces 就卸不掉、删不掉它，留个空文件当差异项（踩坑 #87）。
 	// 所以先把启动器复制进一块匿名内存文件（memfd），从内存文件起子进程，/pp-init 就没人占了。
 	extra := []*os.File{master, slave, r} // 子进程里是 3、4、5
 	path := "/proc/self/exe"

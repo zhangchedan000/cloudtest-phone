@@ -6,7 +6,7 @@ import (
 	"github.com/zhangchedan000/prism-phone/agent/internal/store"
 )
 
-// 两台手机种子一样（同一个 androidId）也不能撞号：后建的换一个号；先建的号码不变（老手机号码不受影响）。
+// 两台手机种子一样（同一个 androidId）也不能标识重复：后建的换一个号；先建的号码不变（老手机号码不受影响）。
 func TestSIMNoCollision(t *testing.T) {
 	svc, _, st := newTestService(t, true, "software")
 	addProxy(t, st, "us", true)
@@ -36,7 +36,7 @@ func TestSIMNoCollision(t *testing.T) {
 		sp := svc.simSpec(*p, snap, byKey)
 		for _, v := range []string{sp.IMEI, sp.IMSI, sp.ICCID} {
 			if other, dup := seen[v]; dup {
-				t.Fatalf("%s 和 %s 撞号：%s", id, other, v)
+				t.Fatalf("%s 和 %s 标识重复：%s", id, other, v)
 			}
 			seen[v] = id
 		}

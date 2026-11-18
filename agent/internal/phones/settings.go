@@ -307,5 +307,5 @@ func (t *settingsTracker) set(id string, st SettingsStatus) {
 	t.put(id, st)
 }
 
-// aospOnlyPackages 只有 AOSP / 模拟器才有的 App（出现在已装应用列表里就是破绽）。
+// aospOnlyPackages 只有 AOSP / 模拟器才有的 App（出现在已装应用列表里就是差异项）。
 var aospOnlyPackages = []string{"org.chromium.webview_shell"}

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 破绽自检（只读，不改任何东西）：进一台云手机容器，把「一个装在手机里的 App 能看出这不是真手机」的地方逐项列出来。
+# 差异项自检（只读，不改任何东西）：进一台云手机容器，把「一个装在手机里的 App 能看出这不是真手机」的地方逐项列出来。
 #
 # 用途：开发测试。搞清楚每一项现在是什么状态、能不能现在在这台机器上解决、还是要等有显卡的板子。
 # 不是为了骗过谁，只是把容器和真机的差别摸清楚。
@@ -185,7 +185,7 @@ sect "3. 硬件缺失（等板子，和显卡同类）"
 # 显卡 / 渲染器
 rend=$(ax 'dumpsys SurfaceFlinger 2>/dev/null | grep -iE "GLES|renderer" | head -1')
 info "渲染器：${rend:-读不到}"
-echo "$rend" | grep -qiE 'swiftshader|software|llvmpipe|android emulator' && brd "GPU 是软件渲染（SwiftShader）——最大破绽，等板子上真 Mali 解决" || info "渲染器未见软件渲染字样（到板子上再确认是硬件 Mali）"
+echo "$rend" | grep -qiE 'swiftshader|software|llvmpipe|android emulator' && brd "GPU 是软件渲染（SwiftShader）——最大差异项，等板子上真 Mali 解决" || info "渲染器未见软件渲染字样（到板子上再确认是硬件 Mali）"
 ls_dri=$(ax 'ls /dev/dri 2>/dev/null'); [ -z "$ls_dri" ] && brd "没有 /dev/dri（没有 GPU 设备节点）" || info "/dev/dri：$ls_dri"
 
 # 传感器（踩坑 #59：模拟器 HAL + 管家喂数据）
@@ -215,7 +215,7 @@ else now "没有电话子系统（ro.radio.noril=yes，真机即便无卡也有�
 ax 'command -v dumpsys >/dev/null && dumpsys bluetooth_manager 2>/dev/null | grep -qi "enabled\|address" && echo yes' | grep -q yes && info "有蓝牙子系统" || cnt "蓝牙开不了：Redroid 自带的蓝牙 HAL（rootcanal）编译产物有问题，原版也崩（踩坑 #48）；要自己编 rootcanal + HAL。现在蓝牙保持关闭（真机常见状态）"
 
 # 电池：已由管家的电池漂移处理（随机 60% 放电/40% 充电，插口+status 一致，后台慢漂）。
-# 这里只做提示：显示 AC 本身不是破绽（真机充电时也是 AC）；真正的破绽是"永远 AC、电量不动"。
+# 这里只做提示：显示 AC 本身不是差异项（真机充电时也是 AC）；真正的差异项是"永远 AC、电量不动"。
 batt=$(ax 'dumpsys battery 2>/dev/null')
 bl=$(echo "$batt" | grep -iE 'level|AC powered|status' | tr '\n' ' '); info "电池：${bl:-读不到}"
 if echo "$batt" | grep -qi 'AC powered: true'; then

@@ -104,7 +104,7 @@ export function ConsolePage() {
   const contextMenu = (p: Phone) => ({
     items: [
       ...(p.status === 'running' ? [{ key: 'open', label: '打开投屏' }, { key: 'restart', label: '重启' }, { key: 'stop', label: '关机' }] : [{ key: 'start', label: '开机', disabled: blocksStart(ws.issuesOf(p)) }]),
-      { key: 'edit', label: '编辑参数 / 导入真参' },
+      { key: 'edit', label: '编辑参数 / 导入真机参数' },
       { key: 'copyip', label: '复制出口 IP' },
       { type: 'divider' as const },
       { key: 'renew', label: '一键新机（换身份，保留数据）' },

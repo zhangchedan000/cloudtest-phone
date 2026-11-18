@@ -425,7 +425,7 @@ func (s *Service) bootProps(p store.Phone, st store.State) ([]string, map[string
 	if mm := kernelMajorMinor(str(byKey["kernelRelease"])); mm != "" {
 		args = append(args, "ro.kernel.version="+mm)
 	}
-	// 指纹来源：手动填写 / 导入真参的优先（fingerprint 字段非空就用它），
+	// 指纹来源：手动填写 / 导入真机参数的优先（fingerprint 字段非空就用它），
 	// 否则按手机安卓版本取机型库里的真实指纹（版本必须一致）。
 	var realFP string
 	if fp := str(byKey["fingerprint"]); fp != "" {
@@ -485,7 +485,7 @@ func partitionIdentity(args []string, realBP map[string]string) []string {
 			// 指纹本来就是按 品牌/产品名/设备名 拼出来的，所以这三个字段必须和指纹对上。
 			// 真机数据里跟指纹一致的不动（省得重复加）；对不上的（比如小米 mainline 镜像把
 			// system.device 写成 generic、system.name 写成 mainline，都和指纹里的 missi / missi_phone_global
-			// 对不上，是破绽）用指纹里的盖掉；真机数据里没有的也补上。
+			// 对不上，是差异项）用指纹里的盖掉；真机数据里没有的也补上。
 			if rv, real := realBP[k]; !real || rv != f[i] {
 				set[k] = f[i]
 			}

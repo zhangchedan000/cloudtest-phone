@@ -59,9 +59,9 @@ func TestImportDeviceParams(t *testing.T) {
 		t.Fatal("cpuParts 不该被 getprop 导入")
 	}
 
-	// 启动能生成容器（套了真参还能正常开机）
+	// 启动能生成容器（套了真机参数还能正常开机）
 	if err := svc.Start(context.Background(), p.ID); err != nil {
-		t.Fatalf("套真参后开机失败：%v", err)
+		t.Fatalf("套真机参数后开机失败：%v", err)
 	}
 }
 

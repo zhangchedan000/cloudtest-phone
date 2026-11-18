@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # 就地改二进制 AndroidManifest.xml 里的 targetSdkVersion（4 字节整数，不改文件大小，改完要重签 APK）。
 # 为什么：模拟器里抠出来的 AOSP 短信 App（com.android.messaging）targetSdk=24，安卓 14 会弹
-# 「此应用为旧版安卓构建」的提示（破绽+烦人）。把 targetSdk 提到 30（拨号就是 30、实测不弹）即可。
+# 「此应用为旧版安卓构建」的提示（差异项+烦人）。把 targetSdk 提到 30（拨号就是 30、实测不弹）即可。
 # 用法: axml_targetsdk.py AndroidManifest.xml <新值>
 import struct, sys
 path, new = sys.argv[1], int(sys.argv[2])

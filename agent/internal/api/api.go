@@ -366,7 +366,7 @@ func (s *Server) input(w http.ResponseWriter, r *http.Request) {
 }
 
 // switchProxy 切换这台手机当前用的代理：POST {"proxyId": "..."}（一台手机可以挂多个代理）。
-// importParams 导入真机身份（真参）：粘贴一份真机 getprop dump，套到这台手机上。
+// importParams 导入真机身份（真机参数）：粘贴一份真机 getprop dump，套到这台手机上。
 func (s *Server) importParams(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Dump string `json:"dump"`

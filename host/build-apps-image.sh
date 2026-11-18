@@ -4,7 +4,7 @@
 # 做两件事：
 #  1) 从谷歌官方模拟器系统镜像抠出 AOSP 拨号（com.android.dialer，priv-app）和短信（com.android.messaging），
 #     连同拨号的特权权限白名单一起装进 /product；短信把 targetSdk 从 24 提到 30（否则安卓 14 会弹
-#     「此应用为旧版安卓构建」，既是破绽又烦人，踩坑 #88）。两个 App 都是 AOSP testkey 签名，和 Redroid 同签名，
+#     「此应用为旧版安卓构建」，既是差异项又烦人，踩坑 #88）。两个 App 都是 AOSP testkey 签名，和 Redroid 同签名，
 #     直接当系统应用用。
 #  2) 改 Launcher3 的默认桌面布局（default_workspace_{5x5,4x4}.xml），让新机一开机桌面就摆好：
 #     底栏 电话 短信 浏览器 相机 商店；桌面 设置 时钟 日历 联系人 文件 / 相册…（装了对应 App 才显示）。
