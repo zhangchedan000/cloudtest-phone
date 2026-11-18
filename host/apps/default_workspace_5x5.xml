@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  prism-phone 自定义 Launcher3 桌面默认布局（5x5 网格，约 1080p 手机）。
+  覆盖 Launcher3QuickStep.apk 里的 res/xml/default_workspace_5x5.xml，让新机一开机桌面就摆好常用应用。
+  底栏：电话 短信 浏览器 相机 商店（电话/短信按 intent 解析，装了拨号/短信 App 才出现）。
+  桌面：设置 时钟 日历 联系人 文件 / 相册 …（装了对应 App 才显示）。
+  说明：# 要写成普通 #（给 aapt2 用）；host/build-apps-image.sh 会编译后换进 APK 并用平台 testkey 重签。
+-->
+<favorites
+  xmlns:launcher="http://schemas.android.com/apk/res-auto/com.android.launcher3">
+    <!-- 底栏 hotseat：电话 短信 浏览器 相机 商店 -->
+    <resolve launcher:container="-101" launcher:screen="0" launcher:x="0" launcher:y="0">
+        <favorite launcher:uri="#Intent;action=android.intent.action.DIAL;end" />
+        <favorite launcher:uri="#Intent;action=android.intent.action.CALL_BUTTON;end" />
+    </resolve>
+    <resolve launcher:container="-101" launcher:screen="1" launcher:x="1" launcher:y="0">
+        <favorite launcher:uri="#Intent;action=android.intent.action.MAIN;category=android.intent.category.APP_MESSAGING;end" />
+        <favorite launcher:uri="smsto:" />
+    </resolve>
+    <favorite launcher:container="-101" launcher:screen="2" launcher:x="2" launcher:y="0" launcher:packageName="com.android.chrome" launcher:className="com.google.android.apps.chrome.Main" />
+    <favorite launcher:container="-101" launcher:screen="3" launcher:x="3" launcher:y="0" launcher:packageName="com.android.camera2" launcher:className="com.android.camera.CameraLauncher" />
+    <resolve launcher:container="-101" launcher:screen="4" launcher:x="4" launcher:y="0">
+        <favorite launcher:uri="#Intent;action=android.intent.action.MAIN;category=android.intent.category.APP_MARKET;end" />
+    </resolve>
+
+    <!-- 桌面第1行：设置 时钟 日历 联系人 文件 -->
+    <favorite launcher:screen="0" launcher:x="0" launcher:y="1" launcher:packageName="com.android.settings" launcher:className="com.android.settings.Settings" />
+    <favorite launcher:screen="0" launcher:x="1" launcher:y="1" launcher:packageName="com.android.deskclock" launcher:className="com.android.deskclock.DeskClock" />
+    <resolve launcher:screen="0" launcher:x="2" launcher:y="1">
+        <favorite launcher:uri="#Intent;action=android.intent.action.MAIN;category=android.intent.category.APP_CALENDAR;end" />
+    </resolve>
+    <resolve launcher:screen="0" launcher:x="3" launcher:y="1">
+        <favorite launcher:uri="#Intent;action=android.intent.action.MAIN;category=android.intent.category.APP_CONTACTS;end" />
+    </resolve>
+    <favorite launcher:screen="0" launcher:x="4" launcher:y="1" launcher:packageName="com.android.documentsui" launcher:className="com.android.documentsui.LauncherActivity" />
+
+    <!-- 桌面第2行：相册 计算器 音乐 邮件 地图（装了才显示）-->
+    <resolve launcher:screen="0" launcher:x="0" launcher:y="2">
+        <favorite launcher:uri="#Intent;action=android.intent.action.MAIN;category=android.intent.category.APP_GALLERY;end" />
+        <favorite launcher:uri="#Intent;type=images/*;end" />
+    </resolve>
+    <resolve launcher:screen="0" launcher:x="1" launcher:y="2">
+        <favorite launcher:uri="#Intent;action=android.intent.action.MAIN;category=android.intent.category.APP_CALCULATOR;end" />
+    </resolve>
+    <resolve launcher:screen="0" launcher:x="2" launcher:y="2">
+        <favorite launcher:uri="#Intent;action=android.intent.action.MAIN;category=android.intent.category.APP_MUSIC;end" />
+    </resolve>
+    <resolve launcher:screen="0" launcher:x="3" launcher:y="2">
+        <favorite launcher:uri="#Intent;action=android.intent.action.MAIN;category=android.intent.category.APP_EMAIL;end" />
+    </resolve>
+    <resolve launcher:screen="0" launcher:x="4" launcher:y="2">
+        <favorite launcher:uri="#Intent;action=android.intent.action.MAIN;category=android.intent.category.APP_MAPS;end" />
+    </resolve>
+</favorites>

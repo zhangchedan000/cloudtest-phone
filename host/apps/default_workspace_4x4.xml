@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  prism-phone 自定义 Launcher3 桌面默认布局（4x4 网格，较小/低 dpi 手机备用）。
+  4 列：底栏 电话 短信 浏览器 相机；桌面两行放设置/时钟/日历/联系人 与 文件/相册/商店/计算器。
+  说明见 default_workspace_5x5.xml。
+-->
+<favorites
+  xmlns:launcher="http://schemas.android.com/apk/res-auto/com.android.launcher3">
+    <resolve launcher:container="-101" launcher:screen="0" launcher:x="0" launcher:y="0">
+        <favorite launcher:uri="#Intent;action=android.intent.action.DIAL;end" />
+        <favorite launcher:uri="#Intent;action=android.intent.action.CALL_BUTTON;end" />
+    </resolve>
+    <resolve launcher:container="-101" launcher:screen="1" launcher:x="1" launcher:y="0">
+        <favorite launcher:uri="#Intent;action=android.intent.action.MAIN;category=android.intent.category.APP_MESSAGING;end" />
+        <favorite launcher:uri="smsto:" />
+    </resolve>
+    <favorite launcher:container="-101" launcher:screen="2" launcher:x="2" launcher:y="0" launcher:packageName="com.android.chrome" launcher:className="com.google.android.apps.chrome.Main" />
+    <favorite launcher:container="-101" launcher:screen="3" launcher:x="3" launcher:y="0" launcher:packageName="com.android.camera2" launcher:className="com.android.camera.CameraLauncher" />
+
+    <!-- 桌面第1行：设置 时钟 日历 联系人 -->
+    <favorite launcher:screen="0" launcher:x="0" launcher:y="1" launcher:packageName="com.android.settings" launcher:className="com.android.settings.Settings" />
+    <favorite launcher:screen="0" launcher:x="1" launcher:y="1" launcher:packageName="com.android.deskclock" launcher:className="com.android.deskclock.DeskClock" />
+    <resolve launcher:screen="0" launcher:x="2" launcher:y="1">
+        <favorite launcher:uri="#Intent;action=android.intent.action.MAIN;category=android.intent.category.APP_CALENDAR;end" />
+    </resolve>
+    <resolve launcher:screen="0" launcher:x="3" launcher:y="1">
+        <favorite launcher:uri="#Intent;action=android.intent.action.MAIN;category=android.intent.category.APP_CONTACTS;end" />
+    </resolve>
+
+    <!-- 桌面第2行：文件 相册 商店 计算器 -->
+    <favorite launcher:screen="0" launcher:x="0" launcher:y="2" launcher:packageName="com.android.documentsui" launcher:className="com.android.documentsui.LauncherActivity" />
+    <resolve launcher:screen="0" launcher:x="1" launcher:y="2">
+        <favorite launcher:uri="#Intent;action=android.intent.action.MAIN;category=android.intent.category.APP_GALLERY;end" />
+        <favorite launcher:uri="#Intent;type=images/*;end" />
+    </resolve>
+    <resolve launcher:screen="0" launcher:x="2" launcher:y="2">
+        <favorite launcher:uri="#Intent;action=android.intent.action.MAIN;category=android.intent.category.APP_MARKET;end" />
+    </resolve>
+    <resolve launcher:screen="0" launcher:x="3" launcher:y="2">
+        <favorite launcher:uri="#Intent;action=android.intent.action.MAIN;category=android.intent.category.APP_CALCULATOR;end" />
+    </resolve>
+</favorites>
