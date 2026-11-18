@@ -38,10 +38,15 @@ out="${base}-apps"
 TOOLS=/opt/prism-phone/tools
 BT="$TOOLS/build-tools/34.0.0"
 APKSIGNER="java -jar $BT/lib/apksigner.jar"
-log "装工具（aapt2 / zipalign / zip / JRE / python3）"
-apt-get update -qq
-apt-get install -y -qq aapt zipalign zip unzip default-jre-headless python3 util-linux coreutils >/dev/null \
-  || die "装工具失败"
+need=""
+for c in aapt2 zipalign zip unzip java python3 losetup; do command -v "$c" >/dev/null || need=1; done
+if [ -n "$need" ]; then
+  log "装工具（aapt2 / zipalign / zip / JRE / python3）"
+  # 阿什本的 apt 偶尔卡在 man-db 触发器上（踩坑：半小时不退），所以加 timeout 兜底，装上就行、触发器卡了不管
+  timeout 300 apt-get update -qq || true
+  timeout 300 apt-get install -y -qq aapt zipalign zip unzip default-jre-headless python3 util-linux coreutils >/dev/null 2>&1 || true
+  for c in aapt2 zipalign zip unzip java python3 losetup; do command -v "$c" >/dev/null || die "工具 $c 没装上（手动 apt-get install 后重试）"; done
+fi
 mkdir -p "$TOOLS"
 if [ ! -f "$BT/lib/apksigner.jar" ]; then
   log "下载 android build-tools（取 apksigner.jar；zipalign/aapt2 用 apt 的 arm64 版）"
