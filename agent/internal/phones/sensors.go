@@ -104,6 +104,8 @@ func sensorSpec(p store.Phone, st store.State, byKey map[string]any) sensors.Spe
 	// 电池的 sysfs（踩坑 #78）：起始值和开机后 dumpsys battery set 的一样
 	lv, temp := batterySeed(byKey)
 	spec.Battery = &sensors.Battery{Level: lv, TempDeci: temp, Charging: str(byKey["batteryCharging"])}
+	// 热区的 sysfs（踩坑 #86）：温度在电池温度（0.1℃ → 毫℃，×100）附近按种子生成，每台不同
+	spec.Thermal = sensors.ThermalZonesFor(spec.Seed, temp*100)
 	if size, ok := byKey["resolution"].(map[string]any); ok {
 		w, _ := toInt(size["w"])
 		h, _ := toInt(size["h"])

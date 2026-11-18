@@ -31,6 +31,11 @@ func startSensors(spec string) {
 				fmt.Fprintf(os.Stderr, "pp-init：电池目录没造好（照常开机）：%v\n", err)
 			}
 		}
+		if len(sp.Thermal) > 0 { // 热区的 sysfs（踩坑 #86）
+			if err := sensors.SetupThermal(sp.Thermal); err != nil {
+				fmt.Fprintf(os.Stderr, "pp-init：热区目录没造好（照常开机）：%v\n", err)
+			}
+		}
 	}
 	master, slave, err := sensors.SetupPaths(paths)
 	if err != nil {

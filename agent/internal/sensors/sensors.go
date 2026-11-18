@@ -72,6 +72,39 @@ type Spec struct {
 	RealNames bool `json:"names,omitempty"`
 	// Battery 电池的 sysfs（踩坑 #78）：给了就在 /sys/class/power_supply 造电池目录
 	Battery *Battery `json:"battery,omitempty"`
+	// Thermal 热区（踩坑 #86）：给了就在 /sys/class/thermal 造 thermal_zoneN（真机一堆，容器里 0 个是模拟器特征）
+	Thermal []ThermalZone `json:"thermal,omitempty"`
+}
+
+// ThermalZone 一个热区（/sys/class/thermal/thermal_zoneN）：类型名 + 当前温度（毫摄氏度）。
+type ThermalZone struct {
+	Type   string `json:"t"`
+	MilliC int    `json:"c"`
+}
+
+// thermalTypes 联发科机型常见的热区名 + 相对基准温度的大致偏移（℃，CPU/GPU 偏热、电池/pmic 偏凉）。
+var thermalTypes = []struct {
+	name  string
+	delta int
+}{
+	{"mtktsAP", 2}, {"soc_max", 7}, {"cpu-0-0-usr", 8}, {"cpu-1-0-usr", 9},
+	{"gpu-usr", 5}, {"mtktspa", 6}, {"mtktsbattery", 0}, {"mtktspmic", 3},
+	{"mtktsabb", 4}, {"nrpa_lll", 1},
+}
+
+// ThermalZonesFor 按种子生成一组热区，温度在基准温度（毫℃，一般取电池温度）附近各有高低，每台不同、开机间稳定。
+func ThermalZonesFor(seed int64, baseMilliC int) []ThermalZone {
+	r := rand.New(rand.NewSource(seed ^ 0x7468726d))
+	n := 8 + r.Intn(3) // 8~10 个
+	if n > len(thermalTypes) {
+		n = len(thermalTypes)
+	}
+	out := make([]ThermalZone, 0, n)
+	for i := 0; i < n; i++ {
+		t := thermalTypes[i]
+		out = append(out, ThermalZone{Type: t.name, MilliC: baseMilliC + t.delta*1000 + r.Intn(2001) - 1000})
+	}
+	return out
 }
 
 // Encode / Decode 命令行参数格式。
