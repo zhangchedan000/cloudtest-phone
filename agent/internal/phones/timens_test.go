@@ -18,6 +18,7 @@ func TestStartWrapsEntrypointWithInitHelper(t *testing.T) {
 	svc, fd, _ := newTestService(t, true, "software")
 	svc.docker = epDocker{fd}
 	svc.cfg.InitHelper = "/usr/local/bin/prism-phone-agent"
+	svc.cfg.Timens = true // 开着 timens：入口不带 --no-timens
 	p, _ := svc.Create(CreateRequest{Name: "A", ModelID: "poco-x4-gt", AndroidVersion: 14, ProxyID: DirectDevProxyID})
 	if err := svc.Start(context.Background(), p.ID); err != nil {
 		t.Fatal(err)

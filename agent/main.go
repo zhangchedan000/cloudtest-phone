@@ -36,11 +36,21 @@ func main() {
 	// 容器里的启动器模式（开机时长归零，见 timens 包）：不跑管家，建好时间命名空间就 exec 安卓 init。
 	if len(os.Args) > 2 && os.Args[1] == "pp-init" {
 		args := os.Args[2:]
-		if len(args) > 0 && strings.HasPrefix(args[0], "--sensors=") {
-			startSensors(strings.TrimPrefix(args[0], "--sensors="))
+		skipTimens := false
+		for len(args) > 0 && strings.HasPrefix(args[0], "--") {
+			switch {
+			case strings.HasPrefix(args[0], "--sensors="):
+				startSensors(strings.TrimPrefix(args[0], "--sensors="))
+			case args[0] == "--no-timens":
+				skipTimens = true
+			}
 			args = args[1:]
 		}
-		timens.Run(args)
+		if skipTimens {
+			timens.Exec(args) // 不建时间命名空间，直接 exec（板子内核 timens 坏时用）
+		} else {
+			timens.Run(args)
+		}
 	}
 	// 容器里的传感器喂数据进程（pp-init 开机前起的，见 internal/sensors）
 	if os.Getenv("PP_MODE") == "pp-sensors" {
@@ -128,8 +138,9 @@ func main() {
 	}
 	cfg.Lxcfs = phones.LxcfsAvailable()
 	cfg.Sensors = !*noSensors
-	// 开机时长归零：内核支持时间命名空间就用管家程序自己当容器启动器（timens 包）
-	if !*noTimens && timens.Supported() {
+	cfg.Timens = !*noTimens && timens.Supported()
+	// pp-init 启动器：喂传感器/RIL + 开机时长归零都靠它，只要其一需要就挂它（Timens 关时 pp-init 仍喂传感器，踩坑 #98）。
+	if cfg.Timens || cfg.Sensors {
 		if exe, err := os.Executable(); err == nil {
 			if real, err := filepath.EvalSymlinks(exe); err == nil {
 				cfg.InitHelper = real

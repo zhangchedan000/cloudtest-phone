@@ -49,6 +49,19 @@ func Offsets(uptime int64, monoNow, bootNow int64) string {
 	return fmt.Sprintf("monotonic %d 0\nboottime %d 0\n", uptime-monoNow, uptime-bootNow)
 }
 
+// Exec 不建时间命名空间，直接 exec（不返回）：args = <开机时长秒数（忽略）> <程序> <参数...>。
+// 板子内核 CLONE_NEWTIME 有问题（exec 后建线程 EINVAL，踩坑 #98）时用：pp-init 照常喂传感器/RIL，
+// 只是开机时长还是宿主机的（等 pp_mnt 内核模块的 uptime 钩子补）。
+func Exec(args []string) {
+	if len(args) < 2 {
+		fmt.Fprintln(os.Stderr, "用法：pp-init --no-timens <开机时长秒数> <程序> [参数...]")
+		os.Exit(2)
+	}
+	err := syscall.Exec(args[1], args[1:], os.Environ())
+	fmt.Fprintf(os.Stderr, "pp-init：启动 %s 失败：%v\n", args[1], err)
+	os.Exit(1)
+}
+
 // Run 启动器入口（不返回）：args = <开机时长秒数> <程序> <参数...>。
 // 建命名空间失败也照样启动安卓（只是开机时长还是宿主机的），绝不因为这个开不了机。
 func Run(args []string) {

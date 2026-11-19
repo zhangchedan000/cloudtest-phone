@@ -62,8 +62,11 @@ type Config struct {
 	WifiDNS   string
 	// DataImages 新手机的 /data 用按机型容量建的 ext4 磁盘镜像（手机里看到的总容量对得上机型，storage.go）。
 	DataImages bool
-	// InitHelper 开机时长归零的启动器（管家程序自己的路径，见 timens 包）；空 = 不用（内核不支持时间命名空间）。
+	// InitHelper pp-init 启动器（管家程序自己的路径）：喂传感器/RIL + 开机时长归零都靠它；空 = 不用。
 	InitHelper string
+	// Timens 是否建时间命名空间让开机时长归零。false 时 pp-init 照常喂传感器/RIL，只是开机时长不归零
+	//（有的板子内核 CLONE_NEWTIME 有问题，exec 后建线程失败，踩坑 #98）。
+	Timens bool
 	// HostCPUs 宿主机核数（0 = 自动）；BootTimeout / PollEvery 等开机的超时和间隔（0 = 默认）。
 	HostCPUs    int
 	BootTimeout time.Duration
@@ -1306,5 +1309,10 @@ func (s *Service) initEntrypoint(ctx context.Context, image string) []string {
 	if err != nil || len(ep) == 0 {
 		return nil
 	}
-	return append([]string{initMount, "pp-init", "0"}, ep...)
+	head := []string{initMount, "pp-init"}
+	if !s.cfg.Timens {
+		head = append(head, "--no-timens") // 不归零开机时长，但 pp-init 照常喂传感器/RIL（踩坑 #98）
+	}
+	head = append(head, "0")
+	return append(head, ep...)
 }
