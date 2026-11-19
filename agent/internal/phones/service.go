@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -70,6 +71,45 @@ type Config struct {
 }
 
 const DirectDevProxyID = "direct-dev"
+
+// binderSlots 多开 binder 槽位数：没有 binderfs 的板子（如魔云腾 Q1）有 36 个静态 binder 设备，
+// 每台手机占一组 3 个（binder/hwbinder/vndbinder），所以最多 12 台同时跑（上板流程 阶段3）。
+const binderSlots = 12
+
+// assignBinderSlot 给要开机的手机分一组没人用的 binder 设备，返回槽位号和 pp-init 用的 "a,b,c"。
+// 多台 --privileged 容器默认都看到宿主同一个 /dev/binder（binder1），会抢冲突；给每台绑不同 binderN。
+// 已用槽位从「正在跑的容器」的 prism-phone.binder 标签反推（docker 是真相，agent 重启也不会撞）。
+// binderfs 的板子不存在这问题（容器内各自挂 binderfs），这里分到的 binderN 它也用不上、无害。
+func (s *Service) assignBinderSlot(ctx context.Context, st store.State, id string) (int, string) {
+	used := map[int]bool{}
+	for _, other := range st.Phones {
+		if other.ID == id || !s.isRunning(ctx, other.ID) {
+			continue
+		}
+		info, err := s.docker.InspectContainer(ctx, containerName(other.ID))
+		if err != nil || info == nil {
+			continue
+		}
+		if v := info.Config.Labels["prism-phone.binder"]; v != "" {
+			if k, e := strconv.Atoi(v); e == nil {
+				used[k] = true
+			}
+		}
+	}
+	slot := -1
+	for k := 0; k < binderSlots; k++ {
+		if !used[k] {
+			slot = k
+			break
+		}
+	}
+	if slot < 0 {
+		log.Printf("手机 %s：binder 槽位用尽（最多 %d 台多开），降级共用 binder1（可能和别台冲突）", id, binderSlots)
+		slot = 0
+	}
+	// 第 k 组 = binder(3k+1), binder(3k+2), binder(3k+3)
+	return slot, fmt.Sprintf("%d,%d,%d", 3*slot+1, 3*slot+2, 3*slot+3)
+}
 
 type Service struct {
 	cfg      Config
@@ -820,6 +860,8 @@ func (s *Service) Start(ctx context.Context, id string) error {
 			return fmt.Errorf("%w：这台机器同时最多运行 %d 台，先关掉一台", ErrBlocked, s.cfg.MaxRunning)
 		}
 	}
+	// 多开 binder：给这台分一组没人用的 binder，pp-init 在容器里绑成标准名（binder/hwbinder/vndbinder）。
+	binderSlot, binderArg := s.assignBinderSlot(ctx, st, id)
 	if err := s.docker.EnsureNetwork(ctx, s.cfg.Network, s.cfg.Subnet, s.gateway()); err != nil {
 		return fmt.Errorf("准备网络：%w", err)
 	}
@@ -882,6 +924,8 @@ func (s *Service) Start(ctx context.Context, id string) error {
 		spec.RealNames = s.imageLabel(ctx, image, "prism.names") == "1"
 		entrypoint = withSensors(entrypoint, spec)
 	}
+	// 多开 binder：pp-init 在容器里把分给这台的 binderN 绑成 /dev/binder 等（withBinder 判空、非 pp-init 入口自动跳过）。
+	entrypoint = withBinder(entrypoint, binderArg)
 	if entrypoint != nil {
 		binds = append(binds, s.cfg.InitHelper+":"+initMount+":ro")
 	}
@@ -890,7 +934,7 @@ func (s *Service) Start(ctx context.Context, id string) error {
 		Name:       name,
 		Image:      image,
 		Cmd:        bootArgs,
-		Labels:     map[string]string{"prism-phone": "1", "prism-phone.id": p.ID},
+		Labels:     map[string]string{"prism-phone": "1", "prism-phone.id": p.ID, "prism-phone.binder": strconv.Itoa(binderSlot)},
 		Binds:      binds,
 		MemoryMB:   memLimit,
 		NanoCPUs:   int64(s.cfg.CPUs * 1e9),

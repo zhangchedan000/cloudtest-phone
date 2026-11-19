@@ -132,6 +132,18 @@ func withSensors(entrypoint []string, spec sensors.Spec) []string {
 	return append(out, entrypoint[2:]...)
 }
 
+// withBinder 把多开 binder 的参数插进 pp-init 的参数（和 withSensors 一样，插在 "pp-init" 之后、开机时长之前）。
+// arg = "a,b,c"：pp-init 在容器里把 /dev/binder{a} 绑成 /dev/binder、{b}→hwbinder、{c}→vndbinder。
+// 入口不是 pp-init（内核不支持时间命名空间、没有启动器）时原样返回——那种情况下多开会退回共用 binder1。
+func withBinder(entrypoint []string, arg string) []string {
+	if arg == "" || len(entrypoint) < 2 || entrypoint[1] != "pp-init" {
+		return entrypoint
+	}
+	out := append([]string{}, entrypoint[:2]...)
+	out = append(out, "--binder="+arg)
+	return append(out, entrypoint[2:]...)
+}
+
 // touchInput 把点击 / 滑动发给手机里的小助手，由虚拟触摸屏像真手指一样做出来。
 func (s *Service) touchInput(ctx context.Context, id string, req InputRequest) error {
 	info, err := s.docker.InspectContainer(ctx, containerName(id))
