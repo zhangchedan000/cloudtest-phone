@@ -434,13 +434,105 @@ static int pp_rewrite_uptime(const char *in, int len, char *out, int max, int nc
 	return o.bad ? -1 : o.n;
 }
 
-/* mode：PP_MOUNTS / PP_MOUNTINFO / PP_MOUNTSTATS / PP_NET / PP_INPUT / PP_UPTIME */
+/*
+ * /proc/stat 的 cpu / cpuN 行是宿主机从开机到现在的累计时间（USER_HZ=100 的 tick），几台手机一模一样、
+ * 而且和本机开机时长完全不符（母机级相关性，踩坑 #94）。按本机开机时长 up_sec 重算：每核总 tick=up_sec*100，
+ * 基本空闲（idle 97%、system 1.5%、user 补余）；聚合 cpu 行 ×核数。btime、intr、ctxt 等其余行原样。
+ */
+static int pp_fmt_u64(unsigned long long v, char *buf)
+{
+	char tmp[24];
+	int n = 0, j, s;
+
+	if (v == 0)
+		tmp[n++] = '0';
+	else
+		for (; v > 0; v /= 10)
+			tmp[n++] = '0' + (int)(v % 10);
+	for (j = 0, s = n - 1; s >= 0; s--, j++)
+		buf[j] = tmp[s];
+	return j;
+}
+
+/* 从 /proc/stat 文本里读 btime（每台手机已是对的，时间命名空间调过）。读不到返回 0。 */
+static long long pp_parse_btime(const char *in, int len)
+{
+	int i = 0;
+
+	while (i < len) {
+		int ls = i;
+
+		while (i < len && in[i] != '\n')
+			i++;
+		if (i - ls > 6 && in[ls] == 'b' && in[ls + 1] == 't' && in[ls + 2] == 'i' &&
+		    in[ls + 3] == 'm' && in[ls + 4] == 'e' && in[ls + 5] == ' ') {
+			long long v = 0;
+			int j = ls + 6;
+
+			while (j < i && in[j] >= '0' && in[j] <= '9')
+				v = v * 10 + (in[j++] - '0');
+			return v;
+		}
+		i++;
+	}
+	return 0;
+}
+
+static void pp_stat_cpu_line(struct pp_out *o, const char *tag, int taglen, int agg, int ncpu, long long up_sec)
+{
+	unsigned long long ticks = (unsigned long long)up_sec * 100ULL;
+	unsigned long long idle, sys, usr;
+	char num[24];
+
+	if (agg)
+		ticks *= (unsigned)ncpu;
+	idle = ticks * 97ULL / 100ULL;
+	sys = ticks * 15ULL / 1000ULL;
+	usr = ticks > idle + sys ? ticks - idle - sys : 0;
+	pp_put(o, tag, taglen);
+	pp_puts(o, agg ? "  " : " ");
+	pp_put(o, num, pp_fmt_u64(usr, num));
+	pp_puts(o, " 0 "); /* nice */
+	pp_put(o, num, pp_fmt_u64(sys, num));
+	pp_puts(o, " ");
+	pp_put(o, num, pp_fmt_u64(idle, num));
+	pp_puts(o, " 0 0 0 0 0 0\n"); /* iowait irq softirq steal guest guest_nice */
+}
+
+static int pp_rewrite_stat(const char *in, int len, char *out, int max, int ncpu, long long up_sec)
+{
+	struct pp_out o = { out, 0, max, 0 };
+	int i = 0;
+
+	if (up_sec < 1)
+		up_sec = 1;
+	while (i < len) {
+		int ls = i, le, tagend;
+
+		while (i < len && in[i] != '\n')
+			i++;
+		le = (i < len) ? i + 1 : i;
+		if (le - ls >= 4 && in[ls] == 'c' && in[ls + 1] == 'p' && in[ls + 2] == 'u') {
+			tagend = ls + 3;
+			while (tagend < le && in[tagend] >= '0' && in[tagend] <= '9')
+				tagend++;
+			pp_stat_cpu_line(&o, in + ls, tagend - ls, tagend == ls + 3, ncpu, up_sec);
+		} else {
+			pp_put(&o, in + ls, le - ls);
+		}
+		i = le;
+	}
+	return o.bad ? -1 : o.n;
+}
+
+/* mode：PP_MOUNTS / PP_MOUNTINFO / PP_MOUNTSTATS / PP_NET / PP_INPUT / PP_UPTIME / PP_STAT */
 #define PP_MOUNTS 0
 #define PP_MOUNTINFO 1
 #define PP_MOUNTSTATS 2
 #define PP_NET 3
 #define PP_INPUT 4
 #define PP_UPTIME 5
+#define PP_STAT 6
 
 static int pp_rewrite(const char *in, int len, char *out, int max, int mode, const struct pp_cfg *c)
 {

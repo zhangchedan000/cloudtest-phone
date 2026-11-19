@@ -34,11 +34,12 @@
 #include <linux/cred.h>
 #include <linux/uidgid.h>
 #include <linux/errno.h>
+#include <linux/timekeeping.h>
 
 #include "rewrite.h"
 
 #define PP_SLOTS 128
-#define PP_LINE_MAX 2048
+#define PP_LINE_MAX 4096 /* /proc/stat 整文件要装下（多核时较大）*/
 #define PP_DROP_MAX 16 /* 每次 add 最多顺手清掉几台已关的（引用在锁外放） */
 
 struct pp_slot {
@@ -113,10 +114,21 @@ static void pp_done(struct kretprobe_instance *ri, int mode)
 	read_lock(&slots_lock);
 	s = pp_find(task_active_pid_ns(current));
 	if (s) {
-		if (mode == PP_UPTIME)
-			n = pp_rewrite_uptime(m->buf + d->start, (int)(m->count - d->start), out, PP_LINE_MAX, num_online_cpus());
-		else
-			n = pp_rewrite(m->buf + d->start, (int)(m->count - d->start), out, PP_LINE_MAX, mode, &s->cfg);
+		int blen = (int)(m->count - d->start);
+
+		if (mode == PP_UPTIME) {
+			n = pp_rewrite_uptime(m->buf + d->start, blen, out, PP_LINE_MAX, num_online_cpus());
+		} else if (mode == PP_STAT) {
+			long long bt = pp_parse_btime(m->buf + d->start, blen);
+
+			if (bt > 1000000000LL) { /* 读到合理的 btime 才改，否则原样（防算出离谱值） */
+				long long up = (long long)ktime_get_real_seconds() - bt;
+
+				n = pp_rewrite_stat(m->buf + d->start, blen, out, PP_LINE_MAX, num_online_cpus(), up);
+			}
+		} else {
+			n = pp_rewrite(m->buf + d->start, blen, out, PP_LINE_MAX, mode, &s->cfg);
+		}
 	}
 	read_unlock(&slots_lock);
 	if (n < 0)
@@ -268,6 +280,22 @@ static struct kretprobe rp_uptime = {
 	.maxactive = 16,
 };
 static bool uptime_ok;
+
+/* /proc/stat（踩坑 #94）：cpu / cpuN 行是宿主机累计时间，几台一样、和本机开机时长不符（母机级相关性）。
+ * 按本机开机时长重算（btime 从输出里读、ktime_get_real_seconds 算 now）。 */
+static int pp_ret_stat(struct kretprobe_instance *ri, struct pt_regs *regs)
+{
+	pp_done(ri, PP_STAT);
+	return 0;
+}
+static struct kretprobe rp_stat = {
+	.kp.symbol_name = "show_stat",
+	.entry_handler = pp_entry,
+	.handler = pp_ret_stat,
+	.data_size = sizeof(struct pp_ri),
+	.maxactive = 16,
+};
+static bool stat_ok;
 
 /*
  * /proc/modules（踩坑 #91）：App（uid≥10000）能读到宿主机和我们自己的内核模块（pp_mnt / pp_uts…）一看就露馅。
@@ -489,6 +517,9 @@ static int __init pp_mnt_init(void)
 		uptime_ok = register_kretprobe(&rp_uptime) == 0;
 		if (!uptime_ok)
 			pr_info("pp_mnt: 没挂上 uptime_proc_show（/proc/uptime 空闲时间照旧）\n");
+		stat_ok = register_kretprobe(&rp_stat) == 0;
+		if (!stat_ok)
+			pr_info("pp_mnt: 没挂上 show_stat（/proc/stat CPU 时间照旧）\n");
 		modules_ok = register_kretprobe(&rp_modules) == 0;
 		if (!modules_ok)
 			pr_info("pp_mnt: 没挂上 modules_open（/proc/modules 对 App 照旧）\n");
@@ -503,6 +534,8 @@ static void __exit pp_mnt_exit(void)
 	proc_remove(entry);
 	if (modules_ok)
 		unregister_kretprobe(&rp_modules);
+	if (stat_ok)
+		unregister_kretprobe(&rp_stat);
 	if (uptime_ok)
 		unregister_kretprobe(&rp_uptime);
 	if (input_ok)

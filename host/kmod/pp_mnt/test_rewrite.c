@@ -162,6 +162,43 @@ int main(void)
 		}
 	}
 
+	/* /proc/stat：cpu / cpuN 行按本机开机时长重算，btime 等其余行原样 */
+	{
+		const char *in =
+			"cpu  590396227 937301 22831775 3340156651 897753 0 123456 0 0 0\n"
+			"cpu0 147599056 234325 5707943 835039162 224438 0 30864 0 0 0\n"
+			"cpu1 147599057 234326 5707944 835039163 224439 0 30865 0 0 0\n"
+			"intr 999 1 2 3\n"
+			"ctxt 123456789\n"
+			"btime 1795064107\n"
+			"processes 54321\n"
+			"procs_running 2\n"
+			"procs_blocked 0\n"
+			"softirq 888 1 2 3\n";
+		const char *want =
+			"cpu  4200 0 4200 271600 0 0 0 0 0 0\n"   /* 700*100*4=280000; idle97% sys1.5% usr补 */
+			"cpu0 1050 0 1050 67900 0 0 0 0 0 0\n"    /* 700*100=70000 */
+			"cpu1 1050 0 1050 67900 0 0 0 0 0 0\n"
+			"intr 999 1 2 3\n"
+			"ctxt 123456789\n"
+			"btime 1795064107\n"
+			"processes 54321\n"
+			"procs_running 2\n"
+			"procs_blocked 0\n"
+			"softirq 888 1 2 3\n";
+		char out[2048];
+		int n = pp_rewrite_stat(in, (int)strlen(in), out, sizeof(out), 4, 700);
+		out[n < 0 ? 0 : n] = 0;
+		if (n < 0 || strcmp(out, want) != 0) {
+			fails++;
+			printf("FAIL stat\n--- got ---\n%s--- want ---\n%s", n < 0 ? "(放不下)\n" : out, want);
+		}
+		if (pp_parse_btime(in, (int)strlen(in)) != 1795064107LL) {
+			fails++;
+			printf("FAIL stat btime 解析：%lld\n", pp_parse_btime(in, (int)strlen(in)));
+		}
+	}
+
 	printf(fails ? "%d 项失败\n" : "全部通过\n", fails);
 	return fails != 0;
 }
