@@ -360,12 +360,87 @@ static int pp_rewrite_input(const char *in, int len)
 	return -1; /* 其余原样 */
 }
 
-/* mode：PP_MOUNTS / PP_MOUNTINFO / PP_MOUNTSTATS / PP_NET / PP_INPUT */
+/*
+ * /proc/uptime：「<开机时长> <空闲时间>\n」，两个十进制、各两位小数（秒）。
+ * 开机时长（第一个数）已被时间命名空间按每台手机调过（对）；空闲时间（第二个数）还是宿主机累计的——
+ * 几台手机一模一样、而且远大于本机开机时长（宿主机开了好多天），一看就不对（踩坑 #90）。
+ * 改成 ≈ 本机开机时长 × 在线 CPU 数 × 0.98：像一台刚开机不久、基本空闲的真机，每台跟着自己的开机时长走。
+ */
+static int pp_parse_cs(struct pp_tok t, unsigned long long *cs)
+{
+	unsigned long long sec = 0;
+	int i = 0, frac = 0, nf = 0;
+
+	if (t.n == 0)
+		return -1;
+	for (; i < t.n && t.p[i] != '.'; i++) {
+		if (t.p[i] < '0' || t.p[i] > '9')
+			return -1;
+		sec = sec * 10 + (unsigned)(t.p[i] - '0');
+	}
+	if (i < t.n) {
+		i++;
+		for (; i < t.n && nf < 2; i++, nf++) {
+			if (t.p[i] < '0' || t.p[i] > '9')
+				return -1;
+			frac = frac * 10 + (t.p[i] - '0');
+		}
+	}
+	while (nf < 2) {
+		frac *= 10;
+		nf++;
+	}
+	*cs = sec * 100ULL + (unsigned)frac;
+	return 0;
+}
+
+static int pp_fmt_cs(unsigned long long cs, char *buf)
+{
+	unsigned long long sec = cs / 100;
+	int frac = (int)(cs % 100), n = 0, j, s;
+	char tmp[24];
+
+	if (sec == 0)
+		tmp[n++] = '0';
+	else
+		for (; sec > 0; sec /= 10)
+			tmp[n++] = '0' + (int)(sec % 10);
+	for (j = 0, s = n - 1; s >= 0; s--, j++)
+		buf[j] = tmp[s];
+	buf[j++] = '.';
+	buf[j++] = '0' + frac / 10;
+	buf[j++] = '0' + frac % 10;
+	return j;
+}
+
+static int pp_rewrite_uptime(const char *in, int len, char *out, int max, int ncpu)
+{
+	struct pp_tok t[4];
+	struct pp_out o = { out, 0, max, 0 };
+	int k = pp_split(in, len, t, 4), bn;
+	unsigned long long up_cs, idle_cs;
+	char buf[24];
+
+	if (k < 2 || ncpu < 1)
+		return -1;
+	if (pp_parse_cs(t[0], &up_cs))
+		return -1;
+	idle_cs = up_cs * (unsigned long long)ncpu * 98ULL / 100ULL;
+	pp_putt(&o, t[0]);
+	pp_puts(&o, " ");
+	bn = pp_fmt_cs(idle_cs, buf);
+	pp_put(&o, buf, bn);
+	pp_puts(&o, "\n");
+	return o.bad ? -1 : o.n;
+}
+
+/* mode：PP_MOUNTS / PP_MOUNTINFO / PP_MOUNTSTATS / PP_NET / PP_INPUT / PP_UPTIME */
 #define PP_MOUNTS 0
 #define PP_MOUNTINFO 1
 #define PP_MOUNTSTATS 2
 #define PP_NET 3
 #define PP_INPUT 4
+#define PP_UPTIME 5
 
 static int pp_rewrite(const char *in, int len, char *out, int max, int mode, const struct pp_cfg *c)
 {

@@ -141,6 +141,27 @@ int main(void)
 			printf("FAIL 放不下时应该原样\n");
 		}
 	}
+	/* /proc/uptime：空闲时间 = 开机时长 × 在线CPU数 × 0.98（厘秒整数运算） */
+	{
+		const struct { const char *in; int ncpu; const char *want; } up[] = {
+			{ "1500.00 987654.32\n", 4, "1500.00 5880.00\n" },
+			{ "1234.56 999999.99\n", 4, "1234.56 4839.47\n" },
+			{ "100.00 50000.00\n", 8, "100.00 784.00\n" },
+			{ "0.00 12345.00\n", 4, "0.00 0.00\n" },
+			{ "1500.00\n", 4, "1500.00\n" },   /* 只有一个数：原样 */
+			{ "1500.00 10.00\n", 0, "1500.00 10.00\n" }, /* ncpu 非法：原样 */
+		};
+		for (unsigned i = 0; i < sizeof(up) / sizeof(up[0]); i++) {
+			char out[64];
+			int n = pp_rewrite_uptime(up[i].in, (int)strlen(up[i].in), out, sizeof(out), up[i].ncpu);
+			const char *got = n < 0 ? up[i].in : (n == 0 ? "" : (out[n] = 0, out));
+			if (strcmp(got, up[i].want) != 0) {
+				fails++;
+				printf("FAIL uptime #%u\n  got:  %s  want: %s", i, got, up[i].want);
+			}
+		}
+	}
+
 	printf(fails ? "%d 项失败\n" : "全部通过\n", fails);
 	return fails != 0;
 }

@@ -30,6 +30,7 @@
 #include <linux/percpu.h>
 #include <linux/string.h>
 #include <linux/statfs.h>
+#include <linux/cpumask.h>
 
 #include "rewrite.h"
 
@@ -108,8 +109,12 @@ static void pp_done(struct kretprobe_instance *ri, int mode)
 	out = this_cpu_ptr(pp_buf); /* 钩子里不会被抢占 */
 	read_lock(&slots_lock);
 	s = pp_find(task_active_pid_ns(current));
-	if (s)
-		n = pp_rewrite(m->buf + d->start, (int)(m->count - d->start), out, PP_LINE_MAX, mode, &s->cfg);
+	if (s) {
+		if (mode == PP_UPTIME)
+			n = pp_rewrite_uptime(m->buf + d->start, (int)(m->count - d->start), out, PP_LINE_MAX, num_online_cpus());
+		else
+			n = pp_rewrite(m->buf + d->start, (int)(m->count - d->start), out, PP_LINE_MAX, mode, &s->cfg);
+	}
 	read_unlock(&slots_lock);
 	if (n < 0)
 		return;
@@ -232,6 +237,22 @@ static struct kretprobe rp_input = {
 	.maxactive = 64,
 };
 static bool input_ok;
+
+/* /proc/uptime（踩坑 #90）：空闲时间（第二个数）本来是宿主机累计的，几台一样、远大于本机开机时长，一看就不对。
+ * 改成 ≈ 本机开机时长 × 在线 CPU 数 × 0.98（像刚开机不久、基本空闲的真机）。 */
+static int pp_ret_uptime(struct kretprobe_instance *ri, struct pt_regs *regs)
+{
+	pp_done(ri, PP_UPTIME);
+	return 0;
+}
+static struct kretprobe rp_uptime = {
+	.kp.symbol_name = "uptime_proc_show",
+	.entry_handler = pp_entry,
+	.handler = pp_ret_uptime,
+	.data_size = sizeof(struct pp_ri),
+	.maxactive = 16,
+};
+static bool uptime_ok;
 
 /* ---------- /proc/pp_mnt ---------- */
 
@@ -392,6 +413,9 @@ static int __init pp_mnt_init(void)
 		input_ok = register_kretprobe(&rp_input) == 0;
 		if (!input_ok)
 			pr_info("pp_mnt: 没挂上 input_devices_seq_show（/proc/bus/input/devices 照旧）\n");
+		uptime_ok = register_kretprobe(&rp_uptime) == 0;
+		if (!uptime_ok)
+			pr_info("pp_mnt: 没挂上 uptime_proc_show（/proc/uptime 空闲时间照旧）\n");
 	}
 	return 0;
 }
@@ -401,6 +425,8 @@ static void __exit pp_mnt_exit(void)
 	int i;
 
 	proc_remove(entry);
+	if (uptime_ok)
+		unregister_kretprobe(&rp_uptime);
 	if (input_ok)
 		unregister_kretprobe(&rp_input);
 	for (i = 0; i < ARRAY_SIZE(statfs_probes); i++)
