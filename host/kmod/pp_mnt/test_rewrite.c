@@ -180,9 +180,9 @@ int main(void)
 			"cpu0 1050 0 1050 67900 0 0 0 0 0 0\n"    /* 700*100=70000 */
 			"cpu1 1050 0 1050 67900 0 0 0 0 0 0\n"
 			"intr 999 1 2 3\n"
-			"ctxt 123456789\n"
+			"ctxt 1260000\n"           /* 700*1800 */
 			"btime 1795064107\n"
-			"processes 54321\n"
+			"processes 2600\n"         /* 700*3+500 */
 			"procs_running 2\n"
 			"procs_blocked 0\n"
 			"softirq 888 1 2 3\n";

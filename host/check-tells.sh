@@ -176,7 +176,16 @@ adbon=$(ax 'settings get global adb_enabled'); [ "$adbon" = 1 ] && info "USB 调
 desc=$(gp ro.build.description); echo "$desc" | grep -qiE 'redroid|userdebug|test-keys' || hid "ro.build.description 已是真机格式：$desc"
 pb=$(docker exec -u 10100 "$C" sh -c 'cat /product/etc/build.prop /system_ext/etc/build.prop' 2>/dev/null | grep -ciE 'redroid|userdebug|test-keys')
 [ "${pb:-0}" -gt 0 ] && now "App 能直接读的 /product、/system_ext 的 build.prop 里还有 $pb 行 redroid / userdebug / test-keys（开机应按最终身份改写，踩坑 #55）" || hid "App 能读的 build.prop 文件里没有 redroid 痕迹"
-bton=$(ax 'settings get global bluetooth_on'); [ "$bton" = 1 ] && now "bluetooth_on=1：没有蓝牙硬件，每次开机蓝牙进程会连崩（踩坑 #48）" || info "bluetooth_on=${bton:-?}"
+bton=$(ax 'settings get global bluetooth_on')
+if [ "$bton" = 1 ]; then
+  if systemctl is-active "ppbt-${C#pp-}" >/dev/null 2>&1; then
+    hid "bluetooth_on=1，但这台有模拟蓝牙芯片在跑（rootcanal/ppbt active），蓝牙可用——正常，不是破绽"
+  else
+    now "bluetooth_on=1 但没有蓝牙芯片在跑：开机蓝牙进程会连崩（踩坑 #48）"
+  fi
+else
+  info "bluetooth_on=${bton:-?}"
+fi
 crash=$(ax 'logcat -b crash -d 2>/dev/null' | grep -cE 'Fatal signal|FATAL EXCEPTION')
 [ "${crash:-0}" -gt 0 ] && { now "这次开机有 $crash 次崩溃（下面是崩的进程）"; ax 'logcat -b crash -d 2>/dev/null' | grep -oE 'Process: [a-z0-9._:]+|pid [0-9]+ \([^)]*\)' | sort | uniq -c | sort -rn | head -5 | sed 's/^/             /'; } || hid "这次开机没有崩溃"
 

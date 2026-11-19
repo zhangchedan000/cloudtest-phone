@@ -499,6 +499,15 @@ static void pp_stat_cpu_line(struct pp_out *o, const char *tag, int taglen, int 
 	pp_puts(o, " 0 0 0 0 0 0\n"); /* iowait irq softirq steal guest guest_nice */
 }
 
+static void pp_stat_num_line(struct pp_out *o, const char *label, int llen, unsigned long long v)
+{
+	char num[24];
+
+	pp_put(o, label, llen);
+	pp_put(o, num, pp_fmt_u64(v, num));
+	pp_puts(o, "\n");
+}
+
 static int pp_rewrite_stat(const char *in, int len, char *out, int max, int ncpu, long long up_sec)
 {
 	struct pp_out o = { out, 0, max, 0 };
@@ -517,6 +526,12 @@ static int pp_rewrite_stat(const char *in, int len, char *out, int max, int ncpu
 			while (tagend < le && in[tagend] >= '0' && in[tagend] <= '9')
 				tagend++;
 			pp_stat_cpu_line(&o, in + ls, tagend - ls, tagend == ls + 3, ncpu, up_sec);
+		} else if (le - ls > 5 && memcmp(in + ls, "ctxt ", 5) == 0) {
+			/* 上下文切换计数：宿主机累计、几台一样。按开机时长 × 一个合理速率 */
+			pp_stat_num_line(&o, "ctxt ", 5, (unsigned long long)up_sec * 1800ULL);
+		} else if (le - ls > 10 && memcmp(in + ls, "processes ", 10) == 0) {
+			/* 开机以来 fork 的进程总数：同上 */
+			pp_stat_num_line(&o, "processes ", 10, (unsigned long long)up_sec * 3ULL + 500ULL);
 		} else {
 			pp_put(&o, in + ls, le - ls);
 		}
