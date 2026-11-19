@@ -12,6 +12,22 @@ function randomMac(): string {
   return [first, ...Array.from({ length: 5 }, () => int(0, 255))].map((b) => b.toString(16).padStart(2, '0')).join(':')
 }
 
+/** 蓝牙地址：出厂烧录的全球唯一地址。已知厂商用其真实 OUI 前缀（大写），其余用全球管理的随机地址。 */
+const btOUIs: Record<string, string[]> = {
+  xiaomi: ['28:6C:07', '64:09:80', '50:8F:4C', 'F8:A4:5F', '9C:99:A0', 'AC:F7:F3'],
+}
+function randomBtMac(model?: DeviceModel): string {
+  const tail = () => Array.from({ length: 3 }, () => int(0, 255).toString(16).padStart(2, '0').toUpperCase()).join(':')
+  for (const k of ['manufacturer', 'brand'] as const) {
+    let key = String(model?.values[k] ?? '').toLowerCase()
+    if (key === 'poco' || key === 'redmi') key = 'xiaomi'
+    const ouis = btOUIs[key]
+    if (ouis?.length) return `${pick(ouis)}:${tail()}`
+  }
+  const first = int(0, 63) << 2 // 没有已知 OUI：全球管理、单播（最低两位为 0）
+  return [first, ...Array.from({ length: 5 }, () => int(0, 255))].map((b) => b.toString(16).padStart(2, '0').toUpperCase()).join(':')
+}
+
 function randomSerial(): string {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ0123456789'
   return Array.from({ length: pick([8, 10, 12]) }, () => pick(chars.split(''))).join('')
@@ -34,7 +50,7 @@ export function randomValue(field: FieldDef, model?: DeviceModel): unknown {
     case 'androidId': return hex(16)
     case 'serial': return randomSerial()
     case 'wifiMac': return randomMac()
-    case 'bluetoothMac': return randomMac()
+    case 'bluetoothMac': return randomBtMac(model)
     case 'gaid': return randomUuid()
     case 'deviceName': return String(model?.values.marketName ?? model?.values.model ?? 'Android')
     case 'batteryLevel': return int(23, 96)

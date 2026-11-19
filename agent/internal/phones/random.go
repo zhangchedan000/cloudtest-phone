@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"math/big"
+	"strings"
 	"time"
 )
 
@@ -30,6 +31,30 @@ func randMAC() string {
 	_, _ = rand.Read(b)
 	b[0] = (b[0] &^ 0b11) | 0b10
 	return fmt.Sprintf("%02x:%02x:%02x:%02x:%02x:%02x", b[0], b[1], b[2], b[3], b[4], b[5])
+}
+
+// 蓝牙地址是出厂烧录的「全球唯一」地址：已知厂商用它真实的 OUI 前缀、大写；其余用全球管理的随机地址。
+// 以前和 WiFi 共用 randMAC（本地管理位 + 小写），真机蓝牙地址不会是这样（2026-11-18 体检）。
+var btOUIs = map[string][]string{
+	"xiaomi": {"28:6C:07", "64:09:80", "50:8F:4C", "F8:A4:5F", "9C:99:A0", "AC:F7:F3"},
+}
+
+func randBTMAC(m *Model) string {
+	b := make([]byte, 6)
+	_, _ = rand.Read(b)
+	if m != nil {
+		for _, k := range []string{"manufacturer", "brand"} {
+			key := strings.ToLower(str(m.Values[k]))
+			if key == "poco" || key == "redmi" {
+				key = "xiaomi"
+			}
+			if ouis := btOUIs[key]; len(ouis) > 0 {
+				return fmt.Sprintf("%s:%02X:%02X:%02X", pick(ouis), b[3], b[4], b[5])
+			}
+		}
+	}
+	b[0] &^= 0b11 // 没有已知 OUI：至少是全球管理、单播地址（不是一眼假的本地管理位）
+	return fmt.Sprintf("%02X:%02X:%02X:%02X:%02X:%02X", b[0], b[1], b[2], b[3], b[4], b[5])
 }
 
 func randSerial() string {
@@ -71,8 +96,10 @@ func RandomValue(key string, m *Model) any {
 		return randHex(16)
 	case "serial":
 		return randSerial()
-	case "wifiMac", "bluetoothMac":
+	case "wifiMac":
 		return randMAC()
+	case "bluetoothMac":
+		return randBTMAC(m)
 	case "gaid":
 		return randUUID()
 	case "deviceName":
