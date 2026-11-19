@@ -76,11 +76,13 @@ const DirectDevProxyID = "direct-dev"
 // 每台手机占一组 3 个（binder/hwbinder/vndbinder），所以最多 12 台同时跑（上板流程 阶段3）。
 const binderSlots = 12
 
-// assignBinderSlot 给要开机的手机分一组没人用的 binder 设备，返回槽位号和 pp-init 用的 "a,b,c"。
+// assignBinderSlot 给要开机的手机分一组没人用的 binder 设备，返回槽位号和要加进容器的 docker bind
+// （把宿主 /dev/binderN 直接绑进容器的 /dev/binder、/dev/hwbinder、/dev/vndbinder）。
 // 多台 --privileged 容器默认都看到宿主同一个 /dev/binder（binder1），会抢冲突；给每台绑不同 binderN。
 // 已用槽位从「正在跑的容器」的 prism-phone.binder 标签反推（docker 是真相，agent 重启也不会撞）。
-// binderfs 的板子不存在这问题（容器内各自挂 binderfs），这里分到的 binderN 它也用不上、无害。
-func (s *Service) assignBinderSlot(ctx context.Context, st store.State, id string) (int, string) {
+// 用 docker bind 而不是容器内 mount：不依赖 pp-init/时间命名空间（这块板子内核的 CLONE_NEWTIME 会让
+// 安卓建线程失败，见踩坑；binderfs 的板子容器内各自挂 binderfs，这里分到的 binderN 它也用不上、无害）。
+func (s *Service) assignBinderSlot(ctx context.Context, st store.State, id string) (int, []string) {
 	used := map[int]bool{}
 	for _, other := range st.Phones {
 		if other.ID == id || !s.isRunning(ctx, other.ID) {
@@ -108,7 +110,13 @@ func (s *Service) assignBinderSlot(ctx context.Context, st store.State, id strin
 		slot = 0
 	}
 	// 第 k 组 = binder(3k+1), binder(3k+2), binder(3k+3)
-	return slot, fmt.Sprintf("%d,%d,%d", 3*slot+1, 3*slot+2, 3*slot+3)
+	n := slot * 3
+	binds := []string{
+		fmt.Sprintf("/dev/binder%d:/dev/binder", n+1),
+		fmt.Sprintf("/dev/binder%d:/dev/hwbinder", n+2),
+		fmt.Sprintf("/dev/binder%d:/dev/vndbinder", n+3),
+	}
+	return slot, binds
 }
 
 type Service struct {
@@ -860,8 +868,8 @@ func (s *Service) Start(ctx context.Context, id string) error {
 			return fmt.Errorf("%w：这台机器同时最多运行 %d 台，先关掉一台", ErrBlocked, s.cfg.MaxRunning)
 		}
 	}
-	// 多开 binder：给这台分一组没人用的 binder，pp-init 在容器里绑成标准名（binder/hwbinder/vndbinder）。
-	binderSlot, binderArg := s.assignBinderSlot(ctx, st, id)
+	// 多开 binder：给这台分一组没人用的 binder（docker bind 进容器，见 assignBinderSlot）。
+	binderSlot, binderBinds := s.assignBinderSlot(ctx, st, id)
 	if err := s.docker.EnsureNetwork(ctx, s.cfg.Network, s.cfg.Subnet, s.gateway()); err != nil {
 		return fmt.Errorf("准备网络：%w", err)
 	}
@@ -878,6 +886,7 @@ func (s *Service) Start(ctx context.Context, id string) error {
 		return err
 	}
 	binds := []string{dataDir + ":/data"}
+	binds = append(binds, binderBinds...) // 多开 binder：这台专属的一组 binder 设备
 	if s.cfg.Lxcfs {
 		binds = append(binds, lxcfsProc+":"+lxcfsMount+":ro")
 	}
@@ -924,8 +933,6 @@ func (s *Service) Start(ctx context.Context, id string) error {
 		spec.RealNames = s.imageLabel(ctx, image, "prism.names") == "1"
 		entrypoint = withSensors(entrypoint, spec)
 	}
-	// 多开 binder：pp-init 在容器里把分给这台的 binderN 绑成 /dev/binder 等（withBinder 判空、非 pp-init 入口自动跳过）。
-	entrypoint = withBinder(entrypoint, binderArg)
 	if entrypoint != nil {
 		binds = append(binds, s.cfg.InitHelper+":"+initMount+":ro")
 	}

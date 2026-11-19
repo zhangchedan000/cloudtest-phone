@@ -292,7 +292,8 @@ func TestStartMountsFakeFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 	spec := fd.created["pp-"+p.ID]
-	if len(spec.Binds) != 2 || !strings.HasSuffix(spec.Binds[1], ":"+fakeMount+":ro") {
+	// binds：/data、3 条多开 binder、伪造目录。用 Contains 判断（不写死顺序/数量）。
+	if !strings.Contains(strings.Join(spec.Binds, " "), ":"+fakeMount+":ro") {
 		t.Fatalf("伪造目录没挂进容器：%v", spec.Binds)
 	}
 	cpuinfo, err := os.ReadFile(filepath.Join(svc.fakeDir(p.ID), "cpuinfo"))

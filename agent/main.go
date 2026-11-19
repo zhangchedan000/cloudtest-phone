@@ -32,37 +32,12 @@ import (
 
 var version = "dev"
 
-// bindBinders 容器内（pp-init 模式）把管家分给这台手机的 binderN 绑成标准名，避免多台 --privileged 容器
-// 抢同一个 /dev/binder（binder1）冲突（上板流程 阶段3）。spec = "a,b,c"：
-// /dev/binder{a}→/dev/binder、{b}→/dev/hwbinder、{c}→/dev/vndbinder。
-// 先把 /dev 设为私有挂载，绑定只在本容器可见、不传播到宿主和别的容器。best-effort：绑不上只记日志、不挡开机。
-func bindBinders(spec string) {
-	parts := strings.Split(spec, ",")
-	if len(parts) != 3 {
-		return
-	}
-	_ = syscall.Mount("", "/dev", "", syscall.MS_PRIVATE|syscall.MS_REC, "")
-	targets := []string{"/dev/binder", "/dev/hwbinder", "/dev/vndbinder"}
-	for i, n := range parts {
-		src := "/dev/binder" + strings.TrimSpace(n)
-		if err := syscall.Mount(src, targets[i], "", syscall.MS_BIND, ""); err != nil {
-			fmt.Fprintf(os.Stderr, "pp-init：绑定 %s → %s 失败：%v\n", src, targets[i], err)
-		}
-	}
-}
-
 func main() {
 	// 容器里的启动器模式（开机时长归零，见 timens 包）：不跑管家，建好时间命名空间就 exec 安卓 init。
 	if len(os.Args) > 2 && os.Args[1] == "pp-init" {
 		args := os.Args[2:]
-		// 处理 "pp-init" 后、开机时长前的可选前缀标志（--sensors= / --binder=），顺序随意。
-		for len(args) > 0 && strings.HasPrefix(args[0], "--") {
-			switch {
-			case strings.HasPrefix(args[0], "--sensors="):
-				startSensors(strings.TrimPrefix(args[0], "--sensors="))
-			case strings.HasPrefix(args[0], "--binder="):
-				bindBinders(strings.TrimPrefix(args[0], "--binder="))
-			}
+		if len(args) > 0 && strings.HasPrefix(args[0], "--sensors=") {
+			startSensors(strings.TrimPrefix(args[0], "--sensors="))
 			args = args[1:]
 		}
 		timens.Run(args)
