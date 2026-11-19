@@ -215,10 +215,12 @@ cam=$(ax 'dumpsys media.camera 2>/dev/null | grep -ciE "Camera [0-9]|device id"'
 [ "${cam:-0}" -ge 1 ] && info "摄像头条目：$cam" || brd "没有摄像头（模拟器的摄像头服务依赖模拟器显存，云上编不了真的，踩坑 #66）"
 
 # 电话 / SIM / IMEI
-simop=$(gp gsm.sim.operator.alpha); brd_sim=$(gp gsm.operator.alpha)
+simop=$(gp gsm.sim.operator.alpha); brd_sim=$(gp gsm.operator.alpha); simstate=$(gp gsm.sim.state)
 tel=$(ax 'pm list features 2>/dev/null | grep -c "android.hardware.telephony"')
-if [ -n "$simop$brd_sim" ]; then hid "SIM 运营商：$simop$brd_sim"
-elif [ "${tel:-0}" -ge 1 ]; then now "有电话子系统（$tel 项电话能力），但显示没插 SIM 卡：镜像是旧的（Redroid 自带 rild 安卓 13 起不认），用 host/build-wifi-image.sh 重建（默认开新 rild）后重启手机（踩坑 #65）"
+rild=$(gp init.svc.vendor.ril-daemon)
+if [ -n "$simop$brd_sim" ] || [ "$simstate" = LOADED ] || [ "$simstate" = READY ]; then hid "SIM 已加载：运营商 ${simop:-$brd_sim}（state=${simstate:-?}）"
+elif [ "$rild" = running ]; then info "SIM 还在加载（rild 在跑、state=${simstate:-空}）——SIM 在开机后 10~30 秒才就绪；这是开机早期查的，稍等再跑一次（踩坑 #65，不是破绽）"
+elif [ "${tel:-0}" -ge 1 ]; then now "有电话子系统但 rild 没在跑、SIM 没加载：检查镜像 rild（prism.ril 标签 / host/build-wifi-image.sh，踩坑 #65）"
 else now "没有电话子系统（ro.radio.noril=yes，真机即便无卡也有）：换新镜像（host/build-wifi-image.sh，踩坑 #65）"; fi
 
 # 蓝牙
