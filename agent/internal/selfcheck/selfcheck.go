@@ -43,8 +43,23 @@ func Run(dataDir string, ping func(context.Context) error) Report {
 	add("架构", runtime.GOARCH == "arm64", runtime.GOARCH, "只支持 ARM64 机器")
 	page := os.Getpagesize()
 	add("内存页 4K", page == 4096, fmt.Sprint(page), "换用 4K 页的内核/发行版（例如 Ubuntu；Oracle Linux 的 ARM 内核是 64K）")
+	// binder：两条路都算通。
+	//   1. binderfs（甲骨文等标准内核）：/proc/filesystems 里有 binder，容器内自动挂 binderfs。
+	//   2. 静态 binder 设备（RK3588/魔云腾 Q1 这类内核没 binderfs，只有 CONFIG_ANDROID_BINDER_DEVICES）：
+	//      宿主 mknod 出 /dev/binder 指向静态 binderN（host/setup-board.sh 的 binder-nodes）。
+	// 只要有一条，安卓就能拿到 binder。只认 binderfs 会把 Q1 这种好板子误判成不可用。
 	fsData, _ := os.ReadFile("/proc/filesystems")
-	add("binderfs", strings.Contains(string(fsData), "binder"), "", "执行 modprobe binder_linux（host/setup-host.sh 会做）")
+	hasBinderfs := strings.Contains(string(fsData), "binder")
+	_, binderDevErr := os.Stat("/dev/binder")
+	hasBinderDev := binderDevErr == nil
+	binderInfo := "无"
+	switch {
+	case hasBinderfs:
+		binderInfo = "binderfs"
+	case hasBinderDev:
+		binderInfo = "静态 binder 设备"
+	}
+	add("binder", hasBinderfs || hasBinderDev, binderInfo, "有 binderfs 的内核执行 modprobe binder_linux（host/setup-host.sh）；没 binderfs 的板子（如 RK3588/Q1）用静态 binder 设备 + mknod /dev/binder（host/setup-board.sh 的 binder-nodes）")
 	_, psiErr := os.Stat("/proc/pressure/memory")
 	add("PSI", psiErr == nil, "", "内核参数加 psi=1，否则安卓 lmkd 会反复重启")
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
