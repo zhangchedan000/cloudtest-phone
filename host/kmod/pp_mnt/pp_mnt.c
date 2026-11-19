@@ -156,6 +156,10 @@ static int pp_ret_mountstats(struct kretprobe_instance *ri, struct pt_regs *regs
  */
 #define PP_OVERLAYFS_MAGIC 0x794c7630
 #define PP_EXT4_MAGIC 0xEF53
+/* overlay（根/系统/vendor 等只读系统分区）本来返回宿主机整块盘的大小（几台手机一样、一眼同一宿主机）。
+ * 改成像手机只读系统分区：~6GB、基本占满（留一点点空闲，免得开机时有组件看到「0 空间」出岔）。踩坑 #92。 */
+#define PP_SYS_SIZE_BYTES (6ULL << 30)
+#define PP_SYS_FILES 300000u
 
 static int pp_statfs_pre(struct kprobe *p, struct pt_regs *regs)
 {
@@ -168,8 +172,16 @@ static int pp_statfs_pre(struct kprobe *p, struct pt_regs *regs)
 	read_lock(&slots_lock);
 	hit = pp_find(ns) != NULL;
 	read_unlock(&slots_lock);
-	if (hit)
+	if (hit) {
 		st->f_type = PP_EXT4_MAGIC;
+		if (st->f_bsize >= 512) {
+			st->f_blocks = PP_SYS_SIZE_BYTES / st->f_bsize;
+			st->f_bfree = st->f_blocks / 64;  /* ~1.5% 空闲，像基本占满的只读系统分区 */
+			st->f_bavail = st->f_bfree;
+			st->f_files = PP_SYS_FILES;
+			st->f_ffree = 0;
+		}
+	}
 	return 0;
 }
 
