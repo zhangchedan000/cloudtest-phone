@@ -157,7 +157,7 @@ info "↑ 和该机型官方 dpi 核对（进度记录里标了 dpi 待真机核
 # ========== 2b. 2026-11-16 ADB 体检修掉的项（防复发，踩坑 #44–#49）==========
 sect "2b. 开机后处理（防复发）"
 ax 'ls /.dockerenv' | grep -q dockerenv && now "/.dockerenv 还在（开机后 removeTraces 应删掉）" || hid "/.dockerenv 已删"
-ax 'ls /pp-init' | grep -q pp-init && now "/pp-init 启动器挂载点没清掉" || true
+ax 'ls /pp-init' | grep -q pp-init && now "根目录还有 /pp-init（应已搬进 /data）" || hid "/pp-init 不在根目录（启动器已搬 /data，App 看不到）"
 ax 'ls -ad /.ppfake /.pplxcfs 2>/dev/null' | grep -qE '\.ppfake|\.pplxcfs' && now "根目录残留 /.ppfake 或 /.pplxcfs 挂载点（应搬到 /data 下，App 看不到）" || hid "伪造/LXCFS 挂载点不在根目录（已在 /data 下）"
 ax 'pm list packages org.chromium.webview_shell' | grep -q webview_shell && now "AOSP 测试 App org.chromium.webview_shell 还在（开机设置应卸掉）" || hid "AOSP 测试 App webview_shell 已卸"
 ch=$(gp ro.build.characteristics); [ "$ch" = default ] && now "ro.build.characteristics=default（模拟器默认值）" || hid "ro.build.characteristics=$ch"

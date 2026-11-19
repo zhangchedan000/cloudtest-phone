@@ -55,7 +55,7 @@ func TestResumeRunningRedoesSettingsAndTraces(t *testing.T) {
 		t.Fatalf("应补做 1 台，实际 %d", n)
 	}
 	joined := strings.Join(r.calls, "\n")
-	for _, want := range []string{"umount -l /pp-init", "rm -f /system/xbin/su /.dockerenv", "pm uninstall --user 0 org.chromium.webview_shell"} {
+	for _, want := range []string{"umount -l /data/.ppi", "rm -f /system/xbin/su /.dockerenv", "pm uninstall --user 0 org.chromium.webview_shell"} {
 		if !strings.Contains(joined, want) {
 			t.Errorf("缺少命令 %q：\n%s", want, joined)
 		}

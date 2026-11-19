@@ -23,11 +23,11 @@ func TestStartWrapsEntrypointWithInitHelper(t *testing.T) {
 		t.Fatal(err)
 	}
 	spec := fd.created["pp-"+p.ID]
-	want := []string{"/pp-init", "pp-init", "0", "/init", "androidboot.hardware=redroid"}
+	want := []string{"/data/.ppi", "pp-init", "0", "/init", "androidboot.hardware=redroid"}
 	if !reflect.DeepEqual(spec.Entrypoint, want) {
 		t.Fatalf("入口不对：%v", spec.Entrypoint)
 	}
-	if !strings.Contains(strings.Join(spec.Binds, " "), "/usr/local/bin/prism-phone-agent:/pp-init:ro") {
+	if !strings.Contains(strings.Join(spec.Binds, " "), "/usr/local/bin/prism-phone-agent:/data/.ppi:ro") {
 		t.Fatalf("启动器没挂进去：%v", spec.Binds)
 	}
 }

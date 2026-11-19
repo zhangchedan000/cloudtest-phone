@@ -1235,7 +1235,7 @@ const cpuVariant = "cortex-a76"
 var cpuVariantProps = []string{"dalvik.vm.isa.arm64.variant", "dalvik.vm.isa.arm.variant"}
 
 // initMount 启动器在容器里的路径（开机后 removeTraces 卸掉删除）。
-const initMount = "/pp-init"
+const initMount = "/data/.ppi" // 放 /data 下（App 列不了 /data）：/pp-init 以前靠 removeTraces 异步清，实测偶尔清不掉、0 字节空文件残留在根目录成差异项（踩坑 #93）。启动器在容器启动瞬间执行，早于 Android 把 /data 重挂 noexec，所以能跑
 
 type imageInspector interface {
 	ImageEntrypoint(ctx context.Context, image string) ([]string, error)
