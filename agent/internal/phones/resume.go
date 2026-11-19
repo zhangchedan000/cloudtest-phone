@@ -45,10 +45,10 @@ func (s *Service) ResumeRunning(ctx context.Context) int {
 	return n
 }
 
-// resumeFakes 伪造文件的补做。伪造目录在开机时以只读方式挂到容器的 /.ppfake，
-// applyFakes 挂完会卸掉并删除 /.ppfake。所以：
-//   - /.ppfake 还在 → 重启前没挂完，接着挂（applyFakes 会跳过已经挂上的）；
-//   - /.ppfake 不在 → 重启前已经挂完了，只按 /proc/mounts 恢复管理页上显示的状态。
+// resumeFakes 伪造文件的补做。伪造目录在开机时以只读方式挂到容器的 /data/.ppf，
+// applyFakes 挂完会卸掉并删除 /data/.ppf。所以：
+//   - /data/.ppf 还在 → 重启前没挂完，接着挂（applyFakes 会跳过已经挂上的）；
+//   - /data/.ppf 不在 → 重启前已经挂完了，只按 /proc/mounts 恢复管理页上显示的状态。
 func (s *Service) resumeFakes(ctx context.Context, id string) {
 	entries, err := os.ReadDir(s.fakeDir(id))
 	if err != nil || len(entries) == 0 {

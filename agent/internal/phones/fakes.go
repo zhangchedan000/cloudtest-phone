@@ -19,12 +19,13 @@ import (
 // 「内核层伪装」（不改内核）：开机完成后，把伪造的 /proc、/sys 文件 bind-mount 到容器里。
 //
 // 为什么等开机完成再挂：安卓 init 开机时会自己重新挂一遍 /proc，开机前挂的会被盖住。
-// 伪造文件先放在容器里的临时挂载点 fakeMount，挂完就卸掉并删除目录，不留在安卓根目录里。
+// 伪造文件先放在容器里的临时挂载点 fakeMount，挂完就卸掉并删目录。
 //
-// 已知残留：容器里的 /proc/self/mountinfo 能看到这些 bind mount（LXCFS 也有同样的问题）。
-// 彻底解决要改内核（见 docs/进度记录.md 待办）。
+// 临时挂载点放在 /data 下（/data 权限 0771，App 列不了；根目录 App 能列）：即使卸载后 rmdir 没删掉、
+// 留个空目录，App 也看不到（以前放在根目录 /.ppfake，开机后删不掉、成了破绽；2026-11 体检后搬进 /data）。
+// mountinfo 里这些 bind mount 由内核模块 pp_mnt 过滤掉。
 
-const fakeMount = "/.ppfake"
+const fakeMount = "/data/.ppf"
 
 // Runner 执行宿主机命令（测试时换成假的）。
 type Runner interface {

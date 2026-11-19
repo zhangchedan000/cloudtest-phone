@@ -19,8 +19,8 @@ import (
 
 const (
 	lxcfsProc     = "/var/lib/lxcfs/proc"
-	lxcfsMount    = "/.pplxcfs"
-	hostReserveMB = 3072 // 给宿主机自己（系统、mihomo、管家、Docker）留的
+	lxcfsMount    = "/data/.ppl" // 放 /data 下：App 列不了 /data，卸载后即使 rmdir 没删掉也看不到（2026-11 体检，同 fakeMount）
+	hostReserveMB = 3072         // 给宿主机自己（系统、mihomo、管家、Docker）留的
 )
 
 // memLimitMB 这台手机的容器内存上限（MiB）。
