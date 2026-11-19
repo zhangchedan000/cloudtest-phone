@@ -31,6 +31,9 @@
 #include <linux/string.h>
 #include <linux/statfs.h>
 #include <linux/cpumask.h>
+#include <linux/cred.h>
+#include <linux/uidgid.h>
+#include <linux/errno.h>
 
 #include "rewrite.h"
 
@@ -254,6 +257,64 @@ static struct kretprobe rp_uptime = {
 };
 static bool uptime_ok;
 
+/*
+ * /proc/modules（踩坑 #91）：App（uid≥10000）能读到宿主机和我们自己的内核模块（pp_mnt / pp_uts…）一看就露馅。
+ * 真机 SELinux 不让 App 读 proc_modules，open 直接 -EACCES。这里对「登记过的手机里、uid≥10000 的 App」把
+ * modules_open 的成功返回改成 -EACCES；为避免泄漏，先 seq_release 掉 seq_open 已分配的 seq_file。
+ * root / system（uid<10000）照常能读（真机上特权域也能读，保持一致）。modules_open 这个符号是唯一的（m_show 不是）。
+ */
+struct pp_open_ri {
+	struct inode *inode;
+	struct file *file;
+};
+
+static bool pp_app_in_phone(void)
+{
+	struct pid_namespace *ns = task_active_pid_ns(current);
+	bool hit;
+
+	if (!ns || ns == &init_pid_ns)
+		return false;
+	if (from_kuid(&init_user_ns, current_uid()) < 10000)
+		return false;
+	read_lock(&slots_lock);
+	hit = pp_find(ns) != NULL;
+	read_unlock(&slots_lock);
+	return hit;
+}
+
+static int pp_modules_entry(struct kretprobe_instance *ri, struct pt_regs *regs)
+{
+	struct pp_open_ri *d = (struct pp_open_ri *)ri->data;
+
+	if (!pp_app_in_phone())
+		return 1; /* 不是手机里的 App：不装返回钩子，照常 */
+	d->inode = (struct inode *)regs_get_kernel_argument(regs, 0);
+	d->file = (struct file *)regs_get_kernel_argument(regs, 1);
+	return 0;
+}
+
+static int pp_modules_ret(struct kretprobe_instance *ri, struct pt_regs *regs)
+{
+	struct pp_open_ri *d = (struct pp_open_ri *)ri->data;
+
+	if (regs_return_value(regs) == 0 && d->file) {
+		seq_release(d->inode, d->file); /* 释放 seq_open 分配的 seq_file，避免泄漏 */
+		d->file->private_data = NULL;   /* 失败的 open 不会再调 release，置空多一层保险 */
+		regs_set_return_value(regs, (unsigned long)(-EACCES));
+	}
+	return 0;
+}
+
+static struct kretprobe rp_modules = {
+	.kp.symbol_name = "modules_open",
+	.entry_handler = pp_modules_entry,
+	.handler = pp_modules_ret,
+	.data_size = sizeof(struct pp_open_ri),
+	.maxactive = 16,
+};
+static bool modules_ok;
+
 /* ---------- /proc/pp_mnt ---------- */
 
 static struct pid_namespace *pp_ns_of(long nr)
@@ -416,6 +477,9 @@ static int __init pp_mnt_init(void)
 		uptime_ok = register_kretprobe(&rp_uptime) == 0;
 		if (!uptime_ok)
 			pr_info("pp_mnt: 没挂上 uptime_proc_show（/proc/uptime 空闲时间照旧）\n");
+		modules_ok = register_kretprobe(&rp_modules) == 0;
+		if (!modules_ok)
+			pr_info("pp_mnt: 没挂上 modules_open（/proc/modules 对 App 照旧）\n");
 	}
 	return 0;
 }
@@ -425,6 +489,8 @@ static void __exit pp_mnt_exit(void)
 	int i;
 
 	proc_remove(entry);
+	if (modules_ok)
+		unregister_kretprobe(&rp_modules);
 	if (uptime_ok)
 		unregister_kretprobe(&rp_uptime);
 	if (input_ok)
