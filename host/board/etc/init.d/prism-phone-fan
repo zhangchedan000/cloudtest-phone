@@ -1,0 +1,19 @@
+#!/sbin/openrc-run
+# 风扇温控(魔云腾 Q1:内核无风扇驱动,风扇在 pwmchip1,用户态控)。跑 usr/local/bin/fan-control.sh。
+# !!! 重要 !!! 满载必须有风扇,否则 RK3588 过热 → 降频 thrash → 甚至过热关机(踩坑 #111)。
+# 所以 before docker:先把风扇转起来,再上容器/构建这些重负载。
+name="prism-phone-fan"
+description="Prism Phone 风扇温控(Q1 pwmchip1 用户态 PWM)"
+
+command="/usr/local/bin/fan-control.sh"
+command_background="yes"
+pidfile="/run/prism-phone-fan.pid"
+output_log="/var/log/pp-fan.log"
+error_log="/var/log/pp-fan.log"
+respawn_delay=5
+respawn_max=0
+
+depend() {
+    need localmount
+    before docker prism-phone-agent
+}

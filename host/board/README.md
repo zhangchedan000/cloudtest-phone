@@ -12,10 +12,12 @@ cp -a host/board/etc/.  /etc/
 cp -a host/board/usr/.  /usr/
 chmod +x /etc/init.d/* /etc/local.d/*.start /usr/local/bin/*.sh
 # 开机自启
+rc-update add prism-phone-fan default       # !!! 风扇温控:满载必开,否则过热降频/关机(踩坑 #111)
 rc-update add docker default
 rc-update add local default                 # 跑 local.d 里的 binder-nodes / pp-redir
 rc-update add prism-phone-agent default
 rc-update add prism-phone-mihomo default
+rc-update add prism-phone-oled default      # 正面 OLED 小屏(SSD1306/i2c-3)
 rc-update add desktop-commander-remote default   # 可选：板子自挂 DC
 sysctl -p /etc/sysctl.d/99-pp-redir.conf
 ```
@@ -30,7 +32,9 @@ sysctl -p /etc/sysctl.d/99-pp-redir.conf
 | `etc/local.d/binder-nodes.start` | 建 `/dev/binder{,hw,vnd}` 指向静态 binderN + chmod 666（无 binderfs 的板子必做，Q1 minor=122/121/120） |
 | `etc/local.d/pp-redir.start` | 网络 REDIRECT/NAT 规则（nftables 表 `prism_redir`，只动容器网段，踩坑 #102） |
 | `etc/sysctl.d/99-pp-redir.conf` | 持久化 `route_localnet=1`（REDIRECT 要） |
-| `usr/local/bin/fan-control.sh` | 风扇温控（Q1 风扇在 pwmchip1，内核无驱动，用户态控；按温度分档调 duty） |
+| `etc/init.d/prism-phone-fan` | **风扇温控服务**(before docker,满载前先转风扇)。跑下面那个脚本。**漏装=过热关机**(踩坑 #111) |
+| `etc/init.d/prism-phone-oled` | 正面 OLED 小屏(SSD1306/i2c-3,显示 IP/手机数/温度/内存;管理页有开关) |
+| `usr/local/bin/fan-control.sh` | 风扇温控脚本（Q1 风扇在 pwmchip1，内核无驱动，用户态控；按温度分档调 duty，≥63°C 开满） |
 
 ## 要自己填的两处密钥
 
