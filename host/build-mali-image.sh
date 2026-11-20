@@ -109,10 +109,16 @@ docker rm "$cid64" >/dev/null
 # timeInState.o 清空（0 字节），bpfloader 跳过它（不报错不中断开机）→ map 不建 →
 # isSupportedFeature=false → collector 走 AOSP 自带降级路径跳过。副作用仅 per-app CPU
 # 耗电统计略降级，云测机无所谓。A14（SDK34）没这个 collector，不需要、也不动它。
+#
+# A16（SDK36）变化（踩坑 #112）：Android 16 把 eBPF 对象的扩展名从 `.o` 改成了 `.bpf`
+# （`/system/etc/bpf/timeInState.bpf`）。只清 `.o` 没用（bpfloader 照样从 `.bpf` 建 map、
+# collector 照崩）。所以两个都清空。对 A15 多出个空的 `.bpf`（A15 的 bpfloader 不认它、
+# 无害），对 A16 清掉真正加载的那个——两版通用。
 if [ "${sdk:-0}" -ge 35 ] 2>/dev/null; then
-  echo "  A15+ 适配：清空 /system/etc/bpf/timeInState.o（禁用崩溃的 CpuPowerStatsCollector）"
-  : > "$W/graft/empty-timeInState.o"
-  NEUTER="COPY empty-timeInState.o /system/etc/bpf/timeInState.o"$'\n'
+  echo "  A15+ 适配：清空 /system/etc/bpf/timeInState.{o,bpf}（禁用崩溃的 CpuPowerStatsCollector）"
+  : > "$W/graft/empty-timeInState"
+  NEUTER="COPY empty-timeInState /system/etc/bpf/timeInState.o"$'\n'
+  NEUTER="${NEUTER}COPY empty-timeInState /system/etc/bpf/timeInState.bpf"$'\n'
 fi
 
 # 注意：不能用 heredoc 把 ${COPY64} 和 EOF 放一行——heredoc 终止符按未展开的字面行
