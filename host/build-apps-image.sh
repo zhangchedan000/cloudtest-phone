@@ -28,8 +28,9 @@ ver=${2:-$(echo "$base" | grep -oE ':[0-9]+' | tr -d ':')}
 case "$ver" in
   14) emu=arm64-v8a-34_r04.zip ;;
   15) emu=arm64-v8a-35_r02.zip ;;
+  16) emu=arm64-v8a-36_r02.zip ;;
   13) emu=arm64-v8a-33_r02.zip ;;
-  *) die "不认识的安卓版本 $ver（支持 13/14/15）" ;;
+  *) die "不认识的安卓版本 $ver（支持 13/14/15/16）" ;;
 esac
 here=$(cd "$(dirname "$0")" && pwd)
 out="${base}-apps"

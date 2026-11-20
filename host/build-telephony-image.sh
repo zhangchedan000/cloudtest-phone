@@ -38,7 +38,8 @@ case "$ver" in
   13) emu=arm64-v8a-33_r02.zip ;;
   14) emu=arm64-v8a-34_r04.zip ;;
   15) emu=arm64-v8a-35_r02.zip ;;
-  *) die "不认识的安卓版本 $ver（支持 13/14/15）" ;;
+  16) emu=arm64-v8a-36_r02.zip ;;
+  *) die "不认识的安卓版本 $ver（支持 13/14/15/16）" ;;
 esac
 here=$(cd "$(dirname "$0")" && pwd)
 out="${base}-tel"

@@ -20,7 +20,8 @@ case "$ver" in
   13) emu=arm64-v8a-33_r02.zip ;;   # RK3588 板子能用 Mali 的开源镜像（cnflysky lineage-20）是安卓 13
   14) emu=arm64-v8a-34_r04.zip ;;
   15) emu=arm64-v8a-35_r02.zip ;;
-  *) die "不认识的安卓版本 $ver（支持 13 / 14 / 15）" ;;
+  16) emu=arm64-v8a-36_r02.zip ;;
+  *) die "不认识的安卓版本 $ver（支持 13 / 14 / 15 / 16）" ;;
 esac
 here=$(cd "$(dirname "$0")" && pwd)
 for c in docker gcc readelf unzip losetup python3; do command -v $c >/dev/null || die "缺 $c（apt-get install -y docker.io gcc binutils unzip util-linux）"; done

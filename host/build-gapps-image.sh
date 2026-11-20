@@ -24,7 +24,7 @@ command -v python3 >/dev/null || die "没有 python3"
 ver=${1:-14}
 force=0
 [ "${2:-}" = "--force" ] && force=1
-case "$ver" in 15) full=15.0.0 ;; 14) full=14.0.0 ;; 13) full=13.0.0 ;; 12) full=12.0.0 ;; *) die "不支持的安卓版本 $ver（支持 12/13/14/15）" ;; esac
+case "$ver" in 16) full=16.0.0 ;; 15) full=15.0.0 ;; 14) full=14.0.0 ;; 13) full=13.0.0 ;; 12) full=12.0.0 ;; *) die "不支持的安卓版本 $ver（支持 12/13/14/15/16）" ;; esac
 
 image="redroid/redroid:${full}_mindthegapps"
 if [ "$force" = 0 ] && docker image inspect "$image" >/dev/null 2>&1; then
