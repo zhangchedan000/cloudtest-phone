@@ -29,8 +29,22 @@ VER=${2:-13}   # 安卓大版本：13=cnflysky lineage；14=板子的 Mali 底�
 # 镜像名是确定的（各脚本固定加后缀），直接推算，省得解析输出
 WIFI="${BASE}-wifi"
 TEL="${WIFI}-tel"
-RESIGN="${TEL}-resign"
-APPS="${RESIGN}-apps"
+
+# 是否要「全平台 testkey 重签」这一步（踩坑 #110）：
+#   - 它存在的理由（踩坑 #103）是 A13 底子 cnflysky/redroid-rk3588:lineage-20 用的是 cnflysky
+#     自己的【私有】平台密钥，我们补进的 AOSP testkey 电话应用拿不到 signature 级权限 → 必须把
+#     整镜像重签成 testkey 才一致。
+#   - 但【官方 redroid 14/15/16 的 framework-res.apk 本来就是 AOSP 公开 testkey 签的】
+#     (EMAILADDRESS=android@android.com)，补进的 testkey 应用本来就匹配平台签名，根本不需要重签。
+#   - 而且 A15+ 重签 framework-res.apk 会让它原来的 .idsig(v4 签名)失配，PackageManager 走 v4
+#     验证要 fs-verity，容器 fs 不支持(errno 25 ENOTTY) → "Failed to load frameworks package" 崩。
+#   → 所以 VER>=15 跳过重签。A14 维持原链(已验证在用，不改动以免扰动生产 -images 14=)。
+if [ "$VER" -ge 15 ]; then
+  RESIGN_STEP=0; PRE_APPS="$TEL"
+else
+  RESIGN_STEP=1; RESIGN="${TEL}-resign"; PRE_APPS="$RESIGN"
+fi
+APPS="${PRE_APPS}-apps"
 
 log "0/5 拉开源基础镜像 $BASE"
 docker image inspect "$BASE" >/dev/null 2>&1 || docker pull "$BASE"
@@ -41,11 +55,15 @@ bash "$here/build-wifi-image.sh" "$BASE" "$VER"
 log "2/5 补电话应用 → $TEL"
 bash "$here/build-telephony-image.sh" "$WIFI" "$VER"
 
-log "3/5 全平台 testkey 重签 → $RESIGN"
-bash "$here/build-resign-image.sh" "$TEL"
+if [ "$RESIGN_STEP" = 1 ]; then
+  log "3/5 全平台 testkey 重签 → $RESIGN"
+  bash "$here/build-resign-image.sh" "$TEL"
+else
+  log "3/5 跳过重签（官方 redroid 本就是 AOSP testkey 签，补进的应用已匹配；A15+ 重签会触发 fs-verity 崩溃）"
+fi
 
 log "4/5 加拨号/短信 → $APPS"
-bash "$here/build-apps-image.sh" "$RESIGN" "$VER"
+bash "$here/build-apps-image.sh" "$PRE_APPS" "$VER"
 
 log "5/5 校验最终镜像在不在"
 docker image inspect "$APPS" >/dev/null 2>&1 || { echo "最终镜像没生成，往上翻哪步报错"; exit 1; }
