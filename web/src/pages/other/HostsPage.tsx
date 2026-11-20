@@ -1,5 +1,5 @@
 import { CloudServerOutlined, DeleteOutlined, EditOutlined, PlusOutlined } from '@ant-design/icons'
-import { Alert, App, Button, Card, Descriptions, Form, Input, Modal, Progress, Space, Tag } from 'antd'
+import { Alert, App, Button, Card, Descriptions, Form, Input, Modal, Progress, Space, Switch, Tag } from 'antd'
 import { useState, Fragment } from 'react'
 import { api, LOCAL } from '@/data/api'
 import { useWorkspace } from '@/data/store'
@@ -78,7 +78,8 @@ export function HostsPage() {
                   { label: '位置', children: h.location },
                   { label: '架构 / 内核', children: `${h.arch} · ${h.kernel}` },
                   { label: '显卡', children: h.gpu },
-                  { label: '云手机', children: `${phones.length} 台，运行中 ${running} / 同时最多 ${h.maxRunning}` }
+                  { label: '云手机', children: `${phones.length} 台，运行中 ${running} / 同时最多 ${h.maxRunning}` },
+                  ...(h.oled ? [{ label: '正面小屏', children: <OledSwitch sid={sid} on={h.oledOn ?? false} /> }] : [])
                 ]} />
                 <div className="pp-meter"><span>内存</span><Progress percent={Math.round((h.memUsedGb / h.memGb) * 100)} format={() => `${h.memUsedGb} / ${h.memGb} GB`} /></div>
                 <div className="pp-meter"><span>硬盘</span><Progress percent={Math.round((h.diskUsedGb / h.diskGb) * 100)} format={() => `${h.diskUsedGb} / ${h.diskGb} GB`} /></div>
@@ -110,4 +111,24 @@ export function HostsPage() {
       </Modal>
     </div>
   )
+}
+
+/** 正面小屏开关：点一下开/关这台机器正面的小屏。熄屏后机器照常跑，只是屏不亮（晚上想关就关）。 */
+function OledSwitch({ sid, on }: { sid: string; on: boolean }) {
+  const { message } = App.useApp()
+  const [checked, setChecked] = useState(on)
+  const [busy, setBusy] = useState(false)
+  const toggle = async (next: boolean) => {
+    setBusy(true)
+    try {
+      await api.setOled(next, sid)
+      setChecked(next)
+      message.success(next ? '小屏已点亮' : '小屏已熄灭')
+    } catch (error) {
+      message.error((error as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+  return <Switch checked={checked} loading={busy} onChange={(v) => void toggle(v)} checkedChildren="亮" unCheckedChildren="灭" />
 }

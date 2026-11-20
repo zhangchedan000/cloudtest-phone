@@ -70,7 +70,7 @@ function hostFromInfo(info: HostInfo, serverId: string = LOCAL, url?: string): H
     gpu: info.gpuFamily === 'software' ? '无（软件渲染）' : info.gpuFamily, gpuFamily: info.gpuFamily,
     cpus: num(sys.cpus), memGb: num(sys.memGb), memUsedGb: num(num(sys.memGb) - num(sys.memAvailGb)), diskGb: num(sys.diskGb), diskUsedGb: num(num(sys.diskGb) - num(sys.diskFreeGb)),
     online: true, kernel: String(sys.kernel ?? '—'), maxRunning: info.maxRunning, networkEnabled: info.network === true, netHealth: info.netHealth, androidVersions: [...(info.androidVersions ?? [])].sort((a, b) => a - b),
-    gappsVersions: [...(info.gappsVersions ?? [])].sort((a, b) => a - b)
+    gappsVersions: [...(info.gappsVersions ?? [])].sort((a, b) => a - b), oled: info.oled, oledOn: info.oledOn
   }
 }
 

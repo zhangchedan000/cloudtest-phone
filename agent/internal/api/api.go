@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io/fs"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -87,6 +88,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/servers", s.addServer)
 	mux.HandleFunc("PUT /api/servers/{id}", s.updateServer)
 	mux.HandleFunc("DELETE /api/servers/{id}", s.deleteServer)
+	mux.HandleFunc("GET /api/oled", s.oledState)
+	mux.HandleFunc("POST /api/oled", s.oledSet)
 	mux.HandleFunc("GET /api/groups", s.listGroups)
 	mux.HandleFunc("POST /api/groups", s.createGroup)
 	mux.HandleFunc("PUT /api/groups/{id}", s.updateGroup)
@@ -168,6 +171,12 @@ func (s *Server) host(w http.ResponseWriter, _ *http.Request) {
 		"id": cfg.HostID, "name": cfg.HostName, "gpuFamily": cfg.GPUFamily, "devHost": cfg.DevHost,
 		"maxRunning": cfg.MaxRunning, "androidVersions": versions(cfg.Images), "system": rep.System,
 		"network": s.svc.NetworkEnabled(), "gappsVersions": versions(cfg.GappsImages),
+	}
+	// 正面小屏：有 /dev/i2c-3 才算这台机器带屏（魔云腾 Q1 盒子带，服务器一般没有）。
+	if _, err := os.Stat("/dev/i2c-3"); err == nil {
+		out["oled"] = true
+		_, offErr := os.Stat(oledOffFlag)
+		out["oledOn"] = os.IsNotExist(offErr)
 	}
 	if s.netHealth != nil {
 		if h := s.netHealth(); h != nil {

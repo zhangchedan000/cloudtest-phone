@@ -90,6 +90,10 @@ export interface HostInfo {
   system?: Record<string, unknown>
   network?: boolean
   netHealth?: { ok: boolean; problems?: string[]; healedAt?: string; checkedAt: string }
+  /** 这台机器带正面小屏（魔云腾 Q1 盒子带，服务器一般没有） */
+  oled?: boolean
+  /** 小屏当前点亮（false = 熄屏） */
+  oledOn?: boolean
 }
 
 export interface Backup { id: string; phoneId: string; phoneName: string; modelId: string; androidVersion: number; gapps: boolean; note?: string; createdAt: string; kind: 'image' | 'dir'; sizeMB: number }
@@ -99,6 +103,8 @@ export interface InputRequest { kind: 'tap' | 'swipe' | 'text' | 'key' | 'rotate
 
 export const api = {
   host: (sid?: string) => call<HostInfo>('GET', '/host', undefined, sid),
+  /** 开/关这台机器正面的小屏（魔云腾 Q1 盒子）。on=true 点亮，false 熄屏。 */
+  setOled: (on: boolean, sid?: string) => call<{ on: boolean }>('POST', '/oled', { on }, sid),
   phones: (sid?: string) => call<PhoneView[]>('GET', '/phones', undefined, sid),
   createPhone: (req: { name: string; modelId: string; androidVersion: number; proxyId: string; groupId: string; note?: string; gapps?: boolean }, sid?: string) => call<Phone>('POST', '/phones', req, sid),
   savePhone: (id: string, req: { fields?: Record<string, FieldSetting>; modelId?: string; proxyId?: string; proxyIds?: string[]; groupId?: string; name?: string; note?: string; gapps?: boolean; adb?: boolean }) => call('PUT', `/phones/${id}`, req),

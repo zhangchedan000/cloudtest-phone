@@ -4,7 +4,7 @@ import type { Group, Host, Phone, Proxy } from './types'
 
 export const hosts: Host[] = [
   { id: 'ashburn', name: '阿什本开发机', location: '美国 · 阿什本', arch: 'arm64', gpu: '无（软件渲染）', gpuFamily: 'software', cpus: 4, memGb: 23, memUsedGb: 5.6, diskGb: 184, diskUsedGb: 14, online: true, kernel: '6.17.0-1018-oracle', maxRunning: 4 },
-  { id: 'rk3588-01', name: 'RK3588 盒子 1', location: '本地机房', arch: 'arm64', gpu: 'ARM Mali-G610', gpuFamily: 'Mali-G610', cpus: 8, memGb: 16, memUsedGb: 0, diskGb: 512, diskUsedGb: 0, online: false, kernel: '—（待采购）', maxRunning: 5 }
+  { id: 'rk3588-01', name: 'RK3588 盒子 1', location: '本地机房', arch: 'arm64', gpu: 'ARM Mali-G610', gpuFamily: 'Mali-G610', cpus: 8, memGb: 16, memUsedGb: 0, diskGb: 512, diskUsedGb: 0, online: false, kernel: '—（待采购）', maxRunning: 5, oled: true, oledOn: true }
 ]
 
 export const groups: Group[] = [

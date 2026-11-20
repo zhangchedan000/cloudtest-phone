@@ -133,6 +133,10 @@ export interface Host {
   networkEnabled?: boolean
   /** 网络模块的宿主机健康检查（策略路由、mihomo）；ok=false 时云手机可能都上不了网。 */
   netHealth?: { ok: boolean; problems?: string[]; healedAt?: string; checkedAt: string }
+  /** 这台机器带正面小屏（魔云腾 Q1 盒子带，服务器一般没有）。 */
+  oled?: boolean
+  /** 小屏当前点亮（false = 熄屏）。 */
+  oledOn?: boolean
   /** 别的服务器：网页地址；连不上时的原因。 */
   url?: string
   error?: string
