@@ -163,9 +163,11 @@ sign "$W/msg-patched.apk" "$W/stage/product/app/messaging/messaging.apk"
 log "从基础镜像取 Launcher3 + framework-res"
 cid=$(docker create "$base")
 L3PATH=system/system_ext/priv-app/Launcher3QuickStep/Launcher3QuickStep.apk
-docker cp "$cid:/$L3PATH" "$W/L3.apk"
-docker cp "$cid:/system/framework/framework-res.apk" "$W/fw.apk"
+HAVE_L3=1
+docker cp "$cid:/$L3PATH" "$W/L3.apk" 2>/dev/null || HAVE_L3=0
+docker cp "$cid:/system/framework/framework-res.apk" "$W/fw.apk" 2>/dev/null || HAVE_L3=0
 docker rm "$cid" >/dev/null
+[ "$HAVE_L3" = 1 ] || log "基础镜像没有 Launcher3QuickStep（lineage 用 Trebuchet 等别的桌面）——跳过桌面布局，只装拨号/短信"
 log "编译自定义 default_workspace 并换进 Launcher3，用平台 testkey 重签"
 # 改桌面布局是 best-effort：安卓 15（API 35）的资源表格式较新，系统自带的 aapt2(2.19) 读不了会崩，
 # 这时就跳过布局、只保留原桌面（拨号/短信照样装）。安卓 14 实测正常。
@@ -195,7 +197,9 @@ M
   sign "$W/L3-mod.apk" "$W/stage/L3-signed.apk" || return 1
 }
 L3_OK=0
-if make_launcher >"$W/launcher.log" 2>&1; then
+if [ "$HAVE_L3" != 1 ]; then
+  : # 基础镜像没有 Launcher3QuickStep，跳过桌面布局
+elif make_launcher >"$W/launcher.log" 2>&1; then
   L3_OK=1
 else
   log "本机 aapt2 读不了这镜像的资源（安卓15 常见），改用 x86 新版 aapt2 重试…"
