@@ -35,6 +35,8 @@ sign() {
   $APKSIGNER sign --key "$TOOLS/platform.pk8" --cert "$TOOLS/platform.x509.pem" --out "$2" "$a" 2>/dev/null
   rm -f "$a"
 }
+# sign() 的 mktemp 默认落 /tmp（板子根分区 3.5G，会满）→ 走 PP_BUILD（/mmc 大盘）。踩坑 #110。
+export TMPDIR="${TMPDIR:-${PP_BUILD:-/tmp}/tmp}"; mkdir -p "$TMPDIR"
 W=$(mktemp -d "$PP_BUILD/tmp-resign.XXXX")
 cleanup() { rm -rf "$W"; }
 trap cleanup EXIT

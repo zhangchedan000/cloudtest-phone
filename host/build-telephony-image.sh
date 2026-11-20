@@ -72,6 +72,8 @@ sign() { # sign <in.apk> <out.apk>：testkey 重签（先去掉原签名；有 z
   rm -f "$a"
 }
 
+# sign() 的 mktemp 默认落 /tmp（板子根分区 3.5G，会满）→ 走 PP_BUILD（/mmc 大盘）。踩坑 #110。
+export TMPDIR="${TMPDIR:-${PP_BUILD:-/tmp}/tmp}"; mkdir -p "$TMPDIR"
 W=$(mktemp -d "$PP_BUILD/tmp-telimg.XXXX")
 V=$W/m_system; P=$W/m_product
 cleanup() {

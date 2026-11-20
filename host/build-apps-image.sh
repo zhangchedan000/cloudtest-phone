@@ -115,6 +115,9 @@ DF
   rm -rf "$d"
 }
 
+# sign() 用 mktemp 签 apk，默认落 /tmp（板子 eMMC 根分区只有 3.5G，会被填满→No space）。
+# 让 mktemp 走 PP_BUILD（/mmc，NVMe 大盘）。见踩坑 #110。
+export TMPDIR="${TMPDIR:-${PP_BUILD:-/tmp}/tmp}"; mkdir -p "$TMPDIR"
 W=$(mktemp -d "${PP_BUILD:-/opt/prism-phone}/tmp-appsimg.XXXX")
 V=$W/m_system P=$W/m_product
 cleanup() {
