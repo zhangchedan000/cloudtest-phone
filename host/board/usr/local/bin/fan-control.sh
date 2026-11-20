@@ -5,6 +5,10 @@ CHIP=/sys/class/pwm/pwmchip1; PWM=$CHIP/pwm0; PERIOD=40000
 [ -d "$PWM" ] || echo 0 > $CHIP/export
 sleep 1
 echo 0 > $PWM/enable 2>/dev/null
+# !!! 关键(踩坑 #111) !!! 这板子 pwmchip1 默认极性是 inversed(反的):
+# 极性反了的话 duty 越大风扇越慢、duty=0 反而全速 → 本脚本"越热 duty 越大"会变成"越热越慢"把盒子烤糊。
+# 必须先扳成 normal,duty 大=转得快,下面的温度分档才对。
+echo normal > $PWM/polarity 2>/dev/null
 echo $PERIOD > $PWM/period 2>/dev/null
 echo 0 > $PWM/duty_cycle 2>/dev/null
 echo 1 > $PWM/enable 2>/dev/null
