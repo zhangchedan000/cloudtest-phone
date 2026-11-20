@@ -17,13 +17,29 @@ GRAFT = sys.argv[1]
 POOLS = sys.argv[2:-1]
 ROOTS = sys.argv[-1].split(',')
 
-# VNDK-SP + LLNDK：vendor/sphal namespace 本就可见，不要带（带了反而可能和 system 冲突）
-CORE = {'libc.so','libm.so','libdl.so','liblog.so','libc++.so','ld-android.so','libdl_android.so',
-        'libnativewindow.so','libsync.so','libbinder_ndk.so','libvndksupport.so','libz.so',
-        'libbase.so','libcutils.so','libhardware.so','libhidlbase.so','libutils.so','libhwbinder.so',
-        'libbacktrace.so','libunwindstack.so','libziparchive.so','liblzma.so','libjsoncpp.so',
-        'libprocessgroup.so','libcompiler_rt.so','libtinyxml2.so','libcrypto.so','libssl.so',
-        'libnetd_client.so','libselinux.so','libpcre2.so','libpackagelistparser.so'}
+# sphal/vendor namespace 从 system 能拿到的，只有 LLNDK 白名单（+ bionic/linker）。这些
+# 不要复制进 vendor（它们由 linker 的 sphal→default 链接提供；复制反而可能双份冲突）。
+# 其余一律复制进 vendor/lib64。
+#
+# 关键（A14→A15/16 的本质差异，踩坑 #109）：**Android 15 删掉了 VNDK**。A14 时代
+# libc++/libz/libbase/libutils/libcutils/libhidlbase/libunwindstack/liblzma… 这些是
+# VNDK-SP，sphal 能从 system 看到；A15/16 没有 VNDK apex 了，sphal 只认 LLNDK，上面
+# 这些全看不到 → Mali 栈 dlopen 时 "library not found in namespace sphal" 级联报错。
+# 所以 CORE 必须缩到只剩真正的 LLNDK（见 /etc/llndk.libraries.txt + ld.config.txt 的
+# namespace.sphal.link.default.shared_libs），其余 VNDK-SP 老库全部复制进 vendor/lib64。
+# 对 A14 也安全：那些库在 Q14 vendor 池里就有（本就是 vendor 自带的同版本），复制=原样回填。
+CORE = {
+    # bionic / dynamic linker（绝不能复制进 vendor）
+    'libc.so','libm.so','libdl.so','libdl_android.so','ld-android.so',
+    # LLNDK（/etc/llndk.libraries.txt + sphal.link.default.shared_libs）
+    'liblog.so','libnativewindow.so','libsync.so','libvndksupport.so','libbinder_ndk.so',
+    'libEGL.so','libGLESv1_CM.so','libGLESv2.so','libGLESv3.so','libvulkan.so',
+    'libRS.so','libRS_internal.so','libandroid_net.so','libapexsupport.so','libcgrouprc.so',
+    'libmediandk.so','libselinux.so','libvendorsupport.so','libneuralnetworks.so',
+    'libft2.so','libfdtrack.so','libcom.android.tethering.connectivity_native.so',
+    'libclang_rt.asan-aarch64-android.so','libclang_rt.hwasan-aarch64-android.so',
+    'libclang_rt.ubsan_standalone-aarch64-android.so',
+}
 
 def is64(p):
     try:
