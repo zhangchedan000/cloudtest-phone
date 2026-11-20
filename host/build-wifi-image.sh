@@ -25,14 +25,19 @@ esac
 here=$(cd "$(dirname "$0")" && pwd)
 for c in docker gcc readelf unzip losetup python3; do command -v $c >/dev/null || die "缺 $c（apt-get install -y docker.io gcc binutils unzip util-linux）"; done
 
-W=$(mktemp -d /opt/prism-phone/tmp-wifiimg.XXXX)
+W=$(mktemp -d "${PP_BUILD:-/opt/prism-phone}/tmp-wifiimg.XXXX")
 V=$W/vendor_mnt; R=$W/rootfs; B=$W/build
 cleanup() { grep -q " $V " /proc/mounts && umount "$V"; [ -n "${L:-}" ] && losetup -d "$L" 2>/dev/null; rm -rf "$W"; }
 trap cleanup EXIT
 
-log "下载模拟器镜像 $emu（谷歌官方 sys-img/android）"
-curl -sL --retry 3 -o "$W/emu.zip" "https://dl.google.com/android/repository/sys-img/android/$emu"
-unzip -q -o "$W/emu.zip" '*/vendor.img' -d "$W"
+CACHE="${PP_BUILD:-/opt/prism-phone}/cache"; mkdir -p "$CACHE"
+if [ ! -s "$CACHE/$emu" ]; then
+  log "下载模拟器镜像 $emu（缓存到 $CACHE，和 build-telephony 共用）"
+  curl -sL --retry 3 -o "$CACHE/$emu.part" "https://dl.google.com/android/repository/sys-img/android/$emu" && mv "$CACHE/$emu.part" "$CACHE/$emu"
+else
+  log "用已缓存的模拟器 $CACHE/$emu"
+fi
+unzip -q -o "$CACHE/$emu" '*/vendor.img' -d "$W"
 img=$(find "$W" -name vendor.img | head -1)
 L=$(losetup -fP --show -r "$img"); mkdir -p "$V"
 mount -o ro "${L}p1" "$V" 2>/dev/null || mount -o ro "$L" "$V"
