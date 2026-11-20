@@ -1,0 +1,11 @@
+#!/sbin/openrc-run
+name="prism-phone-mihomo"
+description="prism-phone network module (mihomo, only for cloud phones)"
+supervisor="supervise-daemon"
+command="/usr/local/bin/mihomo"
+command_args="-d /mmc/pp-data/mihomo -f /mmc/pp-data/mihomo/config.yaml"
+pidfile="/run/prism-phone-mihomo.pid"
+supervise_daemon_args="--stdout /var/log/pp-mihomo.log --stderr /var/log/pp-mihomo.log"
+respawn_delay=3
+respawn_max=0
+depend() { after net; }

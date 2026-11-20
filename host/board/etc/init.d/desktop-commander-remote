@@ -1,0 +1,19 @@
+#!/sbin/openrc-run
+name="desktop-commander-remote"
+description="Desktop Commander Remote (direct DC link to this board)"
+
+supervisor="supervise-daemon"
+command="/usr/local/bin/desktop-commander"
+command_args="remote"
+pidfile="/run/desktop-commander-remote.pid"
+supervise_daemon_args="--stdout /var/log/dc-remote.log --stderr /var/log/dc-remote.log"
+respawn_delay=5
+respawn_max=0
+
+export HOME="/root"
+export PATH="/usr/local/bin:/usr/bin:/bin:/sbin:/usr/sbin"
+
+depend() {
+    need net
+    after docker
+}

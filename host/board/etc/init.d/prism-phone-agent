@@ -1,0 +1,15 @@
+#!/sbin/openrc-run
+name="prism-phone-agent"
+description="cloudtest guanjia"
+command="/opt/prism-phone/prism-phone-agent"
+command_args="-listen 0.0.0.0:8099 -data /mmc/pp-data -gpu-family Mali-G610 -gpu-mode host -images 13=cnflysky/redroid-rk3588:lineage-20-wifi-tel-resign-apps -max-running 8 -mem-overcommit 2.5 -mihomo-api 127.0.0.1:9090 -dns-listen 10.88.0.1:1053 -redir -no-wifi -no-host-guard -no-timens"
+command_background="yes"
+pidfile="/run/prism-phone-agent.pid"
+output_log="/var/log/pp-agent.log"
+error_log="/var/log/pp-agent.log"
+# 改成你自己的访问令牌（网页登录用；监听 0.0.0.0 必须设）
+export PP_TOKEN="改成你自己的令牌"
+depend() {
+  need docker
+  after net binder-nodes
+}

@@ -1,0 +1,23 @@
+#!/bin/sh
+# prism-phone 网络模块（REDIRECT/NAT 模式，板子 vendor 内核 tproxy 不行，踩坑 #101）。
+# 只动容器网段 pp-net，不碰板子自己的 eth0/DC。手机 TCP 经 mihomo(7893) 走各自代理，DNS 交 mihomo，
+# UDP(除DNS)拦掉逼 QUIC 回退 TCP。规则放单独的 nftables 表 prism_redir，删表即恢复。
+sysctl -w net.ipv4.conf.all.route_localnet=1 >/dev/null 2>&1
+nft delete table ip prism_redir 2>/dev/null
+nft -f - <<'NFT'
+table ip prism_redir {
+	chain pp_nat {
+		type nat hook prerouting priority dstnat; policy accept;
+		iifname != "pp-net" return
+		ip saddr != 10.88.0.0/16 return
+		udp dport 53 dnat to 10.88.0.1:1053
+		tcp dport 53 dnat to 10.88.0.1:1053
+		ip daddr 10.88.0.1 return
+		meta l4proto tcp redirect to :7893
+	}
+	chain pp_forward {
+		type filter hook forward priority filter; policy accept;
+		iifname "pp-net" ip saddr 10.88.0.0/16 oifname != "pp-net" drop
+	}
+}
+NFT

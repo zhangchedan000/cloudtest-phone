@@ -1,0 +1,7 @@
+#!/bin/sh
+# 无 binderfs 的板子（如魔云腾 Q1）：建标准 binder 设备名指向静态 binderN，chmod 666。
+# Q1 的 binder1/2/3 minor = 122/121/120。不 chmod 666 安卓进程打不开 binder、zygote 崩溃重启。
+[ -e /dev/binder ]    || mknod /dev/binder    c 10 122
+[ -e /dev/hwbinder ]  || mknod /dev/hwbinder  c 10 121
+[ -e /dev/vndbinder ] || mknod /dev/vndbinder c 10 120
+chmod 666 /dev/binder /dev/hwbinder /dev/vndbinder
