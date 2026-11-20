@@ -61,17 +61,17 @@ gpu_setup_guest() {
 
 gpu_setup() {
     mode=$(getprop ro.boot.redroid_gpu_mode guest)
-    if [ "$mode" = "mali" ]; then
+    # 这镜像自带 Mali 栈：只要有 /dev/mali0，host/mali/auto 都走 Mali 硬件直通。
+    # 管家默认传 -gpu-mode host，但 mesa 在这板子配不上 Mali 的 EGLConfig（SurfaceFlinger
+    # 会 "no suitable EGLConfig found" 崩）；所以 host 对本镜像也用 Mali。guest 才软件渲染。
+    if [ "$mode" = "guest" ]; then
+        gpu_setup_guest
+    elif [ -e /dev/mali0 ]; then
         gpu_setup_mali
     elif [ "$mode" = "host" ]; then
-        setup_render_node
-        gpu_setup_host
-    elif [ "$mode" = "guest" ]; then
-        gpu_setup_guest
-    elif [ "$mode" = "auto" ]; then
-        if [ -e /dev/mali0 ]; then gpu_setup_mali; else gpu_setup_guest; fi
+        setup_render_node; gpu_setup_host
     else
-        echo "unknown mode: $mode"; gpu_setup_guest
+        gpu_setup_guest
     fi
 }
 
