@@ -73,9 +73,13 @@ chmod 644 "$G"/lib64/egl/*.so "$G"/lib64/*.so "$G"/lib64/hw/*.so
 #   - 对策：和纯 64 位底子（redroid:14.0.0_64only）一样，把所有分区 build.prop 里的
 #     32 位 ABI 清掉、ro.zygote 改成 zygote64。管家生成每台机的 build.prop 时照抄镜像的，
 #     所以改镜像即可，无须改管家。纯 64 位底子本来就这样 → 这步是幂等的空操作。
-echo "[7.5/8] 强制纯 64 位（硬件 Mali 只有 64 位，留 32 位 zygote 会崩 system_server）"
-P64="$W/graft/p64"; mkdir -p "$P64"; COPY64=""
+echo "[7.5/8] 纯 64 位化 + A15 适配（硬件 Mali 只有 64 位，留 32 位 zygote 会崩 system_server）"
+P64="$W/graft/p64"; mkdir -p "$P64"; COPY64=""; NEUTER=""
 cid64="$(docker create "$BASE")"
+# 读底子安卓版本（SDK），A15+ 要额外禁用崩溃的 CpuPowerStatsCollector（见下）
+docker cp "$cid64:/system/build.prop" "$W/base-system.prop" 2>/dev/null || true
+sdk="$(sed -n 's/^ro\.build\.version\.sdk=//p' "$W/base-system.prop" 2>/dev/null | head -1)"
+echo "  底子 SDK=${sdk:-未知}"
 for pp in system/build.prop vendor/build.prop odm/etc/build.prop \
           product/etc/build.prop system/system_ext/etc/build.prop vendor/odm/etc/build.prop; do
   dst="$P64/$pp"; mkdir -p "$(dirname "$dst")"
@@ -94,12 +98,30 @@ for pp in system/build.prop vendor/build.prop odm/etc/build.prop \
 done
 docker rm "$cid64" >/dev/null
 
+# A15+（SDK≥35）适配（踩坑 #108）：CpuPowerStatsCollector 在这板子崩 system_server。
+# 根因：Java 按 sysfs 的 CPU 频点数给数组定大小，native(nativeReadCpuStats) 按内核
+# eBPF time_in_state 的频点数往里写，RK3588 vendor 内核两者对不上 → 越界
+# "Array is too short, scalingStep=1" → batterystats-handler 崩 → system_server 重启
+# 循环，永远开不了机（纯官方 redroid15 不装 Mali 也崩，跟 Mali 无关）。gating 这个
+# collector 的 flag streamlined_battery_stats 是 READ_ONLY+ENABLED（编译期焊死，aconfig
+# override 改不了）。但 collectStats() 里有 if(!mIsPerUidTimeInStateSupported) return null，
+# 而 isSupportedFeature() 只是查 eBPF time_in_state map 在不在。→ 把 /system/etc/bpf/
+# timeInState.o 清空（0 字节），bpfloader 跳过它（不报错不中断开机）→ map 不建 →
+# isSupportedFeature=false → collector 走 AOSP 自带降级路径跳过。副作用仅 per-app CPU
+# 耗电统计略降级，云测机无所谓。A14（SDK34）没这个 collector，不需要、也不动它。
+if [ "${sdk:-0}" -ge 35 ] 2>/dev/null; then
+  echo "  A15+ 适配：清空 /system/etc/bpf/timeInState.o（禁用崩溃的 CpuPowerStatsCollector）"
+  : > "$W/graft/empty-timeInState.o"
+  NEUTER="COPY empty-timeInState.o /system/etc/bpf/timeInState.o"$'\n'
+fi
+
 # 注意：不能用 heredoc 把 ${COPY64} 和 EOF 放一行——heredoc 终止符按未展开的字面行
 # 匹配，`${COPY64}EOF` 不等于 `EOF`，会永不终止吞掉后文。用 printf 逐行拼。
 {
   echo "FROM $BASE"
   echo "COPY vendor/ /vendor/"
   printf '%s' "$COPY64"
+  printf '%s' "$NEUTER"
 } > "$W/graft/Dockerfile"
 
 echo "[8/8] 构建镜像 $OUT"
