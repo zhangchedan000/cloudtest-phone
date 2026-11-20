@@ -59,7 +59,7 @@ while read -r f; do
   if [ $(( (n+fail) % 20 )) = 0 ]; then log "  进度 $((n+fail))/$total"; fi
 done < <(find "$W/in" -name '*.apk')
 log "  重签完成 $n 成功 $fail 失败，跳过 Google 应用 $skip 个（保留原签名）"
-fr=$(find "$W/out" -ipath '*framework/framework-res.apk' | head -1)
+fr=$(find "$W/out" -ipath '*framework/framework-res.apk' | head -1 || true)
 [ -n "$fr" ] || die "没有 framework-res.apk（导出不全？）"
 $APKSIGNER verify --print-certs "$fr" 2>/dev/null | grep -qi "Android" || log "警告：framework-res 证书校验看着不对，继续"
 

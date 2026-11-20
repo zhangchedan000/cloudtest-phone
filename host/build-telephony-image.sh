@@ -99,9 +99,12 @@ mount -o ro,loop "$W/lp/system.img" "$V"
 mount -o ro,loop "$W/lp/product.img" "$P"
 
 # 三个应用在模拟器里的位置各版本略有差异，用 find 稳妥地定位（system 或 product 分区都找）
-tele=$(find "$V" "$P" \( -ipath '*priv-app/TeleService*' -o -ipath '*priv-app/Telephony/*' \) -iname '*.apk' 2>/dev/null | grep -viE 'provider' | head -1)
-prov=$(find "$V" "$P" -ipath '*TelephonyProvider*' -iname '*.apk' 2>/dev/null | head -1)
-cc=$(find "$V" "$P" -ipath '*CarrierConfig*' -iname '*.apk' 2>/dev/null | head -1)
+# 注意 `| head -1`：head 取完第一行就关管道，find 收到 SIGPIPE，在 set -o pipefail 下
+# 整条管道返回 141 → set -e 退出（A15 的 system 树更大、find 还没跑完 head 就关了，必中；
+# A13/14 侥幸 find 先结束没触发）。→ 每条都加 `|| true` 兜底。
+tele=$(find "$V" "$P" \( -ipath '*priv-app/TeleService*' -o -ipath '*priv-app/Telephony/*' \) -iname '*.apk' 2>/dev/null | grep -viE 'provider' | head -1 || true)
+prov=$(find "$V" "$P" -ipath '*TelephonyProvider*' -iname '*.apk' 2>/dev/null | head -1 || true)
+cc=$(find "$V" "$P" -ipath '*CarrierConfig*' -iname '*.apk' 2>/dev/null | head -1 || true)
 [ -n "$tele" ] || die "模拟器里没找到 TeleService（com.android.phone）"
 [ -n "$prov" ] || die "模拟器里没找到 TelephonyProvider"
 log "找到：TeleService=$(basename "$(dirname "$tele")")  TelephonyProvider=$(basename "$(dirname "$prov")")  CarrierConfig=${cc:+有}${cc:-无}"

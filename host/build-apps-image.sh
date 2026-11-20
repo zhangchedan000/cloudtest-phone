@@ -135,16 +135,16 @@ else
   log "用已缓存的模拟器镜像 $CACHE/$emu"
 fi
 unzip -q -o "$CACHE/$emu" '*/system.img' -d "$W"
-sysimg=$(find "$W" -name system.img | head -1)
+sysimg=$(find "$W" -name system.img | head -1 || true)
 L=$(losetup -fP --show -r "$sysimg"); sleep 1
 log "lpunpack 取 system / product 逻辑分区"
 mkdir -p "$W/lp"
 python3 -I "$TOOLS/lpunpack.py" -p system,product "${L}p2" "$W/lp"
 mount -o ro,loop "$W/lp/system.img" "$V"
 mount -o ro,loop "$W/lp/product.img" "$P"
-dialer=$(find "$P" -ipath '*priv-app/Dialer*' -iname '*.apk' | head -1)
-msg=$(find "$P" -ipath '*app/messaging*' -iname '*.apk' | head -1)
-dxml=$(find "$P" -name 'com.android.dialer.xml' | head -1)
+dialer=$(find "$P" -ipath '*priv-app/Dialer*' -iname '*.apk' | head -1 || true)
+msg=$(find "$P" -ipath '*app/messaging*' -iname '*.apk' | head -1 || true)
+dxml=$(find "$P" -name 'com.android.dialer.xml' | head -1 || true)
 [ -n "$dialer" ] && [ -n "$msg" ] && [ -n "$dxml" ] || die "模拟器 product 里没找到 Dialer/messaging/权限白名单"
 cp "$dialer" "$W/stage/product/priv-app/Dialer/Dialer.apk"
 cp "$dxml" "$W/stage/product/etc/permissions/com.android.dialer.xml"

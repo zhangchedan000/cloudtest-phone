@@ -38,7 +38,7 @@ else
   log "用已缓存的模拟器 $CACHE/$emu"
 fi
 unzip -q -o "$CACHE/$emu" '*/vendor.img' -d "$W"
-img=$(find "$W" -name vendor.img | head -1)
+img=$(find "$W" -name vendor.img | head -1 || true)
 L=$(losetup -fP --show -r "$img"); mkdir -p "$V"
 mount -o ro "${L}p1" "$V" 2>/dev/null || mount -o ro "$L" "$V"
 
