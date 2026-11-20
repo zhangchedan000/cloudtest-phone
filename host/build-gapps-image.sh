@@ -67,6 +67,12 @@ python3 -c 'import requests, tqdm' 2>/dev/null || die "python 依赖 requests/tq
 # 把 $full 加进 choices 再跑（安卓 15 的整版底座 redroid/redroid:15.0.0-latest dockerhub 上有）。
 grep -q "'$full'" "$work/redroid.py" || sed -i "s/choices=\['14.0.0'/choices=['$full', '14.0.0'/" "$work/redroid.py"
 
+# redroid-script 把 GApps 解压目录硬编码在 /tmp、下载缓存在 ~/.cache（板子 eMMC 根分区太小→No space）
+# → 把 stuff/*.py 的 /tmp 和下载缓存都挪到 PP_BUILD（大盘）
+RSTMP="${PP_BUILD:-/opt/prism-phone}/rs-tmp"; mkdir -p "$RSTMP"
+sed -i "s#\"/tmp/#\"$RSTMP/#g" "$work"/stuff/*.py
+export XDG_CACHE_HOME="${PP_BUILD:-/opt/prism-phone}/rs-cache"; mkdir -p "$XDG_CACHE_HOME"
+
 log "构建 $image（安卓 $full + MindTheGapps），这步较慢……"
 ( cd "$work" && python3 redroid.py -a "$full" -mtg -c docker ) || die "构建失败（看上面的日志；常见原因：下载 GApps 包的网络不通）"
 
