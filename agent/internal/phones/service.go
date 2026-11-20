@@ -593,6 +593,7 @@ func withBuildProps(base []string, bp map[string]string) []string {
 // 换镜像版本要重新读、更新这里；host/check-tells.sh 会暴露不一致。
 // incremental 是 eng.* 的工程编译痕迹，没有真机真实值之前先沿用（不编造）。
 var redroidBuildID = map[int]struct{ buildID, incremental string }{
+	13: {"TQ3A.230901.001", "9820097"}, // 板子 lineage-20 是安卓13：没这条就一进兜底 return nil、镜像 redroid 值全漏（踩坑 #104）
 	14: {"UD2A.240505.001.W1", "eng.frank.20240527.152423"},
 	15: {"BP1A.250505.005.D1", "eng.root"},
 }

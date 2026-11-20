@@ -29,18 +29,34 @@ type buildPropFile struct {
 }
 
 var buildPropFiles = []buildPropFile{
-	{"/system/build.prop", 0o600, true, false},
-	{"/system/product/etc/build.prop", 0o644, false, false},
-	{"/system/system_ext/etc/build.prop", 0o644, false, false},
+	// dropRedroid 全开：改写后再去掉残留的 redroid / lineage / flysky / UNOFFICIAL 行
+	// （lineage-20 镜像的 /system/build.prop 里有一整套 ro.lineage.*、ro.build.host=redroid-builder 等，
+	//  这些不在 fingerprintProps 覆盖范围，只能靠去行清掉，踩坑 #104）。
+	{"/system/build.prop", 0o600, true, true},
+	{"/system/product/etc/build.prop", 0o644, false, true},
+	{"/system/system_ext/etc/build.prop", 0o644, false, true},
 	// vendor 的 build.prop 0644，App 能直接读：原来满是 redroid（品牌、型号、指纹、ro.hardware）
 	{"/vendor/build.prop", 0o644, false, true},
+	// odm / vendor_dlkm 分区的 build.prop（lineage-20 有，魔云腾改机 SDK 也处理这俩）：
+	// 里面有 ro.odm.build.fingerprint / ro.product.vendor_dlkm.* = redroid，不覆盖会漏（踩坑 #104）。
+	// 文件可能不存在（别的镜像没有）：dropRedroid=true 时 docker cp 失败不报错、自动跳过。
+	{"/odm/etc/build.prop", 0o644, false, true},
+	{"/vendor_dlkm/etc/build.prop", 0o644, false, true},
 }
 
-// dropRedroidLines 去掉带 redroid 字样的行。
+// dropRedroidLines 去掉带容器/改机痕迹的行：redroid / flysky / UNOFFICIAL 字样，
+// 以及 lineage 自定义系统才有的属性（ro.lineage.*、ro.modversion、ro.lineagelegal.*）——
+// 我们伪装成 Nothing / 小米等真机，这些 lineage 属性本身就是破绽（踩坑 #104）。
+// 注意：fingerprintProps 已经把 ro.build.fingerprint / 各分区指纹 / host / user / incremental
+// 改写成干净值了（改写在去行之前跑），所以这里去掉的只是没被改写的残留行，不会误删关键属性。
 func dropRedroidLines(s string) string {
 	var b strings.Builder
 	for _, line := range strings.SplitAfter(s, "\n") {
-		if !strings.Contains(strings.ToLower(line), "redroid") {
+		low := strings.ToLower(line)
+		key := strings.TrimSpace(strings.SplitN(line, "=", 2)[0])
+		drop := strings.Contains(low, "redroid") || strings.Contains(low, "flysky") || strings.Contains(low, "unofficial") ||
+			strings.HasPrefix(key, "ro.lineage") || key == "ro.modversion"
+		if !drop {
 			b.WriteString(line)
 		}
 	}
@@ -53,7 +69,8 @@ func (s *Service) imageBuildProps(ctx context.Context, image string) (string, er
 	if err != nil || id == "" {
 		return "", fmt.Errorf("读镜像 ID：%v %s", err, id)
 	}
-	dir := filepath.Join(s.cfg.DataDir, "cache", "buildprop2", strings.TrimPrefix(strings.TrimSpace(id), "sha256:"))
+	// buildprop3：buildPropFiles 增加了 odm / vendor_dlkm 分区文件，旧缓存按旧列表存的会漏，换目录名强制重取（踩坑 #104）
+	dir := filepath.Join(s.cfg.DataDir, "cache", "buildprop3", strings.TrimPrefix(strings.TrimSpace(id), "sha256:"))
 	if _, err := os.Stat(filepath.Join(dir, "done")); err == nil {
 		return dir, nil
 	}

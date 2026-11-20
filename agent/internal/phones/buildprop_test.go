@@ -48,6 +48,45 @@ func TestSpacedPropsGoToBuildProp(t *testing.T) {
 	}
 }
 
+// 去痕迹行：redroid / flysky / UNOFFICIAL / ro.lineage.* / ro.modversion 都要去掉，干净行留着（踩坑 #104）。
+func TestDropTellLines(t *testing.T) {
+	orig := "ro.product.brand=Nothing\n" +
+		"ro.build.host=redroid-builder\n" +
+		"ro.build.user=flysky\n" +
+		"ro.lineage.version=20.0-UNOFFICIAL-redroid\n" +
+		"ro.lineage.build.version=20.0\n" +
+		"ro.modversion=20.0-UNOFFICIAL-redroid\n" +
+		"ro.lineagelegal.url=https://lineageos.org/legal\n" +
+		"ro.product.model=A142\n"
+	got := dropRedroidLines(orig)
+	for _, bad := range []string{"redroid", "flysky", "lineage", "UNOFFICIAL", "modversion"} {
+		if strings.Contains(strings.ToLower(got), strings.ToLower(bad)) {
+			t.Fatalf("还有 %q：\n%s", bad, got)
+		}
+	}
+	for _, keep := range []string{"ro.product.brand=Nothing\n", "ro.product.model=A142\n"} {
+		if !strings.Contains(got, keep) {
+			t.Fatalf("误删了干净行 %q：\n%s", keep, got)
+		}
+	}
+}
+
+// 安卓13 没有真实 stock 指纹时的兜底：redroidBuildID 要有 13，否则 return nil、镜像 redroid 全漏（踩坑 #104）。
+func TestFingerprintProps13Fallback(t *testing.T) {
+	byKey := map[string]any{"brand": "Nothing", "device": "Pacman", "manufacturer": "Nothing", "model": "A142"}
+	out := fingerprintProps(byKey, "", 13)
+	if len(out) == 0 {
+		t.Fatal("安卓13 兜底返回空：redroidBuildID 缺 13")
+	}
+	joined := strings.Join(out, "\n")
+	if strings.Contains(strings.ToLower(joined), "redroid") || strings.Contains(strings.ToLower(joined), "flysky") {
+		t.Fatalf("兜底指纹里还有 redroid/flysky：\n%s", joined)
+	}
+	if !strings.Contains(joined, "ro.build.fingerprint=Nothing/Pacman/Pacman:13/TQ3A.230901.001/9820097:user/release-keys") {
+		t.Fatalf("兜底指纹不对：\n%s", joined)
+	}
+}
+
 // 不追加的文件（system_ext 等）：原文件里有的带空格属性也要替换，否则后加载的文件会把值盖回 redroid。
 func TestRewriteBuildPropReplacesSpacedInEveryFile(t *testing.T) {
 	orig := "ro.product.system_ext.model=redroid14_arm64\nro.product.system_ext.name=redroid_arm64\n"
