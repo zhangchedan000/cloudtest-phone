@@ -70,7 +70,7 @@ func renderScreen() *image.Gray {
 	d := &font.Drawer{Dst: img, Src: image.NewUniform(color.Gray{Y: 255}), Face: basicfont.Face7x13}
 	y := 12
 	for _, ln := range lines {
-		d.Dot = fixed.P(0, y)
+		d.Dot = fixed.P(4, y)
 		d.DrawString(ln)
 		y += 15
 	}
