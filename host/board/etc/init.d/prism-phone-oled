@@ -1,0 +1,18 @@
+#!/sbin/openrc-run
+# 正面 OLED 小屏(SSD1306 128x64 @ /dev/i2c-3):显示 IP / 在线手机数 / CPU温度 / 内存。
+# 熄屏开关:touch /mmc/pp-data/oled-off 熄屏,rm 恢复(管理页开关按钮也是改这个标志)。
+name="prism-phone-oled"
+description="Prism Phone 正面 OLED 小屏"
+
+command="/usr/local/bin/pp-oled"
+command_background="yes"
+pidfile="/run/prism-phone-oled.pid"
+output_log="/var/log/pp-oled.log"
+error_log="/var/log/pp-oled.log"
+respawn_delay=5
+respawn_max=0
+
+depend() {
+    need localmount
+    after docker prism-phone-agent
+}
