@@ -114,17 +114,22 @@ if [ -n "$cc" ]; then
   sign "$cc" "$W/stage/system/priv-app/CarrierConfig/CarrierConfig.apk"
 fi
 
-# ---- 基础镜像里的 Stk 也用 testkey 重签（和 com.android.phone 同 UID，签名必须一致）----
-log "把基础镜像的 Stk 用同一把 testkey 重签（保 android.uid.phone 签名一致）"
+# ---- 基础镜像里的 Stk（如果有）也用 testkey 重签（和 com.android.phone 同 UID，签名必须一致）----
+# cnflysky lineage 有 Stk（它自己平台密钥签的）→ 必须一起重签成 testkey，否则 UID 1001(android.uid.phone)
+# 这组签名不一致。纯 AOSP redroid（14/15 官方底子）没有 Stk → 这组就只有补进去的电话应用，无冲突，跳过即可。
 cid=$(docker create "$base")
 STKPATH=""
 for p in system/app/Stk/Stk.apk system/priv-app/Stk/Stk.apk; do
   if docker cp "$cid:/$p" "$W/Stk-orig.apk" 2>/dev/null; then STKPATH=$p; break; fi
 done
 docker rm "$cid" >/dev/null
-[ -n "$STKPATH" ] || die "基础镜像里没找到 Stk.apk（路径变了？）"
-mkdir -p "$W/stage/$(dirname "$STKPATH")"
-sign "$W/Stk-orig.apk" "$W/stage/$STKPATH"
+if [ -n "$STKPATH" ]; then
+  log "基础镜像有 Stk（$STKPATH）→ 用同一把 testkey 重签，保 android.uid.phone 签名一致"
+  mkdir -p "$W/stage/$(dirname "$STKPATH")"
+  sign "$W/Stk-orig.apk" "$W/stage/$STKPATH"
+else
+  log "基础镜像没有 Stk（纯 AOSP redroid 正常）→ android.uid.phone 组只有电话应用，无签名冲突，跳过"
+fi
 
 # ---- 打进镜像 ----
 log "docker build $out"
@@ -133,7 +138,7 @@ log "docker build $out"
   echo "COPY stage/system/priv-app/TeleService/TeleService.apk /system/priv-app/TeleService/TeleService.apk"
   echo "COPY stage/system/priv-app/TelephonyProvider/TelephonyProvider.apk /system/priv-app/TelephonyProvider/TelephonyProvider.apk"
   [ -n "$cc" ] && echo "COPY stage/system/priv-app/CarrierConfig/CarrierConfig.apk /system/priv-app/CarrierConfig/CarrierConfig.apk"
-  echo "COPY stage/$STKPATH /$STKPATH"
+  [ -n "$STKPATH" ] && echo "COPY stage/$STKPATH /$STKPATH"
   echo "LABEL prism.telephony=1"
 } > "$W/Dockerfile"
 (cd "$W" && docker build -q -t "$out" .) >/dev/null
