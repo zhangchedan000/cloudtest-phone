@@ -34,21 +34,27 @@ esac
 here=$(cd "$(dirname "$0")" && pwd)
 out="${base}-apps"
 
-# ---- 工具（幂等，装一次缓存在 /opt/prism-phone/tools）----
-TOOLS=/opt/prism-phone/tools
+# ---- 工具（幂等，缓存在 $PP_TOOLS）----
+# 可移植：阿什本(Debian)默认 /opt/prism-phone/tools；板子(Alpine)用 PP_TOOLS=/mmc/pp-build/tools。
+# 必需：java zip unzip python3 losetup；aapt2/zipalign 可选（只影响桌面布局和 mmap 对齐，缺了自动跳过）。
+TOOLS=${PP_TOOLS:-/opt/prism-phone/tools}
 BT="$TOOLS/build-tools/34.0.0"
-APKSIGNER="java -jar $BT/lib/apksigner.jar"
-need=""
-for c in aapt2 zipalign zip unzip java python3 losetup; do command -v "$c" >/dev/null || need=1; done
-if [ -n "$need" ]; then
-  log "装工具（aapt2 / zipalign / zip / JRE / python3）"
-  # 阿什本的 apt 偶尔卡在 man-db 触发器上（踩坑：半小时不退），所以加 timeout 兜底，装上就行、触发器卡了不管
-  timeout 300 apt-get update -qq || true
-  timeout 300 apt-get install -y -qq aapt zipalign zip unzip default-jre-headless python3 util-linux coreutils >/dev/null 2>&1 || true
-  for c in aapt2 zipalign zip unzip java python3 losetup; do command -v "$c" >/dev/null || die "工具 $c 没装上（手动 apt-get install 后重试）"; done
-fi
+# apksigner.jar 可能在 build-tools 里，也可能单独放（板子 /mmc/pp-build/tools/apksigner.jar）
+APKJAR="$BT/lib/apksigner.jar"; [ -f "$APKJAR" ] || APKJAR="$TOOLS/apksigner.jar"
+APKSIGNER="java -jar $APKJAR"
 mkdir -p "$TOOLS"
-if [ ! -f "$BT/lib/apksigner.jar" ]; then
+if ! command -v java >/dev/null || ! command -v zip >/dev/null; then
+  if command -v apt-get >/dev/null; then
+    log "装工具（Debian: aapt2 / zipalign / zip / JRE / python3）"
+    timeout 300 apt-get update -qq || true
+    timeout 300 apt-get install -y -qq aapt zipalign zip unzip default-jre-headless python3 util-linux coreutils >/dev/null 2>&1 || true
+  fi
+fi
+for c in java zip unzip python3 losetup; do command -v "$c" >/dev/null || die "缺必需工具 $c（Debian: apt-get install -y default-jre-headless zip；Alpine: apk add openjdk17-jre-headless zip）"; done
+command -v zipalign >/dev/null || log "没有 zipalign——跳过对齐（不影响功能）"
+command -v aapt2 >/dev/null || log "没有 aapt2——桌面布局那步会跳过，只装拨号/短信"
+if [ ! -f "$APKJAR" ]; then
+  BT="$TOOLS/build-tools/34.0.0"; APKJAR="$BT/lib/apksigner.jar"; APKSIGNER="java -jar $APKJAR"
   log "下载 android build-tools（取 apksigner.jar；zipalign/aapt2 用 apt 的 arm64 版）"
   curl -sL -o "$TOOLS/bt.zip" https://dl.google.com/android/repository/build-tools_r34-linux.zip
   rm -rf "$TOOLS/build-tools" && mkdir -p "$TOOLS/build-tools"
@@ -65,7 +71,7 @@ fi
   https://raw.githubusercontent.com/unix3dgforce/lpunpack/master/lpunpack.py
 sign() { # sign <in.apk> <out.apk>
   local a; a=$(mktemp --suffix=.apk)
-  zipalign -p -f 4 "$1" "$a"
+  if command -v zipalign >/dev/null; then zipalign -p -f 4 "$1" "$a"; else cp "$1" "$a"; fi
   $APKSIGNER sign --key "$TOOLS/platform.pk8" --cert "$TOOLS/platform.x509.pem" --out "$2" "$a"
   rm -f "$a"
 }
@@ -109,7 +115,7 @@ DF
   rm -rf "$d"
 }
 
-W=$(mktemp -d /opt/prism-phone/tmp-appsimg.XXXX)
+W=$(mktemp -d "${PP_BUILD:-/opt/prism-phone}/tmp-appsimg.XXXX")
 V=$W/m_system P=$W/m_product
 cleanup() {
   for m in "$V" "$P"; do grep -q " $m " /proc/mounts && umount "$m"; done
@@ -120,7 +126,7 @@ trap cleanup EXIT
 mkdir -p "$W/stage/product/priv-app/Dialer" "$W/stage/product/app/messaging" "$W/stage/product/etc/permissions" "$V" "$P"
 
 # ---- 1) 抠拨号 / 短信 ----
-CACHE=/opt/prism-phone/cache; mkdir -p "$CACHE"
+CACHE=${PP_CACHE:-/opt/prism-phone/cache}; mkdir -p "$CACHE"
 if [ ! -s "$CACHE/$emu" ]; then
   log "下载模拟器系统镜像 $emu（缓存到 $CACHE）"
   curl -sL --retry 3 -o "$CACHE/$emu.part" "https://dl.google.com/android/repository/sys-img/android/$emu" \
