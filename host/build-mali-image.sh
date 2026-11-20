@@ -62,10 +62,42 @@ cp "$MALI/manifest_mali_a14.xml" "$G/etc/vintf/manifest/manifest_mali.xml"
 cp "$MALI/gpu_config.sh"         "$G/bin/gpu_config.sh"
 chmod 755 "$G/bin/gpu_config.sh" "$G/bin/hw/android.hardware.graphics.allocator@4.0-service"
 chmod 644 "$G"/lib64/egl/*.so "$G"/lib64/*.so "$G"/lib64/hw/*.so
+
+# 强制纯 64 位（踩坑 #107）。魔云腾的硬件 Mali 栈只有 64 位（vendor 里根本没有
+# /vendor/lib/egl/libGLES_mali.so），所以带这套 Mali 的镜像必须是纯 64 位的：
+#   - 若底子是 32+64 多架构（ro.zygote=zygote64_32，如 redroid-script 的
+#     redroid:14.0.0_mindthegapps 带谷歌底子），32 位 zygote 一预加载 EGL 就找不到
+#     32 位 Mali → abort 崩溃循环；就算把 32 位 EGL 绕过去，system_server 在
+#     bootCompleted 时还会去 attemptConnectionToSecondaryZygote 连那个不存在的 32 位
+#     zygote socket → FATAL EXCEPTION IN SYSTEM PROCESS → 重启循环，永远开不了机。
+#   - 对策：和纯 64 位底子（redroid:14.0.0_64only）一样，把所有分区 build.prop 里的
+#     32 位 ABI 清掉、ro.zygote 改成 zygote64。管家生成每台机的 build.prop 时照抄镜像的，
+#     所以改镜像即可，无须改管家。纯 64 位底子本来就这样 → 这步是幂等的空操作。
+echo "[7.5/8] 强制纯 64 位（硬件 Mali 只有 64 位，留 32 位 zygote 会崩 system_server）"
+P64="$W/graft/p64"; mkdir -p "$P64"; COPY64=""
+cid64="$(docker create "$BASE")"
+for pp in system/build.prop vendor/build.prop odm/etc/build.prop \
+          product/etc/build.prop system/system_ext/etc/build.prop vendor/odm/etc/build.prop; do
+  dst="$P64/$pp"; mkdir -p "$(dirname "$dst")"
+  docker cp "$cid64:/$pp" "$dst" 2>/dev/null || { rm -f "$dst"; continue; }
+  if grep -qE 'abilist.*armeabi|zygote64_32' "$dst"; then
+    sed -i -E \
+      -e 's/^(ro\.[a-z_.]*cpu\.abilist)=.*/\1=arm64-v8a/' \
+      -e 's/^(ro\.[a-z_.]*cpu\.abilist32)=.*/\1=/' \
+      -e 's/^(ro\.[a-z_.]*cpu\.abilist64)=.*/\1=arm64-v8a/' \
+      -e 's/^ro\.zygote=zygote64_32/ro.zygote=zygote64/' "$dst"
+    COPY64="${COPY64}COPY p64/$pp /$pp"$'\n'
+    echo "  64 位化 /$pp"
+  else
+    rm -f "$dst"
+  fi
+done
+docker rm "$cid64" >/dev/null
+
 cat > "$W/graft/Dockerfile" <<EOF
 FROM $BASE
 COPY vendor/ /vendor/
-EOF
+${COPY64}EOF
 
 echo "[8/8] 构建镜像 $OUT"
 docker build -t "$OUT" "$W/graft" | tail -2
