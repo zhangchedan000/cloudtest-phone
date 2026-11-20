@@ -25,7 +25,7 @@ here=$(cd "$(dirname "$0")" && pwd)
 log(){ printf '\n\033[1m[board-image] ===== %s =====\033[0m\n' "$*"; }
 
 BASE=${1:-cnflysky/redroid-rk3588:lineage-20}
-VER=13
+VER=${2:-13}   # 安卓大版本：13=cnflysky lineage；14=板子的 Mali 底子(prism-redroid-mali:14 或 :14-gms 带谷歌)
 # 镜像名是确定的（各脚本固定加后缀），直接推算，省得解析输出
 WIFI="${BASE}-wifi"
 TEL="${WIFI}-tel"
@@ -50,5 +50,5 @@ bash "$here/build-apps-image.sh" "$RESIGN" "$VER"
 log "5/5 校验最终镜像在不在"
 docker image inspect "$APPS" >/dev/null 2>&1 || { echo "最终镜像没生成，往上翻哪步报错"; exit 1; }
 printf '\n\033[1m完成！最终镜像：%s\033[0m\n' "$APPS"
-echo "（存 tarball：docker save '$APPS' | gzip -1 > /mmc/pp-dist/android13-full.tar.gz）"
+echo "（存 tarball：docker save '$APPS' | gzip -1 > /mmc/pp-dist/android${VER}-full.tar.gz）"
 echo "$APPS"
