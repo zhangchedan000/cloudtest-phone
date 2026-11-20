@@ -94,10 +94,13 @@ for pp in system/build.prop vendor/build.prop odm/etc/build.prop \
 done
 docker rm "$cid64" >/dev/null
 
-cat > "$W/graft/Dockerfile" <<EOF
-FROM $BASE
-COPY vendor/ /vendor/
-${COPY64}EOF
+# 注意：不能用 heredoc 把 ${COPY64} 和 EOF 放一行——heredoc 终止符按未展开的字面行
+# 匹配，`${COPY64}EOF` 不等于 `EOF`，会永不终止吞掉后文。用 printf 逐行拼。
+{
+  echo "FROM $BASE"
+  echo "COPY vendor/ /vendor/"
+  printf '%s' "$COPY64"
+} > "$W/graft/Dockerfile"
 
 echo "[8/8] 构建镜像 $OUT"
 docker build -t "$OUT" "$W/graft" | tail -2
