@@ -80,6 +80,7 @@ func main() {
 	dockerSock := flag.String("docker", "/var/run/docker.sock", "Docker socket")
 	mihomoAPI := flag.String("mihomo-api", "", "网络模块：mihomo 控制接口地址（例如 127.0.0.1:9090）；空 = 不开网络模块（只适合开发测试）")
 	tproxyPort := flag.Int("tproxy-port", 7893, "网络模块：mihomo 透明代理端口")
+	redir := flag.Bool("redir", false, "网络模块：用 REDIRECT(NAT) 代替 TPROXY（有的板子 vendor 内核 tproxy 投递不进 mihomo，踩坑 #101；只代理 TCP，UDP 除 DNS 外会被拦）")
 	dnsListen := flag.String("dns-listen", "10.88.0.1:1053", "网络模块：mihomo DNS 监听地址（容器网关）")
 	checkPort := flag.Int("check-port", 7899, "网络模块：检测入口端口（只监听 127.0.0.1，用来检测 vless / trojan 等节点；0 = 不开）")
 	trashDays := flag.Int("trash-days", 30, "回收站里的旧数据保留几天，超过自动彻底删除（0 = 不自动删）")
@@ -155,7 +156,7 @@ func main() {
 		}
 		net = &netcfg.Syncer{
 			Path: filepath.Join(*dataDir, "mihomo", "config.yaml"),
-			Opt:  netcfg.Options{TProxyPort: *tproxyPort, DNSListen: *dnsListen, Subnet: *subnet, DevHost: *devHost, APIListen: *mihomoAPI, CheckPort: *checkPort},
+			Opt:  netcfg.Options{TProxyPort: *tproxyPort, DNSListen: *dnsListen, Subnet: *subnet, DevHost: *devHost, APIListen: *mihomoAPI, CheckPort: *checkPort, Redir: *redir},
 		}
 		syncNet := func() {
 			if err := net.Sync(context.Background(), st.Snapshot()); err != nil {

@@ -32,6 +32,9 @@ type Options struct {
 	// CheckPort 检测入口：只监听 127.0.0.1 的本地代理端口，背后是可切换的 pp-check 分组，
 	// 管家程序检测 vless / trojan 等协议时把它切到要测的节点。0 = 不开。
 	CheckPort int
+	// Redir 用 REDIRECT(NAT)模式而不是 TPROXY（有的板子 vendor 内核 tproxy 投递不进 mihomo，踩坑 #101）。
+	// 只代理 TCP；UDP（除 DNS）由 nft 规则 drop，逼 QUIC 回退 TCP。
+	Redir bool
 }
 
 // CheckGroup 检测入口背后的分组名。
@@ -157,7 +160,11 @@ func Build(st store.State, opt Options) Result {
 
 	var b strings.Builder
 	b.WriteString("# 管家程序自动生成，不要手改（改了也会被覆盖）\n")
-	fmt.Fprintf(&b, "tproxy-port: %d\n", opt.TProxyPort)
+	if opt.Redir {
+		fmt.Fprintf(&b, "redir-port: %d\n", opt.TProxyPort) // REDIRECT(NAT)模式，内核 tproxy 不行时用（踩坑 #101）
+	} else {
+		fmt.Fprintf(&b, "tproxy-port: %d\n", opt.TProxyPort)
+	}
 	b.WriteString("allow-lan: true\nbind-address: \"*\"\nmode: rule\nlog-level: warning\nipv6: false\n")
 	if opt.APIListen != "" {
 		fmt.Fprintf(&b, "external-controller: %s\n", yamlString(opt.APIListen))

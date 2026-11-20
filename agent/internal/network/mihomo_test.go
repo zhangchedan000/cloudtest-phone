@@ -66,3 +66,15 @@ func TestNoProxiesStillValid(t *testing.T) {
 		t.Fatalf("空配置不对：\n%s", res.YAML)
 	}
 }
+
+func TestRedirModeUsesRedirPort(t *testing.T) {
+	// 默认 TPROXY
+	if res := Build(store.State{}, Options{TProxyPort: 7893}); !strings.Contains(res.YAML, "tproxy-port: 7893") || strings.Contains(res.YAML, "redir-port") {
+		t.Fatalf("默认应是 tproxy-port：\n%s", res.YAML)
+	}
+	// Redir 模式用 redir-port（板子 vendor 内核 tproxy 不行时，踩坑 #101）
+	res := Build(store.State{}, Options{TProxyPort: 7893, Redir: true})
+	if !strings.Contains(res.YAML, "redir-port: 7893") || strings.Contains(res.YAML, "tproxy-port") {
+		t.Fatalf("Redir 模式应是 redir-port、不含 tproxy-port：\n%s", res.YAML)
+	}
+}
