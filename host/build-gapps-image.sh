@@ -52,10 +52,16 @@ else
   git -C "$work" pull --ff-only || true
 fi
 
-if [ -f "$work/requirements.txt" ]; then
-  log "装 python 依赖"
-  python3 -m pip install -q -r "$work/requirements.txt" 2>/dev/null || python3 -m pip install -q --break-system-packages -r "$work/requirements.txt" || true
+log "装 python 依赖（requests tqdm）"
+# 板子 Alpine 的 python3 不带 pip → 直接用 apk 的系统包；阿什本 Debian 用 pip
+if command -v apk >/dev/null; then
+  apk add --no-cache py3-requests py3-tqdm >/dev/null 2>&1 || true
 fi
+if ! python3 -c 'import requests, tqdm' 2>/dev/null && [ -f "$work/requirements.txt" ]; then
+  python3 -m pip install -q --break-system-packages -r "$work/requirements.txt" 2>/dev/null \
+    || python3 -m pip install -q -r "$work/requirements.txt" 2>/dev/null || true
+fi
+python3 -c 'import requests, tqdm' 2>/dev/null || die "python 依赖 requests/tqdm 装不上（Alpine：apk add py3-requests py3-tqdm）"
 
 # redroid.py 的 -a 选项把安卓 15 挡掉了（choices 没列），但底层 MindTheGapps 支持 15（stuff/mindthegapps.py 有 15.0.0 的 arm64 包）。
 # 把 $full 加进 choices 再跑（安卓 15 的整版底座 redroid/redroid:15.0.0-latest dockerhub 上有）。
