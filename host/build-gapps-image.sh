@@ -33,11 +33,16 @@ if [ "$force" = 0 ] && docker image inspect "$image" >/dev/null 2>&1; then
   exit 0
 fi
 
-# redroid-script 需要的系统工具
+# redroid-script 需要的系统工具（跨平台：板子 Alpine 用 apk，阿什本 Debian 用 apt）
 log "装构建依赖（lzip unzip）"
-apt-get update -qq && apt-get install -y -qq lzip unzip >/dev/null || die "装依赖失败"
+if command -v apk >/dev/null; then
+  apk add --no-cache lzip unzip >/dev/null 2>&1 || die "装依赖失败（apk add lzip unzip）"
+elif command -v apt-get >/dev/null; then
+  apt-get update -qq && apt-get install -y -qq lzip unzip >/dev/null || die "装依赖失败（apt）"
+fi
 
-work=/opt/prism-phone/redroid-script
+# 大文件目录：板子 eMMC 根分区太小，用 PP_BUILD（默认 /mmc/pp-build）
+work="${PP_BUILD:-/opt/prism-phone}/redroid-script"
 if [ ! -d "$work/.git" ]; then
   log "克隆 redroid-script 到 $work"
   rm -rf "$work"
