@@ -136,25 +136,27 @@ func (s *Service) waitBooted(ctx context.Context, id string) bool {
 	}
 }
 
-// healPmsCrashLoop 安卓15 真代理首启偶发坎（踩坑 #118）的自愈：
-// 早期启动不稳时 PMS 把 apex 里的 PermissionController 等包判成「no longer exists」擦掉，
-// 之后每次 system_server 重启都崩 getRequiredPermissionControllerLPr
-// （"There must be exactly one permissions manager; found []"）→ 死循环。
-// 清掉中毒的包数据库 + 缓存、重启一次（此时 apex 已激活暖），让 PMS 干净重扫恢复。
-// 只在确认是这个坎（logcat 里有该崩溃）且是安卓15 时动手，别的开机失败一律不碰。
-// 恢复了返回 true。
-func (s *Service) healPmsCrashLoop(ctx context.Context, id string) bool {
+// pmsCrashLooping 判断这台是不是中了踩坑 #118：安卓15、且最近 logcat 里有
+// "permissions manager; found []" 崩溃（PMS 把 apex 里的 PermissionController 擦了，
+// getRequiredPermissionControllerLPr 零匹配）。只认这个签名，别的开机问题不算。
+func (s *Service) pmsCrashLooping(ctx context.Context, id string) bool {
 	st := s.store.Snapshot()
 	if p, err := st.Phone(id); err != nil || p.AndroidVersion < 15 {
 		return false
 	}
+	// grep -cF + `|| true`：没匹配时 grep 退出码 1，加 || true 免得当成命令失败。
+	out, _ := s.run.Run(ctx, "docker", "exec", containerName(id), "sh", "-c",
+		"logcat -d -t 5000 2>/dev/null | grep -cF 'permissions manager; found []' || true")
+	n := strings.TrimSpace(out)
+	return n != "" && n != "0"
+}
+
+// healPmsCrashLoop 踩坑 #118 自愈（调用前已 pmsCrashLooping 确认是这个坎）：
+// 清掉中毒的 /data/system 包数据库 + package_cache、重启一次（此时 apex 已激活暖），
+// 让 PMS 干净重扫、把 PermissionController 正常注册回来。docker restart 会清掉 logcat 缓冲，
+// 重启后等开机、再确认崩溃签名没了（boot_completed 可能还是崩溃循环里的瞬间假象）才算成功。
+func (s *Service) healPmsCrashLoop(ctx context.Context, id string) bool {
 	name := containerName(id)
-	// grep -cF + `|| true`：没匹配时 grep 退出码 1，加 || true 避免当成命令失败。
-	out, _ := s.run.Run(ctx, "docker", "exec", name, "sh", "-c",
-		"logcat -d -t 4000 2>/dev/null | grep -cF 'permissions manager; found []' || true")
-	if n := strings.TrimSpace(out); n == "" || n == "0" {
-		return false // 不是这个坎，不动
-	}
 	log.Printf("手机 %s：检测到 PMS 崩溃循环（踩坑 #118），清包数据库后重启自愈", id)
 	if _, err := s.run.Run(ctx, "docker", "exec", name, "sh", "-c",
 		"rm -rf /data/system/package_cache /data/system/packages.xml /data/system/packages.list "+
@@ -166,26 +168,33 @@ func (s *Service) healPmsCrashLoop(ctx context.Context, id string) bool {
 		log.Printf("手机 %s：自愈重启失败：%v", id, err)
 		return false
 	}
-	ok := s.waitBooted(ctx, id)
-	if ok {
-		log.Printf("手机 %s：PMS 崩溃循环已自愈，开机成功", id)
-	} else {
+	if !s.waitBooted(ctx, id) {
 		log.Printf("手机 %s：自愈重启后仍未开机", id)
+		return false
 	}
-	return ok
+	time.Sleep(20 * time.Second) // 等几秒，崩溃循环会再冒签名，干净开机则不会
+	if s.pmsCrashLooping(ctx, id) {
+		log.Printf("手机 %s：自愈重启后仍在崩溃循环（放弃）", id)
+		return false
+	}
+	log.Printf("手机 %s：PMS 崩溃循环已自愈，开机稳定", id)
+	return true
 }
 
 // applySettings 开机完成后把时区、语言设进去。在后台跑，结果记在 settings 里。
 func (s *Service) applySettings(ctx context.Context, id string) {
 	s.settings.set(id, SettingsStatus{State: "pending"})
-	if !s.waitBooted(ctx, id) {
-		// 安卓15 真代理首启偶发坎（踩坑 #118）：早期启动不稳把 apex 里的 PermissionController
-		// 等包判成「no longer exists」擦掉 → system_server 反复崩 getRequiredPermissionControllerLPr。
-		// 确认是这个坎就清掉中毒的包数据库、重启一次自愈；其它开机失败不碰。
-		if !s.healPmsCrashLoop(ctx, id) {
-			s.settings.set(id, SettingsStatus{State: "failed", Error: "等开机超时或设备已关机"})
-			return
-		}
+	booted := s.waitBooted(ctx, id)
+	// 安卓15 真代理崩溃循环坎（踩坑 #118）：早期启动不稳把 apex 里的 PermissionController 等包
+	// 判成「no longer exists」擦掉 → system_server 反复崩 getRequiredPermissionControllerLPr。
+	// 崩溃循环里 boot_completed 会瞬间跳 1 骗过 waitBooted，所以不论上面真假，都查崩溃签名；
+	// 崩着就清掉中毒的包数据库、重启一次自愈。只认这个崩溃签名，其它开机失败不碰。
+	if s.pmsCrashLooping(ctx, id) {
+		booted = s.healPmsCrashLoop(ctx, id)
+	}
+	if !booted {
+		s.settings.set(id, SettingsStatus{State: "failed", Error: "等开机超时或设备已关机"})
+		return
 	}
 	if s.cfg.HostGuard {
 		hostguard.Fix() // 安卓开机刚改过宿主机的 kernel.* / vm.*（踩坑 #58），马上改回
