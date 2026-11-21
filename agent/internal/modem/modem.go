@@ -36,7 +36,14 @@ type Spec struct {
 	Version string `json:"ver"`   // 基带版本
 	// Absent 没插 SIM 卡（代理国家不在运营商表里时）：基带在、有 IMEI，SIM 相关查询回「没插卡」，不注册网络
 	Absent bool `json:"absent,omitempty"`
+	// Dialect 对面电话 HAL 的口味（镜像标签 prism.radio）。空 = reference-ril / cuttlefish RIL（安卓 13~15）；
+	// "ranchu" = 安卓 16 模拟器的原生 AIDL 电话 HAL（radio-service.ranchu，踩坑 #121）：行尾只认 \r、
+	// 运营商名不带引号、要 +CTEC、注册状态和信号只靠主动上报（+CREG / +CSQ）、认不出的前缀直接崩溃。
+	Dialect string `json:"dialect,omitempty"`
 }
+
+// DialectRanchu 安卓 16 模拟器电话 HAL。
+const DialectRanchu = "ranchu"
 
 // Modem 一个基带。
 type Modem struct {
@@ -45,7 +52,10 @@ type Modem struct {
 	cfun   int
 	format int // +COPS? 回哪种名字：0 全名 / 1 简称 / 2 数字
 	w      io.Writer
+	urc    []string // 这条命令回完之后要主动上报的行（ranchu：开射频后报注册状态、信号）
 }
+
+func (m *Modem) ranchu() bool { return m.spec.Dialect == DialectRanchu }
 
 func New(spec Spec, w io.Writer) *Modem {
 	return &Modem{spec: spec, cfun: 1, w: w}
@@ -70,15 +80,43 @@ func (m *Modem) Serve(r io.Reader) error {
 			continue
 		}
 		m.reply(m.Handle(cmd))
+		m.mu.Lock()
+		urc := m.urc
+		m.urc = nil
+		m.mu.Unlock()
+		if len(urc) > 0 {
+			m.reply(urc)
+		}
 	}
 }
 
 func (m *Modem) reply(lines []string) {
 	var b strings.Builder
 	for _, l := range lines {
-		b.WriteString("\r\n" + l + "\r\n")
+		if m.ranchu() {
+			// ranchu 只认 \r 断行；多行回复（+COPS 三连）中间夹 \n 会解析失败
+			b.WriteString(l + "\r")
+		} else {
+			b.WriteString("\r\n" + l + "\r\n")
+		}
 	}
 	_, _ = io.WriteString(m.w, b.String())
+}
+
+// registrationURC ranchu 的注册状态、信号只从主动上报里来（它不会去问 AT+CREG? / AT+CSQ）。
+func (m *Modem) registrationURC() []string {
+	s := m.spec
+	if s.Absent {
+		return []string{"+CREG: 0", "+CGREG: 0"}
+	}
+	reg := fmt.Sprintf("1,\"%s\",\"%s\",7", s.LAC, s.CellID)
+	return []string{"+CREG: " + reg, "+CGREG: " + reg, m.csq()}
+}
+
+func (m *Modem) csq() string {
+	s := m.spec
+	// gsm rssi,ber, cdma(2), evdo(3), lte: ss,rsrp,rsrq,rssnr,cqi, timing advance（13 个数，ranchu 认 12/13/14/22 个）
+	return fmt.Sprintf("+CSQ: %d,99,-1,-1,-1,-1,-1,%d,%d,10,150,2147483647,2147483647", s.Signal, s.Signal, s.RSRP)
 }
 
 // Handle 处理一行命令，返回要回的各行（最后一行是 OK / ERROR）。
@@ -126,17 +164,22 @@ func (m *Modem) one(c string) (res []string, ok bool) {
 		v, _ := strconv.Atoi(strings.TrimPrefix(up, "+CFUN="))
 		m.mu.Lock()
 		m.cfun = v
+		if v == 1 && m.ranchu() {
+			m.urc = append(m.urc, m.registrationURC()...)
+		}
 		m.mu.Unlock()
 		return nil, true
 	case up == "+CGSN":
 		return []string{s.IMEI}, true
+	case up == "+CGSN=2":
+		// ranchu 读 IMEI 用的：一行裸数字 = 15 位 IMEI + 2 位软件版本号（不足 15 位它会越界崩溃）
+		return []string{s.IMEI + "01"}, true
 	case up == "+CIMI":
 		return []string{s.IMSI}, true
 	case up == "+CGMR":
 		return []string{s.Version}, true
 	case up == "+CSQ":
-		// gsm rssi,ber, cdma(2), evdo(3), lte: ss,rsrp,rsrq,rssnr,cqi, timing advance
-		return []string{fmt.Sprintf("+CSQ: %d,99,-1,-1,-1,-1,-1,%d,%d,10,150,2147483647,2147483647", s.Signal, s.Signal, s.RSRP)}, true
+		return []string{m.csq()}, true
 	case up == "+CREG?":
 		return []string{fmt.Sprintf("+CREG: 2,1,\"%s\",\"%s\",7", s.LAC, s.CellID)}, true
 	case up == "+CGREG?":
@@ -180,12 +223,25 @@ func (m *Modem) one(c string) (res []string, ok bool) {
 		return []string{"+CSCA: \"\",145"}, true
 	case up == "+CSCB?":
 		return []string{"+CSCB: 0,\"\",\"\""}, true
+	// 安卓 16 模拟器电话 HAL（radio-service.ranchu）开机初始化发 AT+CUSD=1（只是打开 USSD 结果上报），
+	// 初始化序列里任何一条不回 OK 它就判「Can't init the host channel」崩溃重启（踩坑 #121）。
+	// 只有真的发 USSD（AT+CUSD=1,"*100#"）才回错。
+	case up == "+CUSD=0", up == "+CUSD=1":
+		return nil, true
+	case up == "+CUSD?":
+		return []string{"+CUSD: 1"}, true
 	case strings.HasPrefix(up, "+CUSD"), strings.HasPrefix(up, "+CSIM"), strings.HasPrefix(up, "+CUSATD"),
 		strings.HasPrefix(up, "+CUSATE"), strings.HasPrefix(up, "+CUSATT"), strings.HasPrefix(up, "+CCFCU"):
 		// USSD、SIM 卡工具包、呼叫转移：没有
 		return []string{"ERROR"}, false
 	case strings.HasPrefix(up, "+CRSM="):
 		return m.simIO(strings.TrimPrefix(c, "+CRSM=")), true
+	// ranchu 的网络制式：AT+CTEC? 回位掩码（1<<5 = LTE，回 5 会被当成 GSM），AT+CTEC=? 回支持的制式序号
+	// （GSM=0 WCDMA=1 LTE=5），AT+CTEC=<掩码>,... 设偏好时回当前的。
+	case m.ranchu() && (up == "+CTEC?" || strings.HasPrefix(up, "+CTEC=") && up != "+CTEC=?"):
+		return []string{"+CTEC: 32"}, true
+	case m.ranchu() && up == "+CTEC=?":
+		return []string{"+CTEC: 0,1,5"}, true
 	case strings.HasPrefix(up, "+CTEC"), strings.HasPrefix(up, "+WRMP"), strings.HasPrefix(up, "+WPRL"), strings.HasPrefix(up, "+WNAM"),
 		strings.HasPrefix(up, "+CCHO"), strings.HasPrefix(up, "+CCHC"), strings.HasPrefix(up, "+CGLA"),
 		strings.HasPrefix(up, "D"), up == "A", strings.HasPrefix(up, "+CMGS"), strings.HasPrefix(up, "+CHLD"):
@@ -198,6 +254,16 @@ func (m *Modem) one(c string) (res []string, ok bool) {
 // copsAnswer 按 AT+COPS=3,<格式> 设的格式回 +COPS?（reference-ril 一次查全名、简称、数字三种）。
 func (m *Modem) copsAnswer() string {
 	s := m.spec
+	if m.ranchu() {
+		// ranchu 把第三段原样读到行尾：不能带引号、不能带 ,7（否则名字变成「"中国移动",7」、MCC/MNC 解析错）
+		switch m.format {
+		case 1:
+			return "+COPS: 0,1," + s.Short
+		case 2:
+			return "+COPS: 0,2," + s.MCC + s.MNC
+		}
+		return "+COPS: 0,0," + s.Long
+	}
 	switch m.format {
 	case 1:
 		return fmt.Sprintf("+COPS: 0,1,\"%s\",7", s.Short)
@@ -231,6 +297,10 @@ func (m *Modem) absent(up string) (res []string, ok, handled bool) {
 	case up == "+CEREG?":
 		return []string{"+CEREG: 2,0"}, true, true
 	case up == "+COPS?":
+		if m.ranchu() {
+			// ranchu 查运营商时「+COPS: 0」这类没有当前运营商的回复会直接崩溃；回「没有网络服务」它按错误处理
+			return []string{"+CME ERROR: 30"}, false, true
+		}
 		return []string{"+COPS: 0"}, true, true
 	}
 	return nil, false, false

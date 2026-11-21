@@ -987,6 +987,9 @@ func (s *Service) Start(ctx context.Context, id string) error {
 		spec := sensorSpec(*p, st, byKey)
 		if s.imageLabel(ctx, image, "prism.ril") == "1" {
 			spec.Modem = s.simSpec(*p, st, byKey)
+			if spec.Modem != nil {
+				spec.Modem.Dialect = s.imageLabel(ctx, image, "prism.radio") // 安卓 16 = ranchu（踩坑 #121）
+			}
 			// IMEI 补丁（踩坑 #115）：把这台唯一 IMEI 打进 libril-modem-lib.so，盖掉镜像 getImei 的写死值。
 			// 失败/定位不到（安卓15/16 立即数）只记日志、照原样开机，不挡开机、不影响老手机。
 			if spec.Modem != nil && spec.Modem.IMEI != "" {

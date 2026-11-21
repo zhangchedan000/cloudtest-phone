@@ -77,6 +77,15 @@ if mv(os.path.join(hw, "libgoldfish-rild"), os.path.join(hw, "mtkfusionrild")):
         open(rc_new, "w").write(s)
         os.remove(rc_old)
         print("  rild_goldfish.rc → vendor.ril.rc")
+# 安卓 16 的原生 AIDL 电话 HAL（踩坑 #121）：二进制、启动脚本、VINTF 声明都改成 mtk 字样
+if mv(os.path.join(hw, "android.hardware.radio-service.ranchu"), os.path.join(hw, "android.hardware.radio-service.mtk")):
+    rc_old, rc_new = os.path.join(V, "etc/init/android.hardware.radio.ranchu.rc"), os.path.join(V, "etc/init/android.hardware.radio.mtk.rc")
+    if os.path.exists(rc_old):
+        s = open(rc_old).read().replace("radio-service.ranchu", "radio-service.mtk").replace("vendor.radio-ranchu", "vendor.radio-mtk")
+        open(rc_new, "w").write(s)
+        os.remove(rc_old)
+        print("  android.hardware.radio.ranchu.rc → android.hardware.radio.mtk.rc")
+    mv(os.path.join(V, "etc/vintf/manifest/android.hardware.radio.ranchu.xml"), os.path.join(V, "etc/vintf/manifest/android.hardware.radio.mtk.xml"))
 sens_old = os.path.join(V, "lib64/hw/android.hardware.sensors@2.1-impl.ranchu.so")
 if mv(sens_old, os.path.join(V, "lib64/hw/android.hardware.sensors@2.1-impl.mtk.so")):
     conf = os.path.join(V, "etc/sensors/hals.conf")

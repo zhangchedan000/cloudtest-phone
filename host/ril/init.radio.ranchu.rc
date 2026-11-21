@@ -1,0 +1,4 @@
+# 电话（安卓 16，踩坑 #121）：模拟器的原生 AIDL 电话 HAL（radio-service.ranchu）从这个属性读基带设备路径、说 AT 命令。
+# 指到手机里小助手扮演的基带 /dev/ttyC0（管家 agent/internal/modem，口味 ranchu：镜像标签 prism.radio=ranchu）。
+on early-init
+    setprop vendor.qemu.vport.modem /dev/ttyC0

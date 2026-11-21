@@ -82,6 +82,22 @@ log "打开电话（rild 连小助手模拟的基带，踩坑 #65）"
 # 用 -p 9600 连本机 TCP，小助手在那儿扮演基带（踩坑 #65）。安卓 13、14 实测库对得上；15 的模拟器库要的 libbase 符号
 # Redroid 15 没有（模拟器那份改名 libbas2.so 私用，见下面 private-libbase.py）。PP_EMU_RIL=0 可关掉（照旧用 Redroid 自带的 rild，手机像没插卡）。
 emu_ril=${PP_EMU_RIL:-1}
+radio=""   # 镜像标签 prism.radio：管家按它决定模拟基带说哪种「口味」的 AT（agent/internal/modem Dialect）
+if [ "$emu_ril" = 1 ] && [ ! -f "$V/bin/hw/libgoldfish-rild" ] && [ -f "$V/bin/hw/android.hardware.radio-service.ranchu" ]; then
+  # 安卓 16 模拟器（36_r02）不再有 libgoldfish-rild，换成原生 AIDL 电话 HAL radio-service.ranchu（踩坑 #121）。
+  # 以前这里找不到 libgoldfish-rild 就静默退回 Redroid 自带的老 rild（HIDL 1.1，安卓 13 起框架不认）→
+  # 一个 AIDL radio 服务都没有，App 读 IMEI / SIM / 运营商全是空。
+  # ranchu 从属性 vendor.qemu.vport.modem 读基带设备路径、说 AT：指到小助手扮演的基带 /dev/ttyC0（见下面 init.radio.rc）。
+  log "电话：安卓 16 → 原生 AIDL 电话 HAL radio-service.ranchu（连 /dev/ttyC0 的模拟基带）"
+  cp -a "$V/bin/hw/android.hardware.radio-service.ranchu" "$B/vendor/bin/hw/"
+  cp -a "$V"/lib64/android.hardware.radio*-ndk.so "$B/vendor/lib64/"
+  cp -a "$V/etc/init/android.hardware.radio.ranchu.rc" "$B/vendor/etc/init/"
+  cp -a "$V/etc/vintf/manifest/android.hardware.radio.ranchu.xml" "$B/vendor/etc/vintf/manifest/"
+  : > "$B/vendor/etc/init/rild.rc"   # 盖掉 Redroid 自带的老 rild（不然两个都去读 /dev/ttyC0 抢回复）
+  radio=ranchu
+elif [ "$emu_ril" = 1 ] && [ ! -f "$V/bin/hw/libgoldfish-rild" ]; then
+  log "⚠ 模拟器里既没有 libgoldfish-rild 也没有 radio-service.ranchu：电话 HAL 退回 Redroid 自带的（安卓 13+ 框架不认，App 读不到 IMEI/SIM）"
+fi
 if [ "$emu_ril" = 1 ] && [ -f "$V/bin/hw/libgoldfish-rild" ]; then
   cp -a "$V/bin/hw/libgoldfish-rild" "$B/vendor/bin/hw/"
   cp -a "$V/lib64/libril-modem-lib.so" "$V/lib64/libreference-ril.so" "$B/vendor/lib64/"
@@ -99,6 +115,8 @@ PY
 fi
 if [ "$emu_ril" = 1 ] && [ -f "$V/bin/hw/libgoldfish-rild" ]; then
   sed 's#"-d /dev/ttyC0"#"-p 9600"#' "$here/ril/init.radio.rc" > "$B/vendor/etc/init/init.radio.rc"
+elif [ "$radio" = ranchu ]; then
+  cp "$here/ril/init.radio.ranchu.rc" "$B/vendor/etc/init/init.radio.rc"
 else
   cp "$here/ril/init.radio.rc" "$B/vendor/etc/init/init.radio.rc"
 fi
@@ -162,7 +180,7 @@ COPY vendor/ /vendor/
 COPY --from=bb /bin/busybox /.ppbb/busybox
 COPY fixup.sh /.ppbb/fixup.sh
 RUN ["/.ppbb/busybox", "sh", "-c", "/.ppbb/busybox --install -s /.ppbb && PATH=/.ppbb sh /.ppbb/fixup.sh '$HWS' && /.ppbb/busybox rm -rf /.ppbb"]
-LABEL prism.wifi=1 prism.sensors=1 prism.touch=1 prism.ril=1 prism.bt=$bt prism.names=1 prism.hw="$HWS"
+LABEL prism.wifi=1 prism.sensors=1 prism.touch=1 prism.ril=1 prism.radio="$radio" prism.bt=$bt prism.names=1 prism.hw="$HWS"
 DF
 out="${base}-wifi"
 log "构建 $out"
