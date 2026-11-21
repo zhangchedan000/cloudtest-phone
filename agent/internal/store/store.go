@@ -161,11 +161,32 @@ func (s *Store) writeLocked(st State) error {
 	if err != nil {
 		return err
 	}
+	// 先写临时文件、刷到盘上再改名，改名后把目录也刷一下：突然断电时 state.json 要么是旧的、要么是新的，
+	// 不会变成空文件（eMMC / NVMe 上只 rename 不 fsync，断电后可能只剩个 0 字节文件，手机列表全丢）。
 	tmp := s.path + ".tmp"
-	if err := os.WriteFile(tmp, raw, 0o600); err != nil {
+	f, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
+	if err != nil {
 		return err
 	}
-	return os.Rename(tmp, s.path)
+	if _, err := f.Write(raw); err != nil {
+		f.Close()
+		return err
+	}
+	if err := f.Sync(); err != nil {
+		f.Close()
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, s.path); err != nil {
+		return err
+	}
+	if d, err := os.Open(filepath.Dir(s.path)); err == nil {
+		_ = d.Sync()
+		d.Close()
+	}
+	return nil
 }
 
 func (st *State) Phone(id string) (*Phone, error) {

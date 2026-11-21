@@ -21,28 +21,43 @@
 | `agent/` | 宿主机管家程序（Go）：开关安卓、改参数、管代理、传画面，同时提供网页 | 不改 |
 | `web/` | 管理页（React 19 + Ant Design 6，和 Prism 同一套） | 不改 |
 | `profiles/` | 机型库（真实机型的参数档案） | 换显卡要换一批机型 |
-| `host/` | 宿主机安装脚本、环境自检 | 不改 |
-| `boards/` | **板级适配层**：每种机器一个目录（内核、显卡驱动、编译参数） | 加机器就加一个目录 |
+| `host/` | 宿主机安装脚本、环境自检、安卓镜像构建脚本 | 不改 |
+| `host/board/` | **板子（魔云腾 Q1，Alpine + OpenRC）的系统配置 + 一键安装 / 更新脚本 `install.sh`** | 换板子照着改 |
+| `tools/dist/` | 给板子用的管家安装包（ARM64，`agent/build-dist.sh` 打包，带 sha256） | — |
 | `docs/` | 方案、进度记录、踩坑记录 | — |
 
 ## 机器
 
 | 机器 | 用途 |
 |---|---|
-| 甲骨文阿什本 ARM（`instance-20260727-1515`） | 开发测试机，可重启，**不能失联** |
+| 魔云腾 Q1（RK3588，DC 设备 `mytos-pro-q1`） | **正式运行环境**：Mali-G610 硬件加速，安卓 13/14/15/16 |
+| 甲骨文阿什本 ARM（`instance-20260727-1515`） | 原开发测试机，**2026-11-21 起停用**（开发阶段结束，自动同步已关） |
 | 甲骨文新加坡 ARM（`instance-20260730-1622`） | 跑现有业务（Prism 团队服务等），**不动** |
-| RK3588 板子（待买） | 最终运行环境，显卡加速 |
 
-## 部署（ARM64 Linux，root）
+## 部署
+
+### 板子（魔云腾 Q1 / Alpine，正式环境）
+
+板子上 root 执行（不用 clone 仓库）。新板子第一次装先看 [`docs/上板流程.md`](docs/上板流程.md)（刷机、binder、导入安卓镜像）：
+
+```sh
+wget -qO /tmp/pp-install.sh https://raw.githubusercontent.com/zhangchedan000/cloudtest-phone/main/host/board/install.sh
+sh /tmp/pp-install.sh            # 装 / 更新到 GitHub main 最新（只换有变化的文件、只重启受影响的服务，起不来自动回滚）
+sh /tmp/pp-install.sh --check    # 只体检：软件包、网络规则、服务、风扇、端口、令牌文件、根分区
+```
+
+令牌和启动参数在板子 `/etc/conf.d/prism-phone-agent`（权限 600），模板见 `host/board/etc/conf.d/prism-phone-agent.example`。发新版：提交代码 → `bash agent/build-dist.sh` → `git add -f tools/dist/prism-phone-agent-arm64.gz*` 提交推送 → 板子跑上面的 install.sh。
+
+### Ubuntu 服务器（原阿什本开发机的方式，systemd）
 
 ```bash
-git clone https://github.com/zhangchedan000/prism-phone /opt/prism-phone/repo && cd /opt/prism-phone/repo
+git clone https://github.com/zhangchedan000/cloudtest-phone /opt/prism-phone/repo && cd /opt/prism-phone/repo
 bash host/setup-host.sh                      # 第一次：Docker、binderfs 等
 bash host/install-agent.sh --no-pull         # 编译并安装管家程序（systemd 服务 prism-phone-agent）
 bash host/itest-api.sh                       # 实机测试，逐项打勾
 ```
 
-- 更新：**以 GitHub 为准**。`bash host/auto-update.sh install` 之后服务器每 10 分钟自动跟 GitHub 同步并更新管家程序；手动立即同步：`bash host/auto-update.sh run`（新程序起不来会自动换回旧的）
+- 更新：**以 GitHub 为准**。`bash host/auto-update.sh install` 之后服务器每天北京时间 4 点自动跟 GitHub 同步并更新管家程序；手动立即同步：`bash host/auto-update.sh run`（新程序起不来会自动换回旧的）。⚠ 自动同步不验签名：GitHub 账号泄露 = 服务器被以 root 执行任意代码，不用时 `bash host/auto-update.sh remove` 关掉
 - 参数：`/etc/prism-phone/agent.env`；管理页默认只监听本机，在自己电脑上 `ssh -L 8099:127.0.0.1:8099 服务器` 后打开 http://127.0.0.1:8099
-- 用域名打开（阿什本已配好 `https://phone.peachshop.cyou`）：Nginx Proxy Manager 反代到 127.0.0.1:8099，并且**必须**设 `PP_TOKEN`（反代后所有请求都像来自本机，不设口令谁都能控制手机）；NPM 那条代理的「高级」里要加 `proxy_buffering off; proxy_request_buffering off; proxy_read_timeout 600s; proxy_send_timeout 600s; client_max_body_size 2g;`（踩坑 #29）
+- 用域名打开（阿什本当时配的 `https://phone.peachshop.cyou`）：Nginx Proxy Manager 反代到 127.0.0.1:8099，并且**必须**设 `PP_TOKEN`（反代后所有请求都像来自本机，不设口令谁都能控制手机）；NPM 那条代理的「高级」里要加 `proxy_buffering off; proxy_request_buffering off; proxy_read_timeout 600s; proxy_send_timeout 600s; client_max_body_size 2g;`（踩坑 #29）
 - 网络模块（每台手机走自己的代理）：`bash host/network.sh install` → 管家程序参数加 `-mihomo-api 127.0.0.1:9090` → `bash host/network.sh apply`（3 分钟内不 `confirm` 自动撤销）

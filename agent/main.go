@@ -149,6 +149,11 @@ func main() {
 		}
 	}
 	svc := phones.NewService(cfg, dc, st, cat, models)
+	if n, err := svc.CleanStaging(); err != nil {
+		log.Printf("清理上传临时文件：%v", err)
+	} else if n > 0 {
+		log.Printf("清掉了 %d 个上次没传完的临时文件", n)
+	}
 	var net *netcfg.Syncer
 	if *mihomoAPI != "" {
 		if err := svc.EnsureNetwork(context.Background()); err != nil {

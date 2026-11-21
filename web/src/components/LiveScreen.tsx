@@ -33,6 +33,8 @@ export function LiveScreen({ id, size }: { id: string; size: 'thumb' | 'large' }
   const [device, setDevice] = useState<{ w: number; h: number }>()
   const [video, setVideo] = useState<VideoState>(size === 'large' && videoSupported() ? 'connecting' : 'off')
   const [videoError, setVideoError] = useState('')
+  // 同一台手机的画面在别的窗口也开着：两边会互相顶掉，这边退回截图，不再反复抢
+  const [videoBusy, setVideoBusy] = useState(false)
   const [quality, setQuality] = useState<Quality>(savedQuality)
   // 视频连上了不等于画面出来了：第一帧解出来之前继续显示截图，免得一打开是黑屏
   const [gotFrame, setGotFrame] = useState(false)
@@ -72,13 +74,30 @@ export function LiveScreen({ id, size }: { id: string; size: 'thumb' | 'large' }
     const q = QUALITIES[quality]
     const w = Math.round(device.w * q.scale)
     const h = Math.round(device.h * q.scale)
+    setVideoBusy(false)
     void (async () => {
+      let short = 0 // 连续几次「刚连上就断」
       while (!abort.signal.aborted) {
         try {
           setVideo('playing')
           // 手机可能在别的服务器上：地址和口令按手机所在的服务器
           const path = `/phones/${id}/stream?w=${w}&h=${h}&br=${q.bitRate}`
+          const began = Date.now()
           await playStream(apiUrl(path), authHeaders(path), el, abort.signal, () => { setGotFrame(true); setLandscape(el.width > el.height) })
+          if (abort.signal.aborted) return
+          // 正常结束（180 秒到时、转屏）马上重连；刚连上就断多半是别的窗口也在看这台、把这边顶掉了：
+          // 退避重连，连续 4 次就停，改用截图（以前立刻重连，两个窗口互相踢个不停、白耗 CPU）
+          if (Date.now() - began >= 2000) {
+            short = 0
+            continue
+          }
+          short++
+          if (short >= 4) {
+            setVideoBusy(true)
+            setVideo('failed')
+            return
+          }
+          await new Promise((r) => setTimeout(r, Math.min(1000 * 2 ** short, 8000)))
         } catch (error) {
           if (abort.signal.aborted) return
           setVideoError((error as Error).message)
@@ -159,7 +178,7 @@ export function LiveScreen({ id, size }: { id: string; size: 'thumb' | 'large' }
           ))}
         </div>
       )}
-      {video === 'failed' && size === 'large' && <div className="pp-live-note" title={videoError}>视频流不可用，已改用截图</div>}
+      {video === 'failed' && size === 'large' && <div className="pp-live-note" title={videoError}>{videoBusy ? '这台手机的画面在别的窗口开着，这里改用截图' : '视频流不可用，已改用截图'}</div>}
     </div>
   )
 }

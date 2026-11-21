@@ -18,10 +18,10 @@ command -v fsck.erofs >/dev/null || DEBIAN_FRONTEND=noninteractive apt-get insta
 W=$(mktemp -d /opt/prism-phone/tmp-ota.XXXX)
 trap 'for m in "$W"/mnt/*; do grep -q " $m " /proc/mounts && umount "$m"; done; rm -rf "$W"' EXIT
 cd "$W"
-curl -sL -o pd.tgz https://github.com/ssut/payload-dumper-go/releases/download/1.3.0/payload-dumper-go_1.3.0_linux_arm64.tar.gz
+curl -fsSL -o pd.tgz https://github.com/ssut/payload-dumper-go/releases/download/1.3.0/payload-dumper-go_1.3.0_linux_arm64.tar.gz
 tar xzf pd.tgz
 echo "[ota] 下载 $URL"
-curl -sL --retry 3 -o ota.zip "$URL"
+curl -fsSL --retry 3 -o ota.zip "$URL"
 unzip -o -q ota.zip payload.bin && rm -f ota.zip
 parts=system,system_ext,product,vendor,odm,mi_ext,vendor_dlkm,odm_dlkm,system_dlkm
 ./payload-dumper-go -c 4 -p "$parts" -o imgs payload.bin >/dev/null

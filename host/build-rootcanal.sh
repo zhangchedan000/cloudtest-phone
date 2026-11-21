@@ -17,7 +17,7 @@ log() { echo "[rootcanal] $*"; }
 arch=$(uname -m)
 case "$arch" in aarch64) bz=arm64 ;; x86_64) bz=amd64 ;; *) echo "不支持的架构 $arch" >&2; exit 1 ;; esac
 command -v cargo >/dev/null || apt-get install -y rustc cargo git
-command -v bazelisk >/dev/null || { curl -sL -o /usr/local/bin/bazelisk "https://github.com/bazelbuild/bazelisk/releases/download/v1.25.0/bazelisk-linux-$bz" && chmod +x /usr/local/bin/bazelisk; }
+command -v bazelisk >/dev/null || { curl -fsSL -o /usr/local/bin/bazelisk "https://github.com/bazelbuild/bazelisk/releases/download/v1.25.0/bazelisk-linux-$bz" && chmod +x /usr/local/bin/bazelisk; }
 # 官方说明里还要 cargo install pdl-compiler：Bazel 编 rootcanal 本身用不到（它自己拉 pdl 的源码编），在 arm64 上还编不过 → 不装
 
 mkdir -p "$W"; cd "$W"

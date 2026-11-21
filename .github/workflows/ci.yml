@@ -6,6 +6,9 @@ on:
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -18,7 +21,8 @@ jobs:
           cache-dependency-path: web/package-lock.json
       - uses: actions/setup-go@v7
         with:
-          go-version: '1.22'
+          # go.mod 里的 1.22 只是最低要求；编译用最新稳定版（标准库的安全修复跟着进二进制）
+          go-version: stable
           cache-dependency-path: agent/go.mod
       - name: 管理页：安装依赖
         working-directory: web
@@ -34,11 +38,17 @@ jobs:
         run: |
           mkdir -p internal/assets/web && cp -r ../profiles internal/assets/profiles
           echo ok > internal/assets/web/index.html
-          go vet ./... && go test ./...
+          go vet ./... && go test -race ./...
       - name: 管家程序：编译 ARM64（内嵌管理页和机型库）
         run: bash agent/build.sh "$PWD/prism-phone-agent-linux-arm64"
+      - name: 小屏程序：检查和编译
+        working-directory: host/oled
+        run: go vet ./... && CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o /dev/null .
       - name: 脚本语法检查
-        run: for f in host/*.sh; do bash -n "$f"; done
+        run: |
+          for f in host/*.sh host/test/*.sh; do bash -n "$f"; done
+          # 板子是 Alpine，开机脚本用 sh（busybox ash）跑
+          for f in host/board/etc/local.d/*.start host/board/usr/local/bin/*.sh; do sh -n "$f"; done
       # 账号的附件存储满了时上传会失败，不影响测试结果
       - uses: actions/upload-artifact@v7
         continue-on-error: true

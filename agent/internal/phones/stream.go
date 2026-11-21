@@ -24,18 +24,37 @@ type StreamOptions struct {
 type streamTracker struct {
 	mu     sync.Mutex
 	cancel map[string]context.CancelFunc
+	gen    map[string]uint64
+	next   uint64
 }
 
-func (t *streamTracker) replace(id string, cancel context.CancelFunc) {
+// replace 顶掉这台手机正在播的那一路，登记新的一路，返回它的编号。
+func (t *streamTracker) replace(id string, cancel context.CancelFunc) uint64 {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	if t.cancel == nil {
 		t.cancel = map[string]context.CancelFunc{}
+		t.gen = map[string]uint64{}
 	}
 	if old := t.cancel[id]; old != nil {
 		old()
 	}
+	t.next++
 	t.cancel[id] = cancel
+	t.gen[id] = t.next
+	return t.next
+}
+
+// finish 这一路结束：还是当前那一路就注销并返回 true；已经被新的一路顶掉了返回 false（别去动新的那一路）。
+func (t *streamTracker) finish(id string, gen uint64) bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.gen[id] != gen {
+		return false
+	}
+	delete(t.cancel, id)
+	delete(t.gen, id)
+	return true
 }
 
 // audNAL H.264 的「访问单元分隔符」（AUD，NAL 类型 9），6 个字节。
@@ -121,8 +140,15 @@ func (s *Service) Stream(ctx context.Context, id string, opt StreamOptions, w io
 	}
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	s.streams.replace(id, cancel)
+	gen := s.streams.replace(id, cancel)
 	name := containerName(id)
+	// 结束时只有自己还是当前那一路才去停 screenrecord：被顶掉的旧一路在新一路起来后才走到这里，
+	// 以前无条件 pkill 会把新一路的 screenrecord 也杀掉（两个窗口看同一台时互相踢、画面反复重连）。
+	defer func() {
+		if s.streams.finish(id, gen) {
+			_, _ = s.run.Run(context.Background(), "docker", "exec", name, "pkill", "-x", "screenrecord")
+		}
+	}()
 	// 顶掉旧的一路：docker exec 的进程被杀不会连带杀掉容器里的 screenrecord，要进容器停。
 	_, _ = s.run.Run(ctx, "docker", "exec", name, "pkill", "-x", "screenrecord")
 	// 横屏时画面是横的：宽高按当前方向对调（页面按竖屏要的尺寸），方向一变就结束这一路，页面自动重连拿新方向（rotate.go）
@@ -145,8 +171,6 @@ func (s *Service) Stream(ctx context.Context, id string, opt StreamOptions, w io
 	}
 	_ = copyWithFrameEnds(w, out, frameGap)
 	err = cmd.Wait()
-	// 页面关了或被顶掉：把容器里的 screenrecord 也停掉
-	_, _ = s.run.Run(context.Background(), "docker", "exec", name, "pkill", "-x", "screenrecord")
 	if ctx.Err() != nil {
 		return nil
 	}

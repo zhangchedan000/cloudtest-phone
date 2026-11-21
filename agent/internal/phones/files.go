@@ -42,6 +42,28 @@ func safeFileName(name string) (string, error) {
 	return name, nil
 }
 
+// CleanStaging 管家启动时清掉上次没走完的上传 / 剪贴板临时文件（中途断了不会自己删，单个最大 1 GB）。
+func (s *Service) CleanStaging() (int, error) {
+	dir := filepath.Join(s.cfg.DataDir, "tmp")
+	entries, err := os.ReadDir(dir)
+	if os.IsNotExist(err) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+	n := 0
+	for _, e := range entries {
+		name := e.Name()
+		if e.Type().IsRegular() && (strings.HasPrefix(name, "upload-") || strings.HasPrefix(name, "clip-")) {
+			if os.Remove(filepath.Join(dir, name)) == nil {
+				n++
+			}
+		}
+	}
+	return n, nil
+}
+
 // stage 把上传的内容存到宿主机临时文件。
 func (s *Service) stage(r io.Reader, name string) (string, func(), error) {
 	dir := filepath.Join(s.cfg.DataDir, "tmp")

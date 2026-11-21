@@ -4,7 +4,17 @@
 脚本在 `host/*.sh`、管家二进制在 `tools/dist/`、安卓镜像走 `docker load`（见 `docs/上板流程.md` 顶部「换新板快速流程」）。
 这里补的是那套**系统配置文件**，照着 Alpine 板子的真实文件布局放。
 
-## 一键铺到新板子
+## 日常更新 / 体检（推荐）
+
+```sh
+wget -qO /tmp/pp-install.sh https://raw.githubusercontent.com/zhangchedan000/cloudtest-phone/main/host/board/install.sh
+sh /tmp/pp-install.sh          # 更新到 main 最新；sh /tmp/pp-install.sh <提交号> 装指定版本
+sh /tmp/pp-install.sh --check  # 只体检不改
+```
+
+`install.sh` 会：补必需软件包（nftables、logrotate）→ 备份到 `/mmc/pp-save/board-bak-*.tgz` → 下载并按 sha256 校验管家 → 只换有变化的文件、只重启受影响的服务（有手机在跑时不重启 docker）→ 管家 40 秒起不来自动回滚 → 体检。不碰 SSH、Desktop Commander、mihomo 程序和代理配置、安卓镜像、手机数据。
+
+## 一键铺到新板子（手动方式）
 
 ```sh
 # 在新板子上（root），仓库 clone 下来后：

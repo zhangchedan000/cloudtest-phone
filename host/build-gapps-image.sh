@@ -83,8 +83,8 @@ export XDG_CACHE_HOME="${PP_BUILD:-/opt/prism-phone}/rs-cache"; mkdir -p "$XDG_C
 if ! grep -q "\"$full\"" "$work/stuff/mindthegapps.py"; then
   log "redroid-script 自带源没有 MindTheGapps $full → 从官方 MindTheGapps/$full-arm64 取"
   api="https://api.github.com/repos/MindTheGapps/$full-arm64/releases/latest"
-  url=$(curl -sL --max-time 60 -H "Accept: application/vnd.github+json" "$api" \
-        | python3 -c 'import sys,json;d=json.load(sys.stdin);print(next(a["browser_download_url"] for a in d.get("assets",[]) if a["name"].endswith(".zip")))' 2>/dev/null)
+  url=$(curl -fsSL --max-time 60 -H "Accept: application/vnd.github+json" "$api" \
+        | python3 -c 'import sys,json;d=json.load(sys.stdin);print(next(a["browser_download_url"] for a in d.get("assets",[]) if a["name"].endswith(".zip")))' 2>/dev/null) || url=""
   [ -n "$url" ] || die "官方 MindTheGapps/$full-arm64 没取到 zip 直链（该版本可能还没发布）"
   log "官方包：$url"
   dldir="$XDG_CACHE_HOME/redroid/downloads"; mkdir -p "$dldir"
@@ -93,7 +93,7 @@ if ! grep -q "\"$full\"" "$work/stuff/mindthegapps.py"; then
   vzip="$dldir/mindthegapps-$full-arm64.zip"
   if [ ! -s "$vzip" ]; then
     log "下载 MindTheGapps $full（约 500MB，缓存到大盘）……"
-    curl -L --retry 3 --max-time 1800 -o "$vzip.part" "$url" && mv "$vzip.part" "$vzip" || die "下载 MindTheGapps $full 失败"
+    curl -fL --retry 3 --max-time 1800 -o "$vzip.part" "$url" && mv "$vzip.part" "$vzip" || die "下载 MindTheGapps $full 失败"
   else
     log "用已缓存的 $vzip"
   fi

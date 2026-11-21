@@ -51,17 +51,17 @@ for c in java zip unzip python3 losetup curl; do command -v "$c" >/dev/null || d
 APKSIGNER="java -jar $TOOLS/apksigner.jar"
 if [ ! -f "$TOOLS/apksigner.jar" ]; then
   log "下载 android build-tools（取 apksigner.jar）"
-  curl -sL -o "$TOOLS/bt.zip" https://dl.google.com/android/repository/build-tools_r34-linux.zip
+  curl -fsSL -o "$TOOLS/bt.zip" https://dl.google.com/android/repository/build-tools_r34-linux.zip
   (cd "$TOOLS" && unzip -q -o bt.zip 'android-14/lib/apksigner.jar' && cp android-14/lib/apksigner.jar apksigner.jar && rm -rf bt.zip android-14)
 fi
 if [ ! -f "$TOOLS/platform.pk8" ]; then
   log "取 AOSP 平台 testkey"
   b=https://android.googlesource.com/platform/build/+/refs/tags/android-14.0.0_r1/target/product/security
-  curl -sL "$b/platform.pk8?format=TEXT" | base64 -d > "$TOOLS/platform.pk8"
-  curl -sL "$b/platform.x509.pem?format=TEXT" | base64 -d > "$TOOLS/platform.x509.pem"
+  curl -fsSL "$b/platform.pk8?format=TEXT" | base64 -d > "$TOOLS/platform.pk8.part" && mv "$TOOLS/platform.pk8.part" "$TOOLS/platform.pk8"
+  curl -fsSL "$b/platform.x509.pem?format=TEXT" | base64 -d > "$TOOLS/platform.x509.pem.part" && mv "$TOOLS/platform.x509.pem.part" "$TOOLS/platform.x509.pem"
 fi
-[ -f "$TOOLS/lpunpack.py" ] || curl -sL -o "$TOOLS/lpunpack.py" \
-  https://raw.githubusercontent.com/unix3dgforce/lpunpack/master/lpunpack.py
+[ -f "$TOOLS/lpunpack.py" ] || { curl -fsSL -o "$TOOLS/lpunpack.py.part" \
+  https://raw.githubusercontent.com/unix3dgforce/lpunpack/master/lpunpack.py && mv "$TOOLS/lpunpack.py.part" "$TOOLS/lpunpack.py"; }
 
 ZIPALIGN=""; command -v zipalign >/dev/null && ZIPALIGN=1
 sign() { # sign <in.apk> <out.apk>：testkey 重签（先去掉原签名；有 zipalign 就先对齐）
@@ -88,7 +88,7 @@ mkdir -p "$V" "$P" "$DV" "$W/stage"
 # ---- 抠电话应用 ----
 if [ ! -s "$CACHE/$emu" ]; then
   log "下载模拟器系统镜像 $emu（缓存到 $CACHE）"
-  curl -sL --retry 3 -o "$CACHE/$emu.part" "https://dl.google.com/android/repository/sys-img/android/$emu" && mv "$CACHE/$emu.part" "$CACHE/$emu"
+  curl -fsSL --retry 3 -o "$CACHE/$emu.part" "https://dl.google.com/android/repository/sys-img/android/$emu" && mv "$CACHE/$emu.part" "$CACHE/$emu"
 else
   log "用已缓存的模拟器镜像 $CACHE/$emu"
 fi

@@ -34,7 +34,7 @@ trap cleanup EXIT
 CACHE="${PP_BUILD:-/opt/prism-phone}/cache"; mkdir -p "$CACHE"
 if [ ! -s "$CACHE/$emu" ]; then
   log "下载模拟器镜像 $emu（缓存到 $CACHE，和 build-telephony 共用）"
-  curl -sL --retry 3 -o "$CACHE/$emu.part" "https://dl.google.com/android/repository/sys-img/android/$emu" && mv "$CACHE/$emu.part" "$CACHE/$emu"
+  curl -fsSL --retry 3 -o "$CACHE/$emu.part" "https://dl.google.com/android/repository/sys-img/android/$emu" && mv "$CACHE/$emu.part" "$CACHE/$emu"
 else
   log "用已缓存的模拟器 $CACHE/$emu"
 fi
