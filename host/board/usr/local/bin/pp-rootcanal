@@ -1,0 +1,5 @@
+#!/bin/sh
+# 蓝牙芯片模拟器 rootcanal（踩坑 #48 / #122）。程序是 Ubuntu 上编的 glibc 版（host/build-rootcanal.sh），
+# 板子是 Alpine（musl）：带它自己的加载器和 4 个库放在 /opt/pp-rootcanal，用加载器启动。
+# 包：/mmc/pp-dist/pp-rootcanal-arm64-bundle.tgz（host/board/install.sh 发现有包就自动解到 /opt 并装这个脚本）。
+exec /opt/pp-rootcanal/ld-linux-aarch64.so.1 --library-path /opt/pp-rootcanal/lib /opt/pp-rootcanal/pp-rootcanal "$@"

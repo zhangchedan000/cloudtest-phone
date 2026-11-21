@@ -365,3 +365,30 @@ func TestBootArgsNoDuplicateProps(t *testing.T) {
 		}
 	}
 }
+
+// 踩坑 #118：语言开机前就放进 ro.product.locale；安卓 15+ 开机后语言要变也不能软重启框架（会崩溃循环）。
+func TestLocaleNoFrameworkRestartOnA15Plus(t *testing.T) {
+	for _, ver := range []int{15, 16} {
+		svc, _, _ := newTestService(t, true, "software")
+		svc.cfg.Images[ver] = "redroid:x"
+		p, err := svc.Create(CreateRequest{Name: "A", ModelID: "poco-x4-gt", AndroidVersion: ver, ProxyID: DirectDevProxyID})
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = svc.Save(p.ID, SaveRequest{Fields: map[string]store.FieldSetting{"locale": {Mode: "manual", Value: "en-US"}}})
+		args := strings.Join(svc.BootArgs(*mustPhone(t, svc, p.ID), svc.store.Snapshot()), " ")
+		if !strings.Contains(args, "ro.product.locale=en-US") {
+			t.Fatalf("A%d 开机参数应带默认语言：%s", ver, args)
+		}
+		if err := svc.Start(context.Background(), p.ID); err != nil {
+			t.Fatal(err)
+		}
+		calls := strings.Join(svc.run.(*fakeRunner).calls, "\n")
+		if strings.Contains(calls, "ctl.restart zygote") {
+			t.Fatalf("A%d 不该软重启框架：\n%s", ver, calls)
+		}
+		if got := svc.settings.get(p.ID); got == nil || got.State != "applied" || !strings.Contains(strings.Join(got.Applied, ","), "locale") {
+			t.Fatalf("A%d 设置结果不对：%+v", ver, got)
+		}
+	}
+}

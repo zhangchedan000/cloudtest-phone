@@ -211,6 +211,11 @@ func (s *Service) applySettings(ctx context.Context, id string) {
 			continue
 		}
 		current, _ := s.run.Run(ctx, "docker", "exec", name, "getprop", def.prop)
+		if r.Key == "locale" && strings.TrimSpace(current) == "" {
+			// 没人设过 persist.sys.locale 时系统用 ro.product.locale：开机参数里已经按代理国家给了（bootProps），
+			// 新手机第一次开机就是对的语言，不用再设、也不用重启框架（踩坑 #118）。
+			current, _ = s.run.Run(ctx, "docker", "exec", name, "getprop", "ro.product.locale")
+		}
 		if strings.TrimSpace(current) == want {
 			applied = append(applied, r.Key)
 			continue
@@ -222,6 +227,13 @@ func (s *Service) applySettings(ctx context.Context, id string) {
 		if r.Key == "timezone" {
 			// 让正在运行的系统马上换时区（不支持这个命令的版本忽略，属性已经设好，重启后也会生效）。
 			_, _ = s.run.Run(ctx, "docker", "exec", name, "cmd", "time_zone_detector", "suggest_manual_time_zone", "--zone_id", want)
+		}
+		if def.restart && p.AndroidVersion >= 15 {
+			// 安卓 15 起不能只重启框架（ctl.restart zygote）：PMS 软重启时把 apex 里的 PermissionController 等包
+			// 判成「no longer exists」擦掉，之后 system_server 每次起都崩「exactly one permissions manager; found []」
+			// 死循环（踩坑 #118）。语言已经写进 persist.sys.locale，下次开机（每次开机都重建容器）生效。
+			applied = append(applied, r.Key+"（下次开机生效）")
+			continue
 		}
 		applied = append(applied, r.Key)
 		restart = restart || def.restart

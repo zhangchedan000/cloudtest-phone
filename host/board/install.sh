@@ -68,6 +68,7 @@ check() {
     rc-update show default 2>/dev/null | grep -q "^ *$s " || { say "✗ 服务 $s 没加开机自启"; bad=1; }
   done
   pgrep -f '^/bin/sh /usr/local/bin/fan-control.sh' >/dev/null && say "✓ 风扇脚本在跑" || { say "✗ 风扇脚本没在跑（满载会过热）"; bad=1; }
+  [ -x /opt/pp-rootcanal/pp-rootcanal ] && [ -x /usr/local/bin/pp-rootcanal ] && say "✓ 蓝牙芯片模拟器" || say "· 没装蓝牙芯片模拟器（手机蓝牙关着；包放 /mmc/pp-dist/pp-rootcanal-arm64-bundle.tgz 再跑一次）"
   netstat -tln 2>/dev/null | grep -q ':2375 ' && { say "✗ docker 2375 端口开着"; bad=1; } || say "✓ docker 2375 已关"
   [ -f /etc/conf.d/prism-phone-agent ] && [ "$(stat -c %a /etc/conf.d/prism-phone-agent)" = 600 ] && say "✓ 令牌文件权限 600" || { say "✗ /etc/conf.d/prism-phone-agent 不在或权限不是 600"; bad=1; }
   c=$(curl -s -m3 -o /dev/null -w '%{http_code}' 127.0.0.1:8099/api/health)
@@ -148,6 +149,16 @@ if ! cmp -s "$DL/agent" "$AGENT"; then
   install -m 755 "$DL/agent" "$AGENT"; agent_changed=1; say "更新管家程序"
 fi
 has() { case "$changed " in *" $1 "*) return 0 ;; esac; return 1; }
+
+# ---------- 5.5 蓝牙芯片模拟器（踩坑 #122）：有包没装就装；没包就不装（管家会把蓝牙关着） ----------
+RCB=/mmc/pp-dist/pp-rootcanal-arm64-bundle.tgz
+if [ -f "$RCB" ] && [ ! -x /opt/pp-rootcanal/pp-rootcanal ]; then
+  tar xzf "$RCB" -C /opt && say "装蓝牙芯片模拟器（/opt/pp-rootcanal）"
+fi
+if [ -x /opt/pp-rootcanal/pp-rootcanal ]; then
+  fetch host/board/usr/local/bin/pp-rootcanal pp-rootcanal.wrapper
+  cmp -s "$DL/pp-rootcanal.wrapper" /usr/local/bin/pp-rootcanal || { install -m 755 "$DL/pp-rootcanal.wrapper" /usr/local/bin/pp-rootcanal; say "更新 /usr/local/bin/pp-rootcanal"; }
+fi
 
 # ---------- 6. 生效 ----------
 sysctl -q -p /etc/sysctl.d/98-pp-scale.conf; sysctl -q -p /etc/sysctl.d/99-pp-redir.conf

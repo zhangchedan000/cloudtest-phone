@@ -532,6 +532,11 @@ func (s *Service) bootProps(p store.Phone, st store.State) ([]string, map[string
 			props = append(props, name+"="+val)
 		}
 	}
+	// 默认语言（踩坑 #118）：系统没设过 persist.sys.locale 时用 ro.product.locale。开机前就给对，
+	// 开机后就不用改语言、不用重启框架（安卓 15+ 软重启框架会让 system_server 崩溃循环）。
+	if loc := str(byKey["locale"]); loc != "" && liveProps["locale"].pattern.MatchString(loc) {
+		props = append(props, "ro.product.locale="+loc)
+	}
 	sort.Strings(props)
 	args = append(args, props...)
 	args = append(args, disguiseProps()...)
