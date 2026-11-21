@@ -72,15 +72,17 @@ func (s *Service) startBT(ctx context.Context, id string, byKey map[string]any) 
 	mac := strings.TrimSpace(str(byKey["bluetoothMac"]))
 	if btLauncher() == "openrc" {
 		// supervise-daemon <名字> --start ... <命令> -- <参数>（和板子上 mihomo 的 init 脚本同一种用法）
-		_, _ = s.run.Run(ctx, "supervise-daemon", u, "--stop", "--pidfile", btPidfile(id))
-		args := []string{u, "--start", "--pidfile", btPidfile(id), "--respawn-delay", "2", "--respawn-max", "0",
+		_, _ = s.run.Run(ctx, "env", "RC_SVCNAME="+u, "supervise-daemon", u, "--stop", "--pidfile", btPidfile(id))
+		// RC_SVCNAME：supervise-daemon 要求第一个参数等于当前服务名，管家自己跑在 prism-phone-agent 服务里、
+		// 会把这个变量继承下来（实测报「the first argument is ppbt-… and must be prism-phone-agent」）
+		args := []string{"RC_SVCNAME=" + u, "supervise-daemon", u, "--start", "--pidfile", btPidfile(id), "--respawn-delay", "2", "--respawn-max", "0",
 			"--stdout", "/dev/null", "--stderr", "/dev/null"}
 		if validMAC(mac) {
 			args = append(args, "--env", "PP_BT_ADDR="+strings.ToLower(mac))
 		}
 		rc := rootcanalArgs(info.State.Pid)
 		args = append(append(args, rc[0], "--"), rc[1:]...)
-		if out, err := s.run.Run(ctx, "supervise-daemon", args...); err != nil {
+		if out, err := s.run.Run(ctx, "env", args...); err != nil {
 			log.Printf("手机 %s：蓝牙芯片没起来（蓝牙开不了，别的照常）：%v %s", id, err, strings.TrimSpace(out))
 		}
 		return
@@ -104,7 +106,7 @@ func (s *Service) stopBT(ctx context.Context, id string) {
 		return
 	}
 	if btLauncher() == "openrc" {
-		_, _ = s.run.Run(ctx, "supervise-daemon", btUnit(id), "--stop", "--pidfile", btPidfile(id))
+		_, _ = s.run.Run(ctx, "env", "RC_SVCNAME="+btUnit(id), "supervise-daemon", btUnit(id), "--stop", "--pidfile", btPidfile(id))
 		return
 	}
 	_, _ = s.run.Run(ctx, "systemctl", "stop", btUnit(id))

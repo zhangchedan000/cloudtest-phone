@@ -28,7 +28,7 @@ func TestBTOpenRCLauncher(t *testing.T) {
 	svc, _, _ := newTestService(t, true, "")
 	svc.stopBT(context.Background(), "abc")
 	calls := strings.Join(svc.run.(*fakeRunner).calls, "\n")
-	if !strings.Contains(calls, "supervise-daemon ppbt-abc --stop --pidfile /run/ppbt-abc.pid") || strings.Contains(calls, "systemctl") {
+	if !strings.Contains(calls, "env RC_SVCNAME=ppbt-abc supervise-daemon ppbt-abc --stop --pidfile /run/ppbt-abc.pid") || strings.Contains(calls, "systemctl") {
 		t.Fatalf("openrc 下应调 supervise-daemon 停：\n%s", calls)
 	}
 

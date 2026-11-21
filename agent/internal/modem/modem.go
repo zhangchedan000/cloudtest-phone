@@ -17,6 +17,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 )
 
 // Spec 一张 SIM 卡和它所在的网络。
@@ -52,8 +53,12 @@ type Modem struct {
 	cfun   int
 	format int // +COPS? 回哪种名字：0 全名 / 1 简称 / 2 数字
 	w      io.Writer
-	urc    []string // 这条命令回完之后要主动上报的行（ranchu：开射频后报注册状态、信号）
+	wmu    sync.Mutex // 回复和定时上报不能交错写
+	urc    []string   // 这条命令回完之后要主动上报的行（ranchu：开射频后报注册状态、信号）
 }
+
+// HeartbeatEvery ranchu 口味下定时主动上报信号的间隔（测试时改短）。
+var HeartbeatEvery = 10 * time.Second
 
 func (m *Modem) ranchu() bool { return m.spec.Dialect == DialectRanchu }
 
@@ -63,6 +68,26 @@ func New(spec Spec, w io.Writer) *Modem {
 
 // Serve 一直读命令、写回复（r 断了就返回）。
 func (m *Modem) Serve(r io.Reader) error {
+	if m.ranchu() {
+		// 定时报信号（真手机也会定期报）。兼当保险：ranchu 某条请求失败会关掉连接、等读线程退出再重连，
+		// 可读线程卡在伪终端的 read() 上永远等不到数据 → 两个线程互等、整个电话 HAL 停住（踩坑 #121）。
+		// 这边写一行它认得的上报，read() 就返回了，它自己能恢复。
+		done := make(chan struct{})
+		defer close(done)
+		every := HeartbeatEvery
+		go func() {
+			t := time.NewTicker(every)
+			defer t.Stop()
+			for {
+				select {
+				case <-done:
+					return
+				case <-t.C:
+					m.reply([]string{m.csq()})
+				}
+			}
+		}()
+	}
 	br := bufio.NewReader(r)
 	var line strings.Builder
 	for {
@@ -91,6 +116,8 @@ func (m *Modem) Serve(r io.Reader) error {
 }
 
 func (m *Modem) reply(lines []string) {
+	m.wmu.Lock()
+	defer m.wmu.Unlock()
 	var b strings.Builder
 	for _, l := range lines {
 		if m.ranchu() {
@@ -230,6 +257,16 @@ func (m *Modem) one(c string) (res []string, ok bool) {
 		return nil, true
 	case up == "+CUSD?":
 		return []string{"+CUSD: 1"}, true
+	// ranchu 开机就会问 SIM 卡工具包（REPORT_STK_SERVICE_IS_RUNNING → AT+CUSATD?），只认「+CUSATD: <int>, <int>」；
+	// 回 ERROR 它等 3 秒超时、重置连接、然后卡死（踩坑 #121）。CDMA 漫游偏好同理。
+	case m.ranchu() && up == "+CUSATD?":
+		return []string{"+CUSATD: 0, 0"}, true
+	case m.ranchu() && strings.HasPrefix(up, "+CUSATD="):
+		return nil, true
+	case m.ranchu() && up == "+WRMP?":
+		return []string{"+WRMP: 0"}, true
+	case m.ranchu() && strings.HasPrefix(up, "+WRMP="):
+		return nil, true
 	case strings.HasPrefix(up, "+CUSD"), strings.HasPrefix(up, "+CSIM"), strings.HasPrefix(up, "+CUSATD"),
 		strings.HasPrefix(up, "+CUSATE"), strings.HasPrefix(up, "+CUSATT"), strings.HasPrefix(up, "+CCFCU"):
 		// USSD、SIM 卡工具包、呼叫转移：没有

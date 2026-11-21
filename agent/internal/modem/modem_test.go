@@ -2,8 +2,11 @@ package modem
 
 import (
 	"bytes"
+	"io"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 )
 
 func validLuhn(s string) bool { return luhn(s[:len(s)-1]) == s[len(s)-1:] }
@@ -200,3 +203,34 @@ func TestDefaultDialectUnchanged(t *testing.T) {
 		t.Fatalf("老口味变了：%q", out.String())
 	}
 }
+
+// ranchu：开机会问 SIM 卡工具包 / CDMA 漫游，回 ERROR 它会卡死；定时报信号兼当解卡保险（踩坑 #121）。
+func TestRanchuStkAndHeartbeat(t *testing.T) {
+	m := New(Spec{Signal: 20, RSRP: 95, Dialect: DialectRanchu}, nil)
+	for c, want := range map[string]string{"AT+CUSATD?": "+CUSATD: 0, 0", "AT+WRMP?": "+WRMP: 0"} {
+		if r := m.Handle(c); len(r) != 2 || r[0] != want || r[1] != "OK" {
+			t.Fatalf("%s：%v", c, r)
+		}
+	}
+	old := HeartbeatEvery
+	HeartbeatEvery = 20 * time.Millisecond
+	defer func() { HeartbeatEvery = old }()
+	pr, pw := io.Pipe()
+	var mu sync.Mutex
+	var out bytes.Buffer
+	w := writerFunc(func(p []byte) (int, error) { mu.Lock(); defer mu.Unlock(); return out.Write(p) })
+	m2 := New(Spec{Signal: 20, RSRP: 95, Dialect: DialectRanchu}, w)
+	go func() { _ = m2.Serve(pr) }()
+	time.Sleep(90 * time.Millisecond)
+	pw.Close()
+	mu.Lock()
+	got := out.String()
+	mu.Unlock()
+	if strings.Count(got, "+CSQ: ") < 2 {
+		t.Fatalf("应定时上报信号：%q", got)
+	}
+}
+
+type writerFunc func([]byte) (int, error)
+
+func (f writerFunc) Write(p []byte) (int, error) { return f(p) }

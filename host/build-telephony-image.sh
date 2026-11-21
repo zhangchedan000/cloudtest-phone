@@ -117,7 +117,10 @@ log "找到：TeleService=$(basename "$(dirname "$tele")")  TelephonyProvider=$(
 # com.android.phone 启动崩溃循环、iphonesubinfo/phone 服务不注册、App 读不到电话信息。
 # 改从魔云腾 dobox Q15 取 TeleService：dobox Q15 和 redroid15 是同一套 AOSP 15 框架构建
 # （/system/framework/telephony-common.jar md5 完全相同），它的 TeleService 自洽匹配、不崩。
-# 只换 TeleService；TelephonyProvider / CarrierConfig 仍用模拟器的（它们不触发错配）。
+# TelephonyProvider 也要从 dobox 取（2026-11-21 补，踩坑 #118 续）：模拟器那份的 siminfo 表少列
+# （is_satellite_provisioned_for_non_ip_datagram 等），redroid15 框架往里插 SIM 记录就 SQLiteException →
+# 订阅插不进去、subId=-1 → com.android.phone 崩「Subscription doesn't exist」循环。direct-dev 不插卡、
+# 不写 siminfo，所以以前只在真代理下暴露。CarrierConfig 仍用模拟器的（不触发错配）。
 # dobox 镜像根目录有 /super.img（和扒 Mali 同一个取法，build-mali-image.sh）。A14/A16 不需要（它们
 # 模拟器 TeleService 和各自 redroid 框架恰好对得上）。
 if [ "$ver" = 15 ]; then
@@ -133,6 +136,10 @@ if [ "$ver" = 15 ]; then
   tele=$(find "$DV" -ipath '*priv-app/TeleService*' -iname '*.apk' 2>/dev/null | head -1 || true)
   [ -n "$tele" ] || die "dobox Q15 里没找到 TeleService"
   log "A15：用 dobox 的 TeleService=$tele"
+  dprov=$(find "$DV" -ipath '*priv-app/TelephonyProvider*' -iname '*.apk' 2>/dev/null | head -1 || true)
+  [ -n "$dprov" ] || die "dobox Q15 里没找到 TelephonyProvider"
+  prov=$dprov
+  log "A15：用 dobox 的 TelephonyProvider=$prov"
 fi
 
 mkdir -p "$W/stage/system/priv-app/TeleService" "$W/stage/system/priv-app/TelephonyProvider"
