@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/zhangchedan000/prism-phone/agent/internal/hostguard"
+	"log"
 	"regexp"
 	"strconv"
 	"strings"
@@ -135,12 +136,56 @@ func (s *Service) waitBooted(ctx context.Context, id string) bool {
 	}
 }
 
+// healPmsCrashLoop 安卓15 真代理首启偶发坎（踩坑 #118）的自愈：
+// 早期启动不稳时 PMS 把 apex 里的 PermissionController 等包判成「no longer exists」擦掉，
+// 之后每次 system_server 重启都崩 getRequiredPermissionControllerLPr
+// （"There must be exactly one permissions manager; found []"）→ 死循环。
+// 清掉中毒的包数据库 + 缓存、重启一次（此时 apex 已激活暖），让 PMS 干净重扫恢复。
+// 只在确认是这个坎（logcat 里有该崩溃）且是安卓15 时动手，别的开机失败一律不碰。
+// 恢复了返回 true。
+func (s *Service) healPmsCrashLoop(ctx context.Context, id string) bool {
+	st := s.store.Snapshot()
+	if p, err := st.Phone(id); err != nil || p.AndroidVersion < 15 {
+		return false
+	}
+	name := containerName(id)
+	// grep -cF + `|| true`：没匹配时 grep 退出码 1，加 || true 避免当成命令失败。
+	out, _ := s.run.Run(ctx, "docker", "exec", name, "sh", "-c",
+		"logcat -d -t 4000 2>/dev/null | grep -cF 'permissions manager; found []' || true")
+	if n := strings.TrimSpace(out); n == "" || n == "0" {
+		return false // 不是这个坎，不动
+	}
+	log.Printf("手机 %s：检测到 PMS 崩溃循环（踩坑 #118），清包数据库后重启自愈", id)
+	if _, err := s.run.Run(ctx, "docker", "exec", name, "sh", "-c",
+		"rm -rf /data/system/package_cache /data/system/packages.xml /data/system/packages.list "+
+			"/data/system/packages-warnings.xml /data/system/packages-compat.xml /data/system/packages-stopped.xml"); err != nil {
+		log.Printf("手机 %s：清包数据库失败：%v", id, err)
+		return false
+	}
+	if _, err := s.run.Run(ctx, "docker", "restart", "-t", "10", name); err != nil {
+		log.Printf("手机 %s：自愈重启失败：%v", id, err)
+		return false
+	}
+	ok := s.waitBooted(ctx, id)
+	if ok {
+		log.Printf("手机 %s：PMS 崩溃循环已自愈，开机成功", id)
+	} else {
+		log.Printf("手机 %s：自愈重启后仍未开机", id)
+	}
+	return ok
+}
+
 // applySettings 开机完成后把时区、语言设进去。在后台跑，结果记在 settings 里。
 func (s *Service) applySettings(ctx context.Context, id string) {
 	s.settings.set(id, SettingsStatus{State: "pending"})
 	if !s.waitBooted(ctx, id) {
-		s.settings.set(id, SettingsStatus{State: "failed", Error: "等开机超时或设备已关机"})
-		return
+		// 安卓15 真代理首启偶发坎（踩坑 #118）：早期启动不稳把 apex 里的 PermissionController
+		// 等包判成「no longer exists」擦掉 → system_server 反复崩 getRequiredPermissionControllerLPr。
+		// 确认是这个坎就清掉中毒的包数据库、重启一次自愈；其它开机失败不碰。
+		if !s.healPmsCrashLoop(ctx, id) {
+			s.settings.set(id, SettingsStatus{State: "failed", Error: "等开机超时或设备已关机"})
+			return
+		}
 	}
 	if s.cfg.HostGuard {
 		hostguard.Fix() // 安卓开机刚改过宿主机的 kernel.* / vm.*（踩坑 #58），马上改回
