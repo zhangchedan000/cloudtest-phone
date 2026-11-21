@@ -18,6 +18,12 @@ import (
 // GeoURL 查出口 IP 的服务（返回 ipwho.is 格式）。测试时换成本地假服务。
 var GeoURL = "https://ipwho.is/"
 
+// Retries 网络层失败后再试几次；RetryDelay 两次之间等多久（测试时改短）。
+var (
+	Retries    = 1
+	RetryDelay = time.Second
+)
+
 type geo struct {
 	Success     bool   `json:"success"`
 	Message     string `json:"message"`
@@ -67,13 +73,26 @@ func Check(ctx context.Context, px store.Proxy) store.ProxyCheck {
 		res.Error = err.Error()
 		return res
 	}
+	// 慢节点（家宽、远距离）经代理和查 IP 服务握手常常要好几秒：握手限时放宽到 15 秒，
+	// 网络层失败（超时、被断开）再试一次，免得偶发抖动把能用的节点判成不通（2026-11-21：缅甸、美国家宽误判）。
 	client := &http.Client{
-		Timeout:   20 * time.Second,
-		Transport: &http.Transport{Proxy: http.ProxyURL(u), TLSHandshakeTimeout: 10 * time.Second, DisableKeepAlives: true},
+		Timeout:   25 * time.Second,
+		Transport: &http.Transport{Proxy: http.ProxyURL(u), TLSHandshakeTimeout: 15 * time.Second, DisableKeepAlives: true},
 	}
-	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, GeoURL, nil)
-	start := time.Now()
-	resp, err := client.Do(req)
+	var resp *http.Response
+	var start time.Time
+	for attempt := 0; ; attempt++ {
+		req, _ := http.NewRequestWithContext(ctx, http.MethodGet, GeoURL, nil)
+		start = time.Now()
+		resp, err = client.Do(req)
+		if err == nil || attempt >= Retries || ctx.Err() != nil {
+			break
+		}
+		select {
+		case <-ctx.Done():
+		case <-time.After(RetryDelay):
+		}
+	}
 	if err != nil {
 		res.Error = plain(err)
 		return res
@@ -110,7 +129,8 @@ func plain(err error) string {
 	case strings.Contains(msg, "Client.Timeout") || strings.Contains(msg, "deadline exceeded") || strings.Contains(msg, "i/o timeout"):
 		return "连接超时（代理太慢或连不上）"
 	case strings.Contains(msg, "connection reset") || strings.Contains(msg, "EOF"):
-		return "连接被断开（协议选错了，或者代理拒绝了这台机器）"
+		// 经网络模块（mihomo）检测时，节点连不上 mihomo 也是直接断开连接，所以最常见的其实是「节点连不上」
+		return "连接被断开（节点连不上、协议不对，或者代理拒绝了这台机器）"
 	}
 	return msg
 }

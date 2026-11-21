@@ -78,3 +78,11 @@ func TestRedirModeUsesRedirPort(t *testing.T) {
 		t.Fatalf("Redir 模式应是 redir-port、不含 tproxy-port：\n%s", res.YAML)
 	}
 }
+
+// 节点服务器域名用国内加密 DNS 解析（板子在国内，1.1.1.1/8.8.8.8 查节点域名常被污染）。
+func TestProxyServerNameserver(t *testing.T) {
+	y := Build(state(), Options{TProxyPort: 7893, DNSListen: "10.88.0.1:1053"}).YAML
+	if !strings.Contains(y, `proxy-server-nameserver: ["https://223.5.5.5/dns-query", "https://120.53.53.53/dns-query"]`) {
+		t.Fatalf("缺 proxy-server-nameserver：\n%s", y)
+	}
+}

@@ -7,7 +7,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/zhangchedan000/prism-phone/agent/internal/store"
 )
@@ -70,5 +72,37 @@ func TestCheckExplainsFailures(t *testing.T) {
 	}
 	if got := Check(context.Background(), store.Proxy{Protocol: "http", Address: "http://"}); got.OK || !strings.Contains(got.Error, "格式") {
 		t.Fatalf("空地址应提示格式：%+v", got)
+	}
+}
+
+// 慢节点偶发断开：网络层失败自动再试一次（2026-11-21：能用的家宽节点被一次抖动判成不通）。
+func TestCheckRetriesOnce(t *testing.T) {
+	geoSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		fmt.Fprint(w, `{"success":true,"ip":"1.2.3.4","country_code":"MM","timezone":{"id":"Asia/Yangon"}}`)
+	}))
+	defer geoSrv.Close()
+	GeoURL = geoSrv.URL
+	oldDelay := RetryDelay
+	RetryDelay = time.Millisecond
+	defer func() { RetryDelay = oldDelay }()
+	var n int32
+	px := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if atomic.AddInt32(&n, 1) == 1 { // 第一次直接掐断连接
+			c, _, _ := w.(http.Hijacker).Hijack()
+			c.Close()
+			return
+		}
+		resp, err := http.Get(r.URL.String())
+		if err != nil {
+			w.WriteHeader(http.StatusBadGateway)
+			return
+		}
+		defer resp.Body.Close()
+		_, _ = io.Copy(w, resp.Body)
+	}))
+	defer px.Close()
+	got := Check(context.Background(), store.Proxy{Protocol: "http", Address: strings.TrimPrefix(px.URL, "http://")})
+	if !got.OK || got.Country != "MM" || atomic.LoadInt32(&n) != 2 {
+		t.Fatalf("应重试一次后通过：%+v 次数=%d", got, n)
 	}
 }
