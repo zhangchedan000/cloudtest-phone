@@ -63,15 +63,47 @@ if ! python3 -c 'import requests, tqdm' 2>/dev/null && [ -f "$work/requirements.
 fi
 python3 -c 'import requests, tqdm' 2>/dev/null || die "python 依赖 requests/tqdm 装不上（Alpine：apk add py3-requests py3-tqdm）"
 
-# redroid.py 的 -a 选项把安卓 15 挡掉了（choices 没列），但底层 MindTheGapps 支持 15（stuff/mindthegapps.py 有 15.0.0 的 arm64 包）。
-# 把 $full 加进 choices 再跑（安卓 15 的整版底座 redroid/redroid:15.0.0-latest dockerhub 上有）。
-grep -q "'$full'" "$work/redroid.py" || sed -i "s/choices=\['14.0.0'/choices=['$full', '14.0.0'/" "$work/redroid.py"
+# redroid.py 的 -a choices 没列全（如 15/16 都没列）。把 $full 稳妥地插在 choices=[ 之后。
+grep -q "'$full'" "$work/redroid.py" || sed -i "s/choices=\[/choices=['$full', /" "$work/redroid.py"
 
 # redroid-script 把 GApps 解压目录硬编码在 /tmp、下载缓存在 ~/.cache（板子 eMMC 根分区太小→No space）
 # → 把 stuff/*.py 的 /tmp 和下载缓存都挪到 PP_BUILD（大盘）
 RSTMP="${PP_BUILD:-/opt/prism-phone}/rs-tmp"; mkdir -p "$RSTMP"
 sed -i "s#\"/tmp/#\"$RSTMP/#g" "$work"/stuff/*.py
 export XDG_CACHE_HOME="${PP_BUILD:-/opt/prism-phone}/rs-cache"; mkdir -p "$XDG_CACHE_HOME"
+
+# MindTheGapps 源（踩坑 #114）：redroid-script 自带的 s1204IT/MindTheGappsBuilder 只更到 15。
+# 更高版本（安卓 16+）要从【官方 MindTheGapps 组织】的 <ver>-arm64 仓库取最新 release。
+# 做法：取官方 arm64 zip 直链 → 下到 redroid-script 的下载缓存（固定名 mindthegapps.zip）→
+# 算 md5 → 把该版本的 dl_links 条目注入 stuff/mindthegapps.py。这样 redroid.py 跑到下载那步，
+# 发现缓存已存在且 md5 匹配（general.py download() 的逻辑），直接跳过下载、解包叠进镜像。
+# redroid 是 64only，务必取 arm64 包。
+if ! grep -q "\"$full\"" "$work/stuff/mindthegapps.py"; then
+  log "redroid-script 自带源没有 MindTheGapps $full → 从官方 MindTheGapps/$full-arm64 取"
+  api="https://api.github.com/repos/MindTheGapps/$full-arm64/releases/latest"
+  url=$(curl -sL --max-time 60 -H "Accept: application/vnd.github+json" "$api" \
+        | python3 -c 'import sys,json;d=json.load(sys.stdin);print(next(a["browser_download_url"] for a in d.get("assets",[]) if a["name"].endswith(".zip")))' 2>/dev/null)
+  [ -n "$url" ] || die "官方 MindTheGapps/$full-arm64 没取到 zip 直链（该版本可能还没发布）"
+  log "官方包：$url"
+  dldir="$XDG_CACHE_HOME/redroid/downloads"; mkdir -p "$dldir"; zip="$dldir/mindthegapps.zip"
+  if [ ! -s "$zip" ]; then
+    log "下载 MindTheGapps $full（约 500MB，缓存到大盘）……"
+    curl -L --retry 3 --max-time 1800 -o "$zip.part" "$url" && mv "$zip.part" "$zip" || die "下载 MindTheGapps $full 失败"
+  else
+    log "用已缓存的 $zip"
+  fi
+  md5=$(md5sum "$zip" | awk '{print $1}')
+  log "md5=$md5，注入 stuff/mindthegapps.py 的 dl_links"
+  python3 - "$work/stuff/mindthegapps.py" "$full" "$url" "$md5" <<'PY'
+import sys
+f,ver,url,md5=sys.argv[1:5]
+s=open(f).read()
+if f'"{ver}"' not in s:
+    entry=('        "%s": {\n            "arm64": [\n                "%s",\n                "%s",\n            ],\n        },\n' % (ver,url,md5))
+    s=s.replace("dl_links = {\n","dl_links = {\n"+entry,1)
+    open(f,"w").write(s); print("injected",ver)
+PY
+fi
 
 log "构建 $image（安卓 $full + MindTheGapps），这步较慢……"
 ( cd "$work" && python3 redroid.py -a "$full" -mtg -c docker ) || die "构建失败（看上面的日志；常见原因：下载 GApps 包的网络不通）"
