@@ -49,8 +49,10 @@ if [ ! -d "$work/.git" ]; then
   git clone --depth 1 https://github.com/ayasa520/redroid-script "$work" || die "克隆 redroid-script 失败"
 else
   log "更新 redroid-script"
+  git -C "$work" checkout -- . 2>/dev/null || true   # 丢弃上次运行留下的本地改动（sed/注入），每次从干净基线开始
   git -C "$work" pull --ff-only || true
 fi
+git -C "$work" checkout -- . 2>/dev/null || true       # 克隆分支也走一遍（幂等）
 
 log "装 python 依赖（requests tqdm）"
 # 板子 Alpine 的 python3 不带 pip → 直接用 apk 的系统包；阿什本 Debian 用 pip
@@ -85,14 +87,18 @@ if ! grep -q "\"$full\"" "$work/stuff/mindthegapps.py"; then
         | python3 -c 'import sys,json;d=json.load(sys.stdin);print(next(a["browser_download_url"] for a in d.get("assets",[]) if a["name"].endswith(".zip")))' 2>/dev/null)
   [ -n "$url" ] || die "官方 MindTheGapps/$full-arm64 没取到 zip 直链（该版本可能还没发布）"
   log "官方包：$url"
-  dldir="$XDG_CACHE_HOME/redroid/downloads"; mkdir -p "$dldir"; zip="$dldir/mindthegapps.zip"
-  if [ ! -s "$zip" ]; then
+  dldir="$XDG_CACHE_HOME/redroid/downloads"; mkdir -p "$dldir"
+  # 用【版本专属】缓存名，不能用 redroid-script 的通用名 mindthegapps.zip——那个会被不同
+  # 版本的构建互相覆盖，复用它会把别的版本的包当成本版本（踩过：A15 的缓存被当成 16）。
+  vzip="$dldir/mindthegapps-$full-arm64.zip"
+  if [ ! -s "$vzip" ]; then
     log "下载 MindTheGapps $full（约 500MB，缓存到大盘）……"
-    curl -L --retry 3 --max-time 1800 -o "$zip.part" "$url" && mv "$zip.part" "$zip" || die "下载 MindTheGapps $full 失败"
+    curl -L --retry 3 --max-time 1800 -o "$vzip.part" "$url" && mv "$vzip.part" "$vzip" || die "下载 MindTheGapps $full 失败"
   else
-    log "用已缓存的 $zip"
+    log "用已缓存的 $vzip"
   fi
-  md5=$(md5sum "$zip" | awk '{print $1}')
+  md5=$(md5sum "$vzip" | awk '{print $1}')
+  cp -f "$vzip" "$dldir/mindthegapps.zip"   # 覆盖成 redroid-script 读的通用名（本版本的）
   log "md5=$md5，注入 stuff/mindthegapps.py 的 dl_links"
   python3 - "$work/stuff/mindthegapps.py" "$full" "$url" "$md5" <<'PY'
 import sys
