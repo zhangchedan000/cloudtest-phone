@@ -179,6 +179,16 @@ func main() {
 			}
 			return nil
 		})
+		// 列表页只读现状：后台每 3 秒已经在同步，不用每台每次刷新都再同步一遍
+		svc.SetNetworkPeek(func(id string) error {
+			if err := net.LastError(); err != nil {
+				return err
+			}
+			if why, ok := net.Blocked()[id]; ok {
+				return fmt.Errorf("没有网络出口：%s", why)
+			}
+			return nil
+		})
 		svc.SetConnectionCloser(net.CloseConnections)
 	} else {
 		log.Printf("网络模块没开（-mihomo-api 为空）：云手机直接用宿主机网络，只能用来开发测试")

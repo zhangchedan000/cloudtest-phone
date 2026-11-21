@@ -1,15 +1,39 @@
 #!/sbin/openrc-run
+# 管家程序。启动参数（PP_ARGS）和访问令牌（PP_TOKEN）放 /etc/conf.d/prism-phone-agent（chmod 600，OpenRC 自动读），
+# 这个文件里不放口令，模板见仓库 host/board/etc/conf.d/prism-phone-agent.example。
+# supervise-daemon 守护：管家崩了 5 秒后自动拉起（以前 command_background，崩了要等重启才回来）。
 name="prism-phone-agent"
 description="cloudtest guanjia"
+supervisor="supervise-daemon"
 command="/opt/prism-phone/prism-phone-agent"
-command_args="-listen 0.0.0.0:8099 -data /mmc/pp-data -gpu-family Mali-G610 -gpu-mode host -images 13=cnflysky/redroid-rk3588:lineage-20-wifi-tel-resign-apps -max-running 8 -mem-overcommit 2.5 -mihomo-api 127.0.0.1:9090 -dns-listen 10.88.0.1:1053 -redir -no-wifi -no-host-guard -no-timens"
-command_background="yes"
+command_args="${PP_ARGS}"
 pidfile="/run/prism-phone-agent.pid"
-output_log="/var/log/pp-agent.log"
-error_log="/var/log/pp-agent.log"
-# 改成你自己的访问令牌（网页登录用；监听 0.0.0.0 必须设）
-export PP_TOKEN="改成你自己的令牌"
+supervise_daemon_args="--stdout /var/log/pp-agent.log --stderr /var/log/pp-agent.log"
+respawn_delay=5
+respawn_max=0
+export PP_TOKEN
+
 depend() {
   need docker
-  after net binder-nodes
+  after net ntpd prism-phone-mihomo prism-phone-fan
+}
+
+start_pre() {
+  if [ -z "$PP_ARGS" ]; then
+    eerror "没有启动参数：在 /etc/conf.d/prism-phone-agent 里写 PP_ARGS（模板见 host/board/etc/conf.d/prism-phone-agent.example）"
+    return 1
+  fi
+  case "$PP_ARGS" in *"0.0.0.0:"*)
+    if [ "${#PP_TOKEN}" -lt 16 ] || [ "$PP_TOKEN" = "改成你自己的令牌" ]; then
+      eerror "监听 0.0.0.0 时 PP_TOKEN 必须自己设、至少 16 位（/etc/conf.d/prism-phone-agent）"
+      return 1
+    fi ;;
+  esac
+  # 板子没有硬件时钟：开机先是 2024 年，等 ntpd 对上时间（最多 60 秒），免得 HTTPS / 订阅拉取失败、日志时间错乱
+  i=0
+  while [ "$(date +%Y)" -lt 2025 ] && [ "$i" -lt 60 ]; do sleep 1; i=$((i + 1)); done
+  # local.d 在所有服务之后才跑：binder 设备和网络转发规则这里先补上（两个脚本都可重复执行）
+  [ -e /dev/vndbinder ] || sh /etc/local.d/binder-nodes.start
+  nft list table ip prism_redir >/dev/null 2>&1 || sh /etc/local.d/pp-redir.start
+  return 0
 }

@@ -49,6 +49,16 @@ func (h *HealthChecker) run(ctx context.Context, name string, args ...string) (s
 // Check 查一次（顺手修好能修的），返回结果。
 func (h *HealthChecker) Check(ctx context.Context) Health {
 	var problems []string
+	// REDIRECT 模式（板子，踩坑 #101）：规则在 nft 表 prism_redir（/etc/local.d/pp-redir.start 加），没有策略路由。
+	if h.Syncer != nil && h.Syncer.Opt.Redir {
+		if _, err := h.run(ctx, "nft", "list", "table", "ip", "prism_redir"); err != nil {
+			problems = append(problems, "网络模块的规则没加上（prism_redir 表不在）：云手机的流量不会经过代理，执行 sh /etc/local.d/pp-redir.start")
+		}
+		if err := h.Syncer.LastError(); err != nil {
+			problems = append(problems, "网络模块（mihomo）："+err.Error())
+		}
+		return h.finish(problems)
+	}
 	// 网络模块的规则表不在（没 apply 过，或者 rollback 了）就不查策略路由：那是有意关掉的。
 	if _, err := h.run(ctx, "nft", "list", "table", "ip", "prism_phone"); err == nil {
 		rules, _ := h.run(ctx, "ip", "rule", "list")
@@ -79,6 +89,10 @@ func (h *HealthChecker) Check(ctx context.Context) Health {
 			problems = append(problems, "网络模块（mihomo）："+err.Error())
 		}
 	}
+	return h.finish(problems)
+}
+
+func (h *HealthChecker) finish(problems []string) Health {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.last = Health{OK: len(problems) == 0, Problems: problems, HealedAt: h.healed, CheckedAt: time.Now().UTC()}

@@ -22,7 +22,10 @@ done
 echo 0 > $PWM/duty_cycle 2>/dev/null
 echo 1 > $PWM/enable 2>/dev/null
 while :; do
-  t=$(cat /sys/class/thermal/thermal_zone0/temp 2>/dev/null); t=$((t/1000))
+  t=$(cat /sys/class/thermal/thermal_zone0/temp 2>/dev/null)
+  # 读不到温度（或读到乱值）就开满，宁可吵也不能停转
+  case "$t" in ''|*[!0-9]*) echo $PERIOD > $PWM/duty_cycle 2>/dev/null; sleep 5; continue ;; esac
+  t=$((t/1000))
   if   [ "$t" -ge 63 ]; then d=40000
   elif [ "$t" -ge 55 ]; then d=26000
   elif [ "$t" -ge 48 ]; then d=16000

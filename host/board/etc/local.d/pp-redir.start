@@ -15,6 +15,18 @@ table ip prism_redir {
 		ip daddr 10.88.0.1 return
 		meta l4proto tcp redirect to :7893
 	}
+	chain pp_input {
+		type filter hook input priority filter; policy accept;
+		# route_localnet=1 时，同网段的机器能把目标地址写成 127.0.0.1 发过来（CVE-2020-8558 那类），
+		# 打到只给本机用的 mihomo 控制口 9090 等。只有 lo 才能收 127/8。
+		iifname != "lo" ip daddr 127.0.0.0/8 drop
+		# 手机（pp-net）只许连宿主机的 DNS(1053) 和透明代理(7893)，SSH / 管家 8099 等一律不给
+		iifname "pp-net" ct state established,related accept
+		iifname "pp-net" udp dport 1053 accept
+		iifname "pp-net" tcp dport { 1053, 7893 } accept
+		iifname "pp-net" icmp type echo-request accept
+		iifname "pp-net" drop
+	}
 	chain pp_forward {
 		type filter hook forward priority filter; policy accept;
 		iifname "pp-net" ip saddr 10.88.0.0/16 oifname != "pp-net" drop

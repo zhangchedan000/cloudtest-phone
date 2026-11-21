@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/zhangchedan000/prism-phone/agent/internal/docker"
@@ -85,8 +86,11 @@ const binderSlots = 12
 // 已用槽位从「正在跑的容器」的 prism-phone.binder 标签反推（docker 是真相，agent 重启也不会撞）。
 // 用 docker bind 而不是容器内 mount：不依赖 pp-init/时间命名空间（这块板子内核的 CLONE_NEWTIME 会让
 // 安卓建线程失败，见踩坑；binderfs 的板子容器内各自挂 binderfs，这里分到的 binderN 它也用不上、无害）。
-func (s *Service) assignBinderSlot(ctx context.Context, st store.State, id string) (int, []string) {
+func (s *Service) assignBinderSlot(ctx context.Context, st store.State, id string, reserved ...int) (int, []string) {
 	used := map[int]bool{}
+	for _, k := range reserved {
+		used[k] = true
+	}
 	for _, other := range st.Phones {
 		if other.ID == id || !s.isRunning(ctx, other.ID) {
 			continue
@@ -141,6 +145,11 @@ type Service struct {
 	settings settingsTracker
 	// netGuard 网络模块开着时检查这台设备有没有出口；返回错误就禁止开机（绝不走宿主机网络）。
 	netGuard func(id string) error
+	// netPeek 只读网络模块的现状（不触发同步），列表页每 5 秒刷新用；没接就退回 netGuard。
+	netPeek func(id string) error
+	// starting 正在开机、容器还没建好的手机占的 binder 槽位和内存（防两台同时开机抢同一组 binder、绕过台数/内存上限）。
+	startMu  sync.Mutex
+	starting map[string]startReservation
 	// closeConns 断开某个来源 IP 的所有代理连接（切换代理后让长连接改走新节点，踩坑 #70）
 	closeConns func(ctx context.Context, ip string) (int, error)
 	// proxyChecker 检测代理出口（时区 / 语言跟随代理要用），见 proxyauto.go。
@@ -158,6 +167,61 @@ func NewService(cfg Config, d Docker, st *store.Store, cat *Catalog, models []Mo
 
 // SetNetworkGuard 接上网络模块（mihomo）的开机前检查。
 func (s *Service) SetNetworkGuard(fn func(id string) error) { s.netGuard = fn }
+
+// SetNetworkPeek 接上只读的网络状态查询（不触发 mihomo 同步），列表页用。
+func (s *Service) SetNetworkPeek(fn func(id string) error) { s.netPeek = fn }
+
+// startReservation 一台正在开机的手机预占的资源。
+type startReservation struct {
+	slot  int
+	memMB int64
+}
+
+// reserveStart 在锁里一次性做完「台数上限 → 分 binder 槽位 → 内存预算」并记下预占，
+// 返回的 release 在开机流程结束（容器已建好，或失败）时调用。
+func (s *Service) reserveStart(ctx context.Context, st store.State, id string, memLimit int64) (int, []string, func(), error) {
+	s.startMu.Lock()
+	defer s.startMu.Unlock()
+	if s.starting == nil {
+		s.starting = map[string]startReservation{}
+	}
+	if _, busy := s.starting[id]; busy {
+		return 0, nil, nil, fmt.Errorf("%w：这台正在开机，等一下", ErrBlocked)
+	}
+	if s.cfg.MaxRunning > 0 {
+		running := 0
+		for _, other := range st.Phones {
+			if other.ID == id {
+				continue
+			}
+			if _, pending := s.starting[other.ID]; pending || s.isRunning(ctx, other.ID) {
+				running++
+			}
+		}
+		if running >= s.cfg.MaxRunning {
+			return 0, nil, nil, fmt.Errorf("%w：这台机器同时最多运行 %d 台，先关掉一台", ErrBlocked, s.cfg.MaxRunning)
+		}
+	}
+	var pendingSlots []int
+	var pendingMem int64
+	for other, r := range s.starting {
+		if other != id {
+			pendingSlots = append(pendingSlots, r.slot)
+			pendingMem += r.memMB
+		}
+	}
+	slot, binds := s.assignBinderSlot(ctx, st, id, pendingSlots...)
+	if err := s.checkMemoryBudget(ctx, id, memLimit+pendingMem); err != nil {
+		return 0, nil, nil, err
+	}
+	s.starting[id] = startReservation{slot: slot, memMB: memLimit}
+	release := func() {
+		s.startMu.Lock()
+		delete(s.starting, id)
+		s.startMu.Unlock()
+	}
+	return slot, binds, release, nil
+}
 
 // SetConnectionCloser 网络模块断开某台手机所有连接的函数（main 里接 network.Syncer.CloseConnections）。
 func (s *Service) SetConnectionCloser(fn func(ctx context.Context, ip string) (int, error)) {
@@ -861,29 +925,20 @@ func (s *Service) Start(ctx context.Context, id string) error {
 			return err
 		}
 	}
-	if s.cfg.MaxRunning > 0 {
-		running := 0
-		for _, other := range st.Phones {
-			if other.ID != id && s.isRunning(ctx, other.ID) {
-				running++
-			}
-		}
-		if running >= s.cfg.MaxRunning {
-			return fmt.Errorf("%w：这台机器同时最多运行 %d 台，先关掉一台", ErrBlocked, s.cfg.MaxRunning)
-		}
-	}
-	// 多开 binder：给这台分一组没人用的 binder（docker bind 进容器，见 assignBinderSlot）。
-	binderSlot, binderBinds := s.assignBinderSlot(ctx, st, id)
-	if err := s.docker.EnsureNetwork(ctx, s.cfg.Network, s.cfg.Subnet, s.gateway()); err != nil {
-		return fmt.Errorf("准备网络：%w", err)
-	}
 	byKey := map[string]any{}
 	for _, r := range s.resolve(*p, st) {
 		byKey[r.Key] = r.Value
 	}
 	memLimit := s.memLimitMB(byKey)
-	if err := s.checkMemoryBudget(ctx, p.ID, memLimit); err != nil {
+	// 台数上限、binder 槽位（docker bind 进容器，见 assignBinderSlot）、内存预算在一把锁里分配并预占，
+	// 直到容器建好才释放——两台同时开机不会拿到同一组 binder。
+	binderSlot, binderBinds, release, err := s.reserveStart(ctx, st, id, memLimit)
+	if err != nil {
 		return err
+	}
+	defer release()
+	if err := s.docker.EnsureNetwork(ctx, s.cfg.Network, s.cfg.Subnet, s.gateway()); err != nil {
+		return fmt.Errorf("准备网络：%w", err)
 	}
 	dataDir, err := s.prepareData(ctx, p.ID, byKey)
 	if err != nil {
@@ -1030,6 +1085,11 @@ func (s *Service) Stop(ctx context.Context, id string) error {
 
 // Delete 删除云手机。数据不直接删，挪到 DataDir/trash 下（误删还能找回），确认没问题再手动清。
 func (s *Service) Delete(ctx context.Context, id string) error {
+	// 先确认真有这台：id 会拼进宿主机路径，不认识的 id 一律不碰文件系统
+	snap := s.store.Snapshot()
+	if _, err := snap.Phone(id); err != nil {
+		return err
+	}
 	if err := s.docker.RemoveContainer(ctx, containerName(id)); err != nil {
 		return err
 	}
@@ -1087,7 +1147,11 @@ func (s *Service) List(ctx context.Context) []PhoneView {
 	for _, p := range st.Phones {
 		p.Status = s.State(ctx, p.ID)
 		view := PhoneView{Phone: p, Issues: s.Check(p, st), Resolved: s.resolve(p, st), Fakes: s.fakes.get(p.ID), Settings: s.settings.get(p.ID), DataJob: s.dataJobs.get(p.ID)}
-		if s.netGuard != nil {
+		if peek := s.netPeek; peek != nil {
+			if err := peek(p.ID); err != nil {
+				view.Network = err.Error()
+			}
+		} else if s.netGuard != nil {
 			if err := s.netGuard(p.ID); err != nil {
 				view.Network = err.Error()
 			}

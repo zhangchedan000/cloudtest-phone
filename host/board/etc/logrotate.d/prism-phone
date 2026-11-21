@@ -1,0 +1,11 @@
+# 管家 / mihomo / 风扇 / 小屏 / DC 的日志都在 3.5G 根分区上，不轮转会慢慢撑满（根分区满过一次、盒子掉线 2 小时）。
+# 守护进程一直开着文件，用 copytruncate。/etc/periodic/hourly/logrotate 每小时检查一次，超过 2M 就转。
+/var/log/pp-agent.log /var/log/pp-mihomo.log /var/log/pp-fan.log /var/log/pp-oled.log /var/log/dc-remote.log {
+    size 2M
+    rotate 5
+    missingok
+    notifempty
+    copytruncate
+    compress
+    delaycompress
+}

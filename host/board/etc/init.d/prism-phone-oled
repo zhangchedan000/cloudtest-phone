@@ -4,11 +4,10 @@
 name="prism-phone-oled"
 description="Prism Phone 正面 OLED 小屏"
 
+supervisor="supervise-daemon"
 command="/usr/local/bin/pp-oled"
-command_background="yes"
 pidfile="/run/prism-phone-oled.pid"
-output_log="/var/log/pp-oled.log"
-error_log="/var/log/pp-oled.log"
+supervise_daemon_args="--stdout /var/log/pp-oled.log --stderr /var/log/pp-oled.log"
 respawn_delay=5
 respawn_max=0
 

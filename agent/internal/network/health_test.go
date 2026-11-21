@@ -79,3 +79,29 @@ func TestHealthHealsPolicyRoute(t *testing.T) {
 		t.Fatal("Last 应该有结果")
 	}
 }
+
+// REDIRECT 模式（板子）：只查 prism_redir 表，不查策略路由，也不误报 prism_phone。
+func TestHealthRedirMode(t *testing.T) {
+	var calls []string
+	exists := true
+	h := &HealthChecker{Syncer: &Syncer{Opt: Options{Redir: true}}, Run: func(_ context.Context, name string, args ...string) (string, error) {
+		c := name + " " + strings.Join(args, " ")
+		calls = append(calls, c)
+		if c == "nft list table ip prism_redir" && !exists {
+			return "", errors.New("no such table")
+		}
+		return "", nil
+	}}
+	if st := h.Check(context.Background()); !st.OK {
+		t.Fatalf("redir 表在时应 OK：%+v %v", st, calls)
+	}
+	for _, c := range calls {
+		if strings.HasPrefix(c, "ip ") || strings.Contains(c, "prism_phone") {
+			t.Fatalf("redir 模式不该查策略路由 / prism_phone：%v", calls)
+		}
+	}
+	exists = false
+	if st := h.Check(context.Background()); st.OK || !strings.Contains(strings.Join(st.Problems, ""), "prism_redir") {
+		t.Fatalf("redir 表不在应报问题：%+v", st)
+	}
+}

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io/fs"
 	"net/http"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -104,6 +105,10 @@ func (s *Server) Handler() http.Handler {
 // 网页本身不需要 token，打开后在页面里填一次。
 func (s *Server) auth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/api/") && !safeAPIPath(r) {
+			writeErr(w, http.StatusBadRequest, "路径不合法")
+			return
+		}
 		if s.token == "" || !strings.HasPrefix(r.URL.Path, "/api/") || r.URL.Path == "/api/health" {
 			next.ServeHTTP(w, r)
 			return
@@ -111,6 +116,10 @@ func (s *Server) auth(next http.Handler) http.Handler {
 		got := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
 		if c, err := r.Cookie("pp_token"); got == "" && err == nil {
 			got = c.Value
+			// 管理页写 cookie 时用了 encodeURIComponent，这里还原
+			if v, err := url.QueryUnescape(got); err == nil {
+				got = v
+			}
 		}
 		if subtle.ConstantTimeCompare([]byte(got), []byte(s.token)) != 1 {
 			writeErr(w, http.StatusUnauthorized, "需要登录（token 不对）")
@@ -118,6 +127,21 @@ func (s *Server) auth(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// safeAPIPath 挡住路径里的「..」和编码过的斜杠：{id} 这类参数会被拼进宿主机路径
+// （删手机时 DataDir/phones/{id} 会被挪进回收站），绝不能跳出数据目录。
+func safeAPIPath(r *http.Request) bool {
+	raw := strings.ToLower(r.URL.RawPath)
+	if strings.Contains(raw, "%2f") || strings.Contains(raw, "%5c") || strings.Contains(raw, "%00") {
+		return false
+	}
+	for _, seg := range strings.Split(r.URL.Path, "/") {
+		if seg == ".." || seg == "." || strings.ContainsAny(seg, "\\\x00") {
+			return false
+		}
+	}
+	return true
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

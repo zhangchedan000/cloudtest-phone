@@ -68,8 +68,10 @@ func (s *Server) uploadFile(w http.ResponseWriter, r *http.Request) {
 // batchIDs 从 ?ids=a,b,c 取手机 ID。
 func batchIDs(r *http.Request) []string {
 	var ids []string
+	seen := map[string]bool{}
 	for _, id := range strings.Split(r.URL.Query().Get("ids"), ",") {
-		if id = strings.TrimSpace(id); id != "" {
+		if id = strings.TrimSpace(id); id != "" && !seen[id] {
+			seen[id] = true
 			ids = append(ids, id)
 		}
 	}

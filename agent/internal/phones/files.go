@@ -94,7 +94,7 @@ func (s *Service) installStaged(ctx context.Context, id, local string) (string, 
 		return "", err
 	}
 	name := containerName(id)
-	remote := "/data/local/tmp/pp-install.apk"
+	remote := "/data/local/tmp/pp-install-" + randHex(8) + ".apk" // 每次不同：同时装几个不会互相覆盖
 	if out, err := s.run.Run(ctx, "docker", "cp", local, name+":"+remote); err != nil {
 		return "", fmt.Errorf("传进手机失败：%v %s", err, out)
 	}

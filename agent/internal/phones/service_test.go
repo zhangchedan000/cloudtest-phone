@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"testing/fstest"
 	"time"
@@ -80,10 +81,15 @@ func newTestService(t *testing.T, dev bool, gpu string) (*Service, *fakeDocker, 
 }
 
 // fakeRunner 假装执行 docker exec：getprop 返回已开机，其他命令都成功，记下调用。
-type fakeRunner struct{ calls []string }
+type fakeRunner struct {
+	mu    sync.Mutex
+	calls []string
+}
 
 func (r *fakeRunner) Run(_ context.Context, name string, args ...string) (string, error) {
+	r.mu.Lock()
 	r.calls = append(r.calls, name+" "+strings.Join(args, " "))
+	r.mu.Unlock()
 	if len(args) >= 3 && args[2] == "getprop" {
 		return "1", nil
 	}

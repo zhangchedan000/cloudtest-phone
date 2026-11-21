@@ -1,0 +1,3 @@
+# Docker 只走本机 socket。魔云腾原厂配置是 -H tcp://0.0.0.0:2375（不加密、不验证，局域网谁都能拿 root），去掉。
+DOCKER_OPTS="-H unix:///var/run/docker.sock"
+LOGPROXY_CHMOD=0644

@@ -38,8 +38,23 @@ type execRunner struct{}
 func ExecRunner() Runner { return execRunner{} }
 
 func (execRunner) Run(ctx context.Context, name string, args ...string) (string, error) {
+	if _, ok := ctx.Deadline(); !ok {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, defaultRunTimeout(name, args))
+		defer cancel()
+	}
 	out, err := exec.CommandContext(ctx, name, args...).CombinedOutput()
 	return strings.TrimSpace(string(out)), err
+}
+
+// defaultRunTimeout 调用方没给超时时的兜底：安卓卡死（servicemanager / system_server 挂住）时
+// docker exec 会永远等下去，协程泄漏、手机一直显示「开机中」。docker exec 给 5 分钟（够装大 APK），
+// 其他宿主机命令（备份 tar / cp 大磁盘镜像）给 1 小时，只防永久卡死。
+func defaultRunTimeout(name string, args []string) time.Duration {
+	if name == "docker" && len(args) > 0 && args[0] == "exec" {
+		return 5 * time.Minute
+	}
+	return time.Hour
 }
 
 // FakeStatus 一台设备伪造文件的挂载结果（给管理页看）。
