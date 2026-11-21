@@ -76,14 +76,14 @@ sign() { # sign <in.apk> <out.apk>：testkey 重签（先去掉原签名；有 z
 # sign() 的 mktemp 默认落 /tmp（板子根分区 3.5G，会满）→ 走 PP_BUILD（/mmc 大盘）。踩坑 #110。
 export TMPDIR="${TMPDIR:-${PP_BUILD:-/tmp}/tmp}"; mkdir -p "$TMPDIR"
 W=$(mktemp -d "$PP_BUILD/tmp-telimg.XXXX")
-V=$W/m_system; P=$W/m_product
+V=$W/m_system; P=$W/m_product; DV=$W/m_dobox
 cleanup() {
-  for m in "$V" "$P"; do grep -q " $m " /proc/mounts && umount "$m" 2>/dev/null || true; done
+  for m in "$V" "$P" "$DV"; do grep -q " $m " /proc/mounts && umount "$m" 2>/dev/null || true; done
   for l in $(losetup -a 2>/dev/null | awk -F: "/$(basename "$W")/{print \$1}"); do losetup -d "$l" 2>/dev/null || true; done
   rm -rf "$W"
 }
 trap cleanup EXIT
-mkdir -p "$V" "$P" "$W/stage"
+mkdir -p "$V" "$P" "$DV" "$W/stage"
 
 # ---- 抠电话应用 ----
 if [ ! -s "$CACHE/$emu" ]; then
@@ -111,6 +111,29 @@ cc=$(find "$V" "$P" -ipath '*CarrierConfig*' -iname '*.apk' 2>/dev/null | head -
 [ -n "$tele" ] || die "模拟器里没找到 TeleService（com.android.phone）"
 [ -n "$prov" ] || die "模拟器里没找到 TelephonyProvider"
 log "找到：TeleService=$(basename "$(dirname "$tele")")  TelephonyProvider=$(basename "$(dirname "$prov")")  CarrierConfig=${cc:+有}${cc:-无}"
+
+# A15 专属（踩坑 #117）：模拟器 arm64-v8a-35_r02 的 TeleService 是比 redroid15 框架更新的 AOSP 构建，
+# 会调框架里没有的方法（TelephonyCountryDetector.getInstance / FeatureFlags.useAlarmCallback）→
+# com.android.phone 启动崩溃循环、iphonesubinfo/phone 服务不注册、App 读不到电话信息。
+# 改从魔云腾 dobox Q15 取 TeleService：dobox Q15 和 redroid15 是同一套 AOSP 15 框架构建
+# （/system/framework/telephony-common.jar md5 完全相同），它的 TeleService 自洽匹配、不崩。
+# 只换 TeleService；TelephonyProvider / CarrierConfig 仍用模拟器的（它们不触发错配）。
+# dobox 镜像根目录有 /super.img（和扒 Mali 同一个取法，build-mali-image.sh）。A14/A16 不需要（它们
+# 模拟器 TeleService 和各自 redroid 框架恰好对得上）。
+if [ "$ver" = 15 ]; then
+  DOBOX15="${DOBOX15:-registry.cn-guangzhou.aliyuncs.com/mytos/dobox:Q15_v3_all_202610271937}"
+  log "A15：TeleService 改从 dobox 取（$DOBOX15）"
+  docker image inspect "$DOBOX15" >/dev/null 2>&1 || die "缺 dobox 镜像 $DOBOX15（先 docker pull/load；见踩坑 #117）"
+  dcid=$(docker create "$DOBOX15")
+  docker cp "$dcid:/super.img" "$W/dobox-super.img"
+  docker rm "$dcid" >/dev/null
+  mkdir -p "$W/dobox-lp"
+  python3 -I "$TOOLS/lpunpack.py" -p system "$W/dobox-super.img" "$W/dobox-lp"
+  mount -o ro,loop "$W/dobox-lp/system.img" "$DV"
+  tele=$(find "$DV" -ipath '*priv-app/TeleService*' -iname '*.apk' 2>/dev/null | head -1 || true)
+  [ -n "$tele" ] || die "dobox Q15 里没找到 TeleService"
+  log "A15：用 dobox 的 TeleService=$tele"
+fi
 
 mkdir -p "$W/stage/system/priv-app/TeleService" "$W/stage/system/priv-app/TelephonyProvider"
 sign "$tele" "$W/stage/system/priv-app/TeleService/TeleService.apk"
