@@ -19,7 +19,7 @@ img=$1; ver=$2
 B=${PP_BUILD:-/mmc/pp-build}
 log(){ echo "$(date +%T) [selinux] $*"; }
 die(){ echo "[selinux] 错误：$*" >&2; exit 1; }
-SEL_VER=4
+SEL_VER=5
 cur=$(docker image inspect -f '{{index .Config.Labels "prism.selinux"}}' "$img" 2>/dev/null || true)
 [ "$cur" = "$SEL_VER" ] && { log "$img 已经做好（第 $SEL_VER 版），跳过"; exit 0; }
 base=$img
@@ -65,6 +65,7 @@ for d in system_ext product odm; do
   docker cp "$cid:/$d" "$W/x/lnk_$d" >/dev/null 2>&1 || true
 done
 docker cp "$cid:/vendor/etc/selinux/vendor_file_contexts" "$W/x/vendor_file_contexts" >/dev/null
+docker cp "$cid:/vendor/lib64" "$W/x/vlib64" >/dev/null
 docker rm "$cid" >/dev/null
 
 # ---- 1b) RK3588 的设备节点补标签（显卡 mali、视频编解码 mpp / rga：镜像是通用的 vendor，规则里没写，
@@ -75,6 +76,52 @@ for kv in "/dev/mali0 u:object_r:gpu_device:s0" "/dev/mpp_service u:object_r:vid
   p=${kv%% *}
   grep -q "^$p[[:space:]]" "$W/x/file_contexts" || { echo "$kv" >> "$O/vendor/etc/selinux/vendor_file_contexts"; echo "$kv" >> "$W/x/file_contexts"; log "设备标签：$kv"; }
 done
+# App 进程里直接加载的显卡库（gralloc mapper、EGL / Vulkan 驱动）和它们依赖的 vendor 库要是 same_process_hal_file
+# （通用 vendor 规则里没写 Mali 的，落到 vendor_file，开强制模式 App 画不出界面）：按 ELF 依赖自动算
+python3 - "$W/x/vlib64" "$W/x/file_contexts" >> "$O/vendor/etc/selinux/vendor_file_contexts" <<'EOF'
+import os, re, struct, sys
+lib, fc = sys.argv[1:3]
+def needed(p):
+    try: b = open(p, "rb").read()
+    except OSError: return []
+    if b[:4] != b"\x7fELF" or b[4] != 2: return []
+    shoff, = struct.unpack_from("<Q", b, 0x28); shentsize, shnum = struct.unpack_from("<HH", b, 0x3a)
+    secs = [struct.unpack_from("<IIQQQQIIQQ", b, shoff + i * shentsize) for i in range(shnum)]
+    dyn = [x for x in secs if x[1] == 6]
+    if not dyn: return []
+    d = dyn[0]; st = secs[d[6]]; out = []
+    for i in range(0, d[5], 16):
+        tag, val = struct.unpack_from("<qQ", b, d[4] + i)
+        if tag == 0: break
+        if tag == 1:
+            o = st[4] + val; out.append(b[o:b.index(b"\0", o)].decode())
+    return out
+start = []
+for sub in ("egl", "hw"):
+    d = os.path.join(lib, sub)
+    for n in os.listdir(d) if os.path.isdir(d) else []:
+        if sub == "egl" or re.match(r"(android\.hardware\.graphics\.mapper@.*|vulkan\..*)\.so$", n):
+            start.append(os.path.join(sub, n))
+seen, queue = set(), list(start)
+while queue:
+    rel = queue.pop()
+    if rel in seen: continue
+    seen.add(rel)
+    for n in needed(os.path.join(lib, rel)):
+        if os.path.exists(os.path.join(lib, n)): queue.append(n)
+have = open(fc).read()
+for rel in sorted(seen):
+    path = "/vendor/lib64/" + rel
+    pat = re.escape(path).replace("\\/", "/")
+    if pat in have: continue
+    print(f"{pat} u:object_r:same_process_hal_file:s0")
+EOF
+n=$(grep -c same_process_hal_file "$O/vendor/etc/selinux/vendor_file_contexts")
+cat "$O/vendor/etc/selinux/vendor_file_contexts" > "$W/x/vfc.new"
+# 打标签用的合并 file_contexts 也换成新的 vendor_file_contexts
+grep -v -F -x -f "$W/x/vendor_file_contexts" "$W/x/file_contexts" > "$W/x/fc.other" || true
+cat "$W/x/fc.other" "$W/x/vfc.new" > "$W/x/file_contexts"
+log "同进程显卡库：vendor_file_contexts 里 same_process_hal_file 共 $n 条"
 chmod 644 "$O/vendor/etc/selinux/vendor_file_contexts"
 
 # ---- 2) 换掉被改过的库（只换带 HACKED 的那份） ----

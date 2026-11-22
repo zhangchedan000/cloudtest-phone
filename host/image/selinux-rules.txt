@@ -23,3 +23,11 @@ allow mediaprovider_app fuse_device chr_file read,write,open,getattr,ioctl
 
 # 拿不到开机 ID 时 libcutils 退回开 /dev/ashmem
 allow domain ashmem_device chr_file read,write,open,getattr,ioctl,map
+
+# Mali gralloc 分配的共享内存（memfd），SurfaceFlinger 和 App 都要读写（RK 真机的规则里有）
+allow domain hal_graphics_allocator_default_tmpfs file read,write,map,getattr
+# 容器里 tracefs / 设备 sysfs 节点只有通用的 sysfs 标签（真机按设备路径单独标）
+allow lmkd sysfs file read,open
+allow init sysfs file write,setattr,open
+allow system_server sysfs file read,open,getattr
+allow storaged sysfs file read,open,getattr
