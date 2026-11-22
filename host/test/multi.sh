@@ -60,6 +60,7 @@ for _ in $(seq 1 90); do
   left=0
   while read -r id _; do
     grep -q "^$id " "$DIR/boot.txt" && continue
+    [ "$(docker inspect -f '{{.State.Running}}' "pp-$id" 2>/dev/null)" = true ] || continue   # 没开起来的（比如内存把关拒了）不等
     if [ "$(docker exec "pp-$id" getprop sys.boot_completed 2>/dev/null)" = 1 ]; then echo "$id $(( $(date +%s) - t0 ))" >> "$DIR/boot.txt"; else left=$((left+1)); fi
   done < "$DIR/phones.txt"
   [ "$left" = 0 ] && break
@@ -108,7 +109,10 @@ echo "ping=$(ping -c1 -W3 1.1.1.1 >/dev/null 2>&1 && echo ok || echo fail)"
 '
 : > "$DIR/adb.txt"
 while read -r id ver g cc px; do
-  ip=$(curl -s -H "$H" "$API/phones/$id" | python3 -c 'import sys,json;print(json.load(sys.stdin).get("ip",""))' 2>/dev/null)
+  [ "$(docker inspect -f '{{.State.Running}}' "pp-$id" 2>/dev/null)" = true ] || { echo "$id 没开起来" >> "$DIR/adb.txt"; continue; }
+  ip=$(curl -s -H "$H" "$API/phones" | python3 -c 'import sys,json
+for p in json.load(sys.stdin):
+    if p["id"]==sys.argv[1]: print(p.get("ip",""))' "$id" 2>/dev/null)
   curl -s -m20 -X POST -H "$H" -H 'Content-Type: application/json' -d "{\"key\":\"$KEY\"}" "$API/phones/$id/adb-key" -o /dev/null
   c=$(adb connect "$ip:5555" 2>&1 | tr '\n' ' ')
   st=$(adb -s "$ip:5555" get-state 2>&1)
@@ -117,7 +121,10 @@ while read -r id ver g cc px; do
     echo "id=$id"; echo "spec_ver=$ver"; echo "spec_gapps=$g"; echo "spec_cc=$cc"; echo "spec_proxy=$px"
     echo "boot_secs=$(grep "^$id " "$DIR/boot.txt" | cut -d' ' -f2)"
     echo "adb_state=$st"
-    echo "exit_ip=$(curl -s -H "$H" "$API/phones/$id" | python3 -c 'import sys,json;print(json.load(sys.stdin).get("exitIp",""))' 2>/dev/null)"
+    echo "exit_ip=$(python3 -c 'import sys,json
+d=json.load(open(sys.argv[1])); d=d.get("proxies",d) if isinstance(d,dict) else d
+for p in d:
+    if p["id"]==sys.argv[2]: c=p.get("check") or p.get("lastCheck") or {}; print(c.get("exitIp") or c.get("ip") or "")' "$DIR/proxies.json" "$px" 2>/dev/null)"
     adb -s "$ip:5555" shell "$PULL" 2>&1
     echo "adb_root=$(adb -s "$ip:5555" root 2>&1 | tr '\n' ' ')"
   } > "$DIR/$id.kv"
@@ -127,6 +134,7 @@ log "ADB 拉值完成（$(grep -c 'state=device' "$DIR/adb.txt")/$(wc -l < "$DIR
 # ---- 同时看 N 路实时画面 30 秒 ----
 log "同时开 $(wc -l < "$DIR/phones.txt") 路实时画面 30 秒"
 while read -r id _; do
+  [ "$(docker inspect -f '{{.State.Running}}' "pp-$id" 2>/dev/null)" = true ] || continue
   ( b=$(curl -s -m30 -H "$H" "$API/phones/$id/stream?w=720&h=1600" -o /dev/null -w '%{size_download}'); echo "$id $b" >> "$DIR/stream.txt" ) &
 done < "$DIR/phones.txt"
 sleep 15
