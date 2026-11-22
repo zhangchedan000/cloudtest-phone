@@ -49,6 +49,16 @@ func isMounted(ctx context.Context, run Runner, dir string) bool {
 	return err == nil
 }
 
+// dataWritable 停用了的文件系统读目录还行（有缓存），写就 I/O 错误：用建一个空文件试
+func dataWritable(dir string) bool {
+	p := filepath.Join(dir, ".pp_alive")
+	if err := os.WriteFile(p, nil, 0o600); err != nil {
+		return false
+	}
+	_ = os.Remove(p)
+	return true
+}
+
 func dirEmpty(dir string) bool {
 	entries, err := os.ReadDir(dir)
 	return err != nil || len(entries) == 0
@@ -65,7 +75,7 @@ func (s *Service) prepareData(ctx context.Context, id string, byKey map[string]a
 		return dir, nil
 	}
 	if isMounted(ctx, s.run, dir) {
-		if _, err := os.ReadDir(dir); err == nil {
+		if dataWritable(dir) {
 			return dir, nil
 		}
 		// 安卓自己关机 / 重启时会对 /data 发 F2FS_IOC_SHUTDOWN（和 EXT4_IOC_SHUTDOWN 是同一个号）：先刷盘、再把文件系统
