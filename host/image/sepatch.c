@@ -4,6 +4,7 @@
 // 规则文件每行一条：
 //   permissive <类型>                         这个域只记录不拦截
 //   allow <源类型或属性> <目标类型或属性> <类> <权限>[,<权限>...]
+//   nodontaudit                                去掉所有「拦了不记」（dontaudit）规则：只用来查问题，正式镜像不用
 //   mlstrusted <类型>                          当成 mlstrustedobject（多级安全约束里「可信对象」）：带分类的 App 也能写它。
 //                                              约束在编译时已经展开成具体类型，所以直接改约束表达式，不只是加属性
 // 编译（Debian：apt install libsepol-dev）：gcc -O2 -o sepatch sepatch.c -l:libsepol.a（内部函数只在静态库里导出）
@@ -75,6 +76,12 @@ static int add_mlstrusted(const char *name) {
 	return 0;
 }
 
+static int clear_dontaudit(avtab_key_t *k, avtab_datum_t *d, void *arg) {
+	(void)arg;
+	if (k->specified & AVTAB_AUDITDENY) d->data = ~0U; // auditdeny 里清掉的位就是 dontaudit：全设回 1
+	return 0;
+}
+
 int main(int argc, char **argv) {
 	if (argc != 4) { fprintf(stderr, "用法：sepatch <输入 policy> <输出 policy> <规则文件>\n"); return 2; }
 	sepol_set_policydb(&pdb);
@@ -99,6 +106,9 @@ int main(int argc, char **argv) {
 		if (!strcmp(w[0], "permissive") && k == 2) {
 			type_datum_t *t = type_of(w[1]);
 			if (!t || ebitmap_set_bit(&pdb.permissive_map, t->s.value, 1)) { bad++; continue; }
+		} else if (!strcmp(w[0], "nodontaudit") && k == 1) {
+			avtab_map(&pdb.te_avtab, clear_dontaudit, NULL);
+			avtab_map(&pdb.te_cond_avtab, clear_dontaudit, NULL);
 		} else if (!strcmp(w[0], "mlstrusted") && k == 2) {
 			if (add_mlstrusted(w[1])) { bad++; continue; }
 		} else if (!strcmp(w[0], "allow") && k == 5) {
