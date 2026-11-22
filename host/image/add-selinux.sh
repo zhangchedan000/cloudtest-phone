@@ -19,7 +19,7 @@ img=$1; ver=$2
 B=${PP_BUILD:-/mmc/pp-build}
 log(){ echo "$(date +%T) [selinux] $*"; }
 die(){ echo "[selinux] 错误：$*" >&2; exit 1; }
-SEL_VER=1
+SEL_VER=2
 cur=$(docker image inspect -f '{{index .Config.Labels "prism.selinux"}}' "$img" 2>/dev/null || true)
 [ "$cur" = "$SEL_VER" ] && { log "$img 已经做好（第 $SEL_VER 版），跳过"; exit 0; }
 base=$img
@@ -124,6 +124,9 @@ for root, _, files in os.walk("/w/rc"):
             l = lines[i]; out.append(l)
             m = re.match(r"^service\s+(\S+)\s+(\S+)", l)
             if m:
+                # 服务那一行用 \ 续行时（比如 vold 的启动参数分好几行），seclabel 要加在续行结束之后，不然把参数截断了
+                while lines[i].rstrip().endswith("\\") and i + 1 < len(lines):
+                    i += 1; out.append(lines[i])
                 j = i + 1; has = False
                 while j < len(lines) and not re.match(r"^(service|on|import)\s", lines[j]):
                     if re.match(r"^\s+seclabel\s", lines[j]): has = True
