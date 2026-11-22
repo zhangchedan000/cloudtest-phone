@@ -13,7 +13,11 @@
 // 容器版安卓的 init 跳过了加载规则这一步（手机里 getenforce = Disabled）；魔云腾 Q1 内核带 SELinux 命名空间，
 // 容器里挂 selinuxfs 就是这台手机自己的一套，加载规则、开强制模式都不影响宿主机和别的手机。做的事和安卓
 // init 的 selinux_setup 阶段一样：挂 selinuxfs → 把 /vendor/etc/selinux/precompiled_sepolicy 写进 load →
-// 设模式 → 下一次 exec 进 u:r:init:s0。失败就照旧不开 SELinux 启动。
+// 设模式。失败就照旧不开 SELinux 启动。
+// 安卓 init 的第一阶段在真机上是「还没加载规则」时跑的（挂 /proc、建设备节点），这里规则已经加载了：
+// 不能让它直接进 init 域（强制模式下 init 域不许做那些挂载，开不了机）。所以第一阶段从一块匿名内存（memfd）里
+// 的 init 副本启动——这块内存没有 init_exec 标签，不触发切域，第一阶段留在 kernel 域（规则里设成只记录不拦截）；
+// 它 exec /system/bin/init 进第二阶段时，按安卓规则 kernel 执行 init_exec 自动切到 init 域，和真机一样。
 // --cmdd：加载完规则后拉起手机里的命令小助手（<管家程序> pp-cmdd /data/.ppc/s，见 agent/internal/phonecmd），
 // 它先给挂进来的文件补标签，补完往 fd 3 写一个字节，这边等到了（最多 60 秒）再启动安卓。
 // 编译（arm64，不链接 libc）：sh host/timens/build.sh
@@ -24,6 +28,8 @@
 #define SYS_read 63
 #define SYS_ppoll 73
 #define SYS_clone 220
+#define SYS_sendfile 71
+#define SYS_memfd_create 279
 #define SYS_openat 56
 #define SYS_fstat 80
 #define SYS_munmap 215
@@ -135,6 +141,28 @@ static void start_cmdd(const char *exe, char **envp) {
 	sc(SYS_close, fds[0], 0, 0, 0);
 }
 
+// 把程序复制进一块匿名内存，返回 "/proc/self/fd/N"（buf 里）；失败返回 0
+static char *to_memfd(const char *path, char *buf) {
+	long in = sc(SYS_openat, AT_FDCWD, (long)path, O_CLOEXEC, 0);
+	if (in < 0) return 0;
+	long st[16];
+	if (sc(SYS_fstat, in, (long)st, 0, 0) != 0) { sc(SYS_close, in, 0, 0, 0); return 0; }
+	long mfd = sc(SYS_memfd_create, (long)"init", 1 /* MFD_CLOEXEC */, 0, 0);
+	if (mfd < 0) { sc(SYS_close, in, 0, 0, 0); return 0; }
+	long left = st[6];
+	while (left > 0) {
+		long n = sc(SYS_sendfile, mfd, in, 0, left);
+		if (n <= 0) break;
+		left -= n;
+	}
+	sc(SYS_close, in, 0, 0, 0);
+	if (left != 0) { sc(SYS_close, mfd, 0, 0, 0); return 0; }
+	int k = append(buf, 0, "/proc/self/fd/");
+	k += itoa10(mfd, buf + k);
+	buf[k] = 0;
+	return buf;
+}
+
 // 加载这台手机自己的 SELinux 规则。返回 0 = 成功
 static int selinux_setup(int enforcing) {
 	long r = sc6(SYS_mount, (long)"selinuxfs", (long)"/sys/fs/selinux", (long)"selinuxfs", 0, 0, 0);
@@ -202,16 +230,20 @@ void cmain(long *sp) {
 	}
 	if (old >= 0) sc(SYS_close, old, 0, 0, 0);
 	// SELinux 放在最后（时间命名空间那几步用的 /proc 文件不受规则影响）
+	char mpath[32];
+	const char *exe = argv[2];
 	if (se >= 0) {
 		if (selinux_setup(se) == 0) {
 			if (cmdd) start_cmdd(cmdd, envp);
-			// 下一次 exec（安卓 init）进 init 域，和安卓 selinux_setup 阶段的 setexeccon 一样（小助手已经起来了，不受影响）
-			if (put("/proc/self/attr/exec", "u:r:init:s0", 11) != 0) say("pp-timens: setexeccon init failed\n");
+			// 第一阶段留在 kernel 域（见文件头）
+			const char *m = to_memfd(argv[2], mpath);
+			if (m) exe = m;
+			else say("pp-timens: copy init to memfd failed\n");
 		} else {
 			say("pp-timens: SELinux not loaded, booting without it\n");
 		}
 	}
-	sc(SYS_execve, (long)argv[2], (long)(argv + 2), (long)envp, 0);
+	sc(SYS_execve, (long)exe, (long)(argv + 2), (long)envp, 0);
 	say("pp-timens: execve failed\n");
 	sc(SYS_exit, 1, 0, 0, 0);
 }
