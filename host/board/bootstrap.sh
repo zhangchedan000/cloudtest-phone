@@ -47,7 +47,7 @@ grep -q mirrors.aliyun.com /etc/apk/repositories 2>/dev/null || {
   say "apk 换阿里源"
 }
 apk update -q || die "apk update 失败（网络？）"
-apk add -q docker nftables logrotate curl git python3 pigz e2fsprogs e2fsprogs-extra util-linux || die "装软件包失败"
+apk add -q docker nftables logrotate curl git python3 pigz e2fsprogs e2fsprogs-extra util-linux iw hostapd dnsmasq iproute2 || die "装软件包失败"
 ok "软件包"
 
 # ---------- 2. Docker（数据放 /mmc，根分区只有 3.5G，踩坑 #119） ----------

@@ -73,6 +73,8 @@ check() {
   done
   pgrep -f '^/bin/sh /usr/local/bin/fan-control.sh' >/dev/null && say "✓ 风扇脚本在跑" || { say "✗ 风扇脚本没在跑（满载会过热）"; bad=1; }
   [ -x /opt/pp-rootcanal/pp-rootcanal ] && [ -x /usr/local/bin/pp-rootcanal ] && say "✓ 蓝牙芯片模拟器" || say "· 没装蓝牙芯片模拟器（手机蓝牙关着；包放 /mmc/pp-dist/pp-rootcanal-arm64-bundle.tgz 再跑一次）"
+  if [ -d /sys/module/mac80211_hwsim ]; then say "✓ 虚拟 WiFi 驱动已加载"; else say "· 虚拟 WiFi 驱动没加载（手机走有线网 eth0；只有魔云腾 Q1 这版内核有现成驱动，踩坑 #129）"; fi
+  case " $(sed -n 's/^PP_ARGS="\(.*\)"$/\1/p' /etc/conf.d/prism-phone-agent 2>/dev/null) " in *" -no-wifi "*) say "· 管家带着 -no-wifi（手机走有线网）";; esac
   netstat -tln 2>/dev/null | grep -q ':2375 ' && { say "✗ docker 2375 端口开着"; bad=1; } || say "✓ docker 2375 已关"
   [ -f /etc/conf.d/prism-phone-agent ] && [ "$(stat -c %a /etc/conf.d/prism-phone-agent)" = 600 ] && say "✓ 令牌文件权限 600" || { say "✗ /etc/conf.d/prism-phone-agent 不在或权限不是 600"; bad=1; }
   c=$(curl -s -m3 -o /dev/null -w '%{http_code}' 127.0.0.1:8099/api/health)
@@ -173,6 +175,24 @@ fi
 if [ -x /opt/pp-rootcanal/pp-rootcanal ]; then
   fetch host/board/usr/local/bin/pp-rootcanal pp-rootcanal.wrapper
   cmp -s "$DL/pp-rootcanal.wrapper" /usr/local/bin/pp-rootcanal || { install -m 755 "$DL/pp-rootcanal.wrapper" /usr/local/bin/pp-rootcanal; say "更新 /usr/local/bin/pp-rootcanal"; }
+fi
+
+# ---------- 5.6 虚拟 WiFi 驱动 mac80211_hwsim（踩坑 #129）：只给【和编它时一模一样的内核】装 ----------
+# 魔云腾内核没带这个驱动；仓库里的 .ko 是按 Q1 这版内核自带的头文件编的，换了内核（哪怕版本号一样）结构可能不同，不能装。
+KMOD_DIR=tools/dist/kmod/mytos-q1-6.1.141
+KMOD_KERNEL="Linux version 6.1.141 (root@SWDM8607) (clang version 10.0.6 for Android NDK) #278 SMP PREEMPT Mon Oct 19 06:29:17 UTC 2026"
+if [ "$(cat /proc/version 2>/dev/null)" = "$KMOD_KERNEL" ]; then
+  fetch "$KMOD_DIR/mac80211_hwsim.ko" hwsim.ko
+  fetch "$KMOD_DIR/mac80211_hwsim.ko.sha256" hwsim.ko.sha256
+  if [ "$(sha256sum "$DL/hwsim.ko" | cut -d' ' -f1)" = "$(cut -d' ' -f1 "$DL/hwsim.ko.sha256")" ]; then
+    mkdir -p /opt/prism-phone/kmod
+    cmp -s "$DL/hwsim.ko" /opt/prism-phone/kmod/mac80211_hwsim.ko || { install -m 644 "$DL/hwsim.ko" /opt/prism-phone/kmod/mac80211_hwsim.ko; say "装虚拟 WiFi 驱动（/opt/prism-phone/kmod/mac80211_hwsim.ko）"; }
+    printf '%s\n' "$KMOD_KERNEL" > /opt/prism-phone/kmod/kernel.txt   # 管家 init.d 开机加载前按它核对内核
+    [ -d /sys/module/mac80211_hwsim ] || { insmod /opt/prism-phone/kmod/mac80211_hwsim.ko radios=0 && say "加载虚拟 WiFi 驱动"; }
+  else
+    say "· 虚拟 WiFi 驱动校验不对，没装（手机照旧用有线网）"
+  fi
+  apk info -e hostapd >/dev/null 2>&1 && apk info -e iw >/dev/null 2>&1 && apk info -e dnsmasq >/dev/null 2>&1 && apk info -e iproute2 >/dev/null 2>&1 || { apk add -q iw hostapd dnsmasq iproute2 && say "装 WiFi 用的 iw / hostapd / dnsmasq / iproute2"; }
 fi
 
 # ---------- 6. 生效 ----------

@@ -35,5 +35,10 @@ start_pre() {
   # local.d 在所有服务之后才跑：binder 设备和网络转发规则这里先补上（两个脚本都可重复执行）
   [ -e /dev/vndbinder ] || sh /etc/local.d/binder-nodes.start
   nft list table ip prism_redir >/dev/null 2>&1 || sh /etc/local.d/pp-redir.start
+  # 虚拟 WiFi 驱动（踩坑 #129）：只在内核和编它时一模一样时加载（kernel.txt 由 install.sh 写）
+  k=/opt/prism-phone/kmod
+  if [ ! -d /sys/module/mac80211_hwsim ] && [ -f "$k/mac80211_hwsim.ko" ] && [ "$(cat /proc/version)" = "$(cat "$k/kernel.txt" 2>/dev/null)" ]; then
+    insmod "$k/mac80211_hwsim.ko" radios=0 || ewarn "虚拟 WiFi 驱动加载失败（手机走有线网）"
+  fi
   return 0
 }
