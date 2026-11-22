@@ -19,7 +19,7 @@ img=$1; ver=$2
 B=${PP_BUILD:-/mmc/pp-build}
 log(){ echo "$(date +%T) [selinux] $*"; }
 die(){ echo "[selinux] 错误：$*" >&2; exit 1; }
-SEL_VER=2
+SEL_VER=3
 cur=$(docker image inspect -f '{{index .Config.Labels "prism.selinux"}}' "$img" 2>/dev/null || true)
 [ "$cur" = "$SEL_VER" ] && { log "$img 已经做好（第 $SEL_VER 版），跳过"; exit 0; }
 base=$img
@@ -64,7 +64,18 @@ done
 for d in system_ext product odm; do
   docker cp "$cid:/$d" "$W/x/lnk_$d" >/dev/null 2>&1 || true
 done
+docker cp "$cid:/vendor/etc/selinux/vendor_file_contexts" "$W/x/vendor_file_contexts" >/dev/null
 docker rm "$cid" >/dev/null
+
+# ---- 1b) RK3588 的设备节点补标签（显卡 mali、视频编解码 mpp / rga：镜像是通用的 vendor，规则里没写，
+#          落到通用的 device 类型，App 画界面 / 编码器会被拦）。和真 RK 手机用的类型一样；已经有的不重复加 ----
+mkdir -p "$O/vendor/etc/selinux"
+cp "$W/x/vendor_file_contexts" "$O/vendor/etc/selinux/vendor_file_contexts"
+for kv in "/dev/mali0 u:object_r:gpu_device:s0" "/dev/mpp_service u:object_r:video_device:s0" "/dev/rga u:object_r:video_device:s0"; do
+  p=${kv%% *}
+  grep -q "^$p[[:space:]]" "$W/x/file_contexts" || { echo "$kv" >> "$O/vendor/etc/selinux/vendor_file_contexts"; echo "$kv" >> "$W/x/file_contexts"; log "设备标签：$kv"; }
+done
+chmod 644 "$O/vendor/etc/selinux/vendor_file_contexts"
 
 # ---- 2) 换掉被改过的库（只换带 HACKED 的那份） ----
 for f in system/lib64/libselinux.so system/lib64/libbinder.so vendor/lib64/libbinder.so; do

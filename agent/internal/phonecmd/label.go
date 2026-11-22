@@ -110,7 +110,7 @@ func (l *Labeler) Lookup(path string, mode os.FileMode) string {
 func (l *Labeler) Relabel(path string, recursive bool, skip map[string]bool) int {
 	n := 0
 	walk := func(p string, fi os.FileInfo) {
-		if ctx := l.Lookup(p, fi.Mode()); ctx != "" && lsetxattr(p, ctx) == nil {
+		if ctx := l.Lookup(p, fi.Mode()); ctx != "" && setLabel(p, ctx) == nil {
 			n++
 		}
 	}
@@ -135,6 +135,20 @@ func (l *Labeler) Relabel(path string, recursive bool, skip map[string]bool) int
 		})
 	}
 	return n
+}
+
+// setLabel 打标签；挂载点是只读 bind（build.prop、伪造文件）时临时改可写、打完改回只读。
+func setLabel(p, ctx string) error {
+	err := lsetxattr(p, ctx)
+	if err != syscall.EROFS {
+		return err
+	}
+	if e := syscall.Mount("", p, "", syscall.MS_REMOUNT|syscall.MS_BIND, ""); e != nil {
+		return err
+	}
+	err = lsetxattr(p, ctx)
+	_ = syscall.Mount("", p, "", syscall.MS_REMOUNT|syscall.MS_BIND|syscall.MS_RDONLY, "")
+	return err
 }
 
 func lsetxattr(p, ctx string) error {
@@ -191,6 +205,12 @@ func mounts() []mount {
 	return out
 }
 
+// 伪造的 sysfs 目录照真机的类型打（真机这些节点在 /sys/devices/... 下，规则按设备路径单独标）
+var fakeSysLabels = map[string]string{
+	"/sys/class/power_supply": "u:object_r:sysfs_batteryinfo:s0",
+	"/sys/class/thermal":      "u:object_r:sysfs_thermal:s0",
+}
+
 // 内核自己的文件系统（标签由规则里的 genfscon 定）：这些挂载不碰
 var kernelFS = map[string]bool{"proc": true, "sysfs": true, "cgroup": true, "cgroup2": true, "tmpfs": true, "devpts": true,
 	"mqueue": true, "selinuxfs": true, "binder": true, "debugfs": true, "tracefs": true, "bpf": true, "pstore": true,
@@ -213,7 +233,8 @@ func LabelBoot() (int, error) {
 		_ = syscall.Unmount(tmp+"/sys", syscall.MNT_DETACH)
 		_ = os.RemoveAll(tmp)
 	}()
-	// 伪造文件：照真文件（新挂的 proc / sysfs 里同一路径，没有就往上找父目录）的标签
+	// 伪造文件：照真文件（新挂的 proc / sysfs 里同一路径，没有就往上找父目录）的标签；
+	// 真机上电池、温度节点在设备目录下、规则里单独标了类型，这里照真机打
 	fromKernel := func(mp, root string) int {
 		n := 0
 		_ = filepath.Walk(mp, func(p string, fi os.FileInfo, err error) error {
@@ -222,10 +243,15 @@ func LabelBoot() (int, error) {
 			}
 			ref := root + p[len(root[len(tmp):]):]
 			ctx := ""
+			for prefix, c := range fakeSysLabels {
+				if strings.HasPrefix(p, prefix) {
+					ctx = c
+				}
+			}
 			for q := ref; len(q) > len(tmp) && ctx == ""; q = filepath.Dir(q) {
 				ctx = lgetxattr(q)
 			}
-			if ctx != "" && lsetxattr(p, ctx) == nil {
+			if ctx != "" && setLabel(p, ctx) == nil {
 				n++
 			}
 			return nil
@@ -235,7 +261,10 @@ func LabelBoot() (int, error) {
 	n := 0
 	for _, m := range mounts() {
 		mp := m.point
-		if kernelFS[m.fstype] || mp == "/" || mp == "/data" || strings.HasPrefix(mp, "/data/.pp") || strings.HasPrefix(mp, tmp) {
+		// 伪造的 /proc、/sys 内容（tmpfs / 宿主机文件 bind）照真文件打；真正的 proc / sysfs / cgroup 挂载不碰
+		fake := (strings.HasPrefix(mp, "/proc/") || strings.HasPrefix(mp, "/sys/")) && !strings.HasPrefix(mp, "/sys/fs/cgroup") &&
+			m.fstype != "proc" && m.fstype != "sysfs" && !strings.HasPrefix(m.fstype, "cgroup")
+		if !fake && (kernelFS[m.fstype] || mp == "/" || mp == "/data" || strings.HasPrefix(mp, "/data/.pp") || strings.HasPrefix(mp, tmp)) {
 			continue
 		}
 		switch {
@@ -252,5 +281,6 @@ func LabelBoot() (int, error) {
 		}
 	}
 	n += l.Relabel("/dev", true, map[string]bool{"/dev/pts": true, "/dev/shm": true, "/dev/mqueue": true, tmp: true})
+	n += l.Relabel("/", false, nil) // 容器根目录在 Docker 每次新建的那一层，没有标签
 	return n, nil
 }

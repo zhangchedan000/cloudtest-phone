@@ -8,6 +8,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/zhangchedan000/prism-phone/agent/internal/phonecmd"
 )
 
 // 手机开了真 SELinux（踩坑 #135）后，宿主机 docker exec / nsenter 进去跑的命令不在手机自己的 SELinux 命名空间里，
@@ -118,6 +120,13 @@ func (s *Service) cmdClientCommand(ctx context.Context, sock string, args []stri
 	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
 	cmd.WaitDelay = 3 * time.Second
 	return cmd
+}
+
+// relabelPhone 开了真 SELinux 的手机：让命令小助手重新给挂进来的东西补标签（管家开机后才挂的伪造文件）。
+func (s *Service) relabelPhone(ctx context.Context, id string) {
+	if sock := s.cmdSock(containerName(id)); sock != "" {
+		_, _ = s.run.Run(ctx, s.cfg.InitHelper, "pp-cmdc", sock, "--", phonecmd.RelabelCmd)
+	}
 }
 
 // selinuxBind 开机时：这台手机要开 SELinux 就准备好命令套接字目录，返回要加的挂载（不开返回空）。

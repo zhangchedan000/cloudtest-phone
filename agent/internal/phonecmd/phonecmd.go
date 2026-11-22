@@ -27,6 +27,9 @@ import (
 	"syscall"
 )
 
+// RelabelCmd 小助手的内置命令：重新给挂载进来的东西补标签。
+const RelabelCmd = "__pp_relabel"
+
 type request struct {
 	Args []string `json:"args"`
 	Env  []string `json:"env,omitempty"`
@@ -135,6 +138,18 @@ func handle(c net.Conn) {
 	if json.Unmarshal(line, &req) != nil || len(req.Args) == 0 {
 		_ = writeFrame(c, &mu, 'R', []byte("phonecmd: 请求不对\n"))
 		_ = writeFrame(c, &mu, 'X', []byte{0, 0, 0, 127})
+		return
+	}
+	// 内置命令：管家挂完伪造文件后让小助手再补一遍标签
+	if req.Args[0] == RelabelCmd {
+		n, err := LabelBoot()
+		msg := fmt.Sprintf("补了 %d 个标签\n", n)
+		code := byte(0)
+		if err != nil {
+			msg, code = err.Error()+"\n", 1
+		}
+		_ = writeFrame(c, &mu, 'O', []byte(msg))
+		_ = writeFrame(c, &mu, 'X', []byte{0, 0, 0, code})
 		return
 	}
 	cmd := exec.Command(req.Args[0], req.Args[1:]...)
