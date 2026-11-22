@@ -14,7 +14,8 @@ API=http://127.0.0.1:8099/api
 TOK=${PP_TOKEN:-$(sed -n 's/^PP_TOKEN="\(.*\)"$/\1/p' /etc/conf.d/prism-phone-agent 2>/dev/null)}
 [ -n "$TOK" ] || { echo "拿不到口令"; exit 1; }
 H="Authorization: Bearer $TOK"
-DIR=/mmc/pp-build/multi-$(date +%m%d-%H%M); mkdir -p "$DIR"
+# REUSE=<上次的结果目录>：不新建手机，直接对那批还开着的手机拉值 / 测画面（配合 KEEP=1 用）
+DIR=${REUSE:-/mmc/pp-build/multi-$(date +%m%d-%H%M)}; mkdir -p "$DIR"
 log(){ echo "$(date +%H:%M:%S) $*" | tee -a "$DIR/run.log"; }
 SPECS=${*:-"14:JP 14g:HK 15:SG 15g:US 16:TW 16g:KR 16:JP 15:direct"}
 
@@ -34,6 +35,7 @@ for p in d:
     if c.get("ok") and (c.get("country") or c.get("countryCode"))==sys.argv[2]: print(p["id"]); break' "$DIR/proxies.json" "$1"
 }
 
+if [ -z "${REUSE:-}" ]; then
 # ---- 建 ----
 : > "$DIR/phones.txt"
 n=0
@@ -68,6 +70,7 @@ for _ in $(seq 1 90); do
 done
 log "开机完成 $(wc -l < "$DIR/boot.txt")/$(wc -l < "$DIR/phones.txt")；等 60 秒（开机后设置、注册网络、蓝牙）"
 sleep 60
+fi
 
 # ---- 宿主机负载（全开着、没看画面时） ----
 {
@@ -113,7 +116,10 @@ while read -r id ver g cc px; do
   ip=$(curl -s -H "$H" "$API/phones" | python3 -c 'import sys,json
 for p in json.load(sys.stdin):
     if p["id"]==sys.argv[1]: print(p.get("ip",""))' "$id" 2>/dev/null)
+  # 和用户一样：先在管理页打开 USB 调试（默认关着，踩坑 #56），再授权电脑的公钥
+  curl -s -m60 -X PUT -H "$H" -H 'Content-Type: application/json' -d '{"adb":true}' "$API/phones/$id" -o /dev/null
   curl -s -m20 -X POST -H "$H" -H 'Content-Type: application/json' -d "{\"key\":\"$KEY\"}" "$API/phones/$id/adb-key" -o /dev/null
+  sleep 2
   c=$(adb connect "$ip:5555" 2>&1 | tr '\n' ' ')
   st=$(adb -s "$ip:5555" get-state 2>&1)
   echo "$id ip=$ip connect=[$c] state=$st" >> "$DIR/adb.txt"
