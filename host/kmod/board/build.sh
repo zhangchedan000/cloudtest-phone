@@ -37,7 +37,6 @@ docker run --rm --platform linux/arm64 -v "$K:/k" -w /k/src debian:12-slim bash 
   make -s -j"$(nproc)" vmlinux modules_prepare > /k/make-vmlinux.log 2>&1 || { tail -20 /k/make-vmlinux.log; exit 1; }
   test -s Module.symvers || { echo "没有 Module.symvers（vmlinux 没编完）"; exit 1; }
   make -s -j"$(nproc)" drivers/net/wireless/mac80211_hwsim.ko 2>&1 | tail -5
-  ! grep -q "undefined!" /dev/null
   modinfo -F vermagic drivers/net/wireless/mac80211_hwsim.ko
 '
 grep -q '"module_layout"\|__versions' "$K/src/drivers/net/wireless/mac80211_hwsim.mod.c" || { log "✗ 模块里没有符号版本表（vmlinux 没编好），不能用"; exit 1; }
