@@ -8,4 +8,17 @@ pidfile="/run/prism-phone-mihomo.pid"
 supervise_daemon_args="--stdout /var/log/pp-mihomo.log --stderr /var/log/pp-mihomo.log"
 respawn_delay=3
 respawn_max=0
-depend() { after net; }
+depend() { after net docker; }
+
+# 开机时 mihomo 比手机网桥 pp-net（Docker 起来才有 10.88.0.1）先起，DNS 绑不上 10.88.0.1:1053 只报一行错、
+# 不重试 → 手机全都解析不了域名（踩坑 #131）。所以先等 DNS 要监听的地址出现（最多 120 秒），等不到也照常启动。
+start_pre() {
+	addr=$(sed -n '/^dns:/,/^[a-z]/s/^  listen: *"*\([0-9.]*\):[0-9]*"*/\1/p' /mmc/pp-data/mihomo/config.yaml 2>/dev/null | head -1)
+	[ -n "$addr" ] || return 0
+	i=0
+	while ! ip -4 addr show 2>/dev/null | grep -q " $addr/"; do
+		[ $i -ge 120 ] && { ewarn "等了 120 秒还没有 $addr（手机网桥），DNS 可能起不来；管家会在网桥出来后自动修"; return 0; }
+		sleep 1; i=$((i + 1))
+	done
+	return 0
+}

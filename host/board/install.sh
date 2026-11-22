@@ -63,6 +63,10 @@ check() {
     apk info -e "$p" >/dev/null 2>&1 && say "✓ 软件包 $p" || { say "✗ 缺软件包 $p"; bad=1; }
   done
   nft list table ip prism_redir >/dev/null 2>&1 && say "✓ 网络规则表 prism_redir" || { say "✗ 网络规则表 prism_redir 不在（手机流量不走代理！）"; bad=1; }
+  dl=$(sed -n '/^dns:/,/^[a-z]/s/^  listen: *"*\([0-9.]*:[0-9]*\)"*/\1/p' /mmc/pp-data/mihomo/config.yaml 2>/dev/null | head -1)
+  if [ -n "$dl" ]; then
+    netstat -lnu 2>/dev/null | grep -q " $dl " && say "✓ 手机的 DNS（$dl）在监听" || { say "✗ 手机的 DNS（$dl）没在监听（手机解析不了域名！rc-service prism-phone-mihomo restart，踩坑 #131）"; bad=1; }
+  fi
   for s in docker prism-phone-agent prism-phone-mihomo prism-phone-fan; do
     rc-service "$s" status >/dev/null 2>&1 && say "✓ 服务 $s 在跑" || { say "✗ 服务 $s 没在跑"; bad=1; }
     rc-update show default 2>/dev/null | grep -q "^ *$s " || { say "✗ 服务 $s 没加开机自启"; bad=1; }

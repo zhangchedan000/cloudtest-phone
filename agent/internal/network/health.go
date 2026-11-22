@@ -3,6 +3,7 @@ package network
 import (
 	"context"
 	"log"
+	"net"
 	"os/exec"
 	"strings"
 	"sync"
@@ -32,6 +33,9 @@ type Health struct {
 type HealthChecker struct {
 	Syncer *Syncer
 	Run    func(ctx context.Context, name string, args ...string) (string, error)
+	// Dial 测手机 DNS 有没有在监听；HasAddr 这台机器有没有这个 IP（手机网桥起来没有）。测试时换掉。
+	Dial    func(ctx context.Context, network, addr string) (net.Conn, error)
+	HasAddr func(ip string) bool
 
 	mu     sync.Mutex
 	last   Health
@@ -56,6 +60,9 @@ func (h *HealthChecker) Check(ctx context.Context) Health {
 		}
 		if err := h.Syncer.LastError(); err != nil {
 			problems = append(problems, "网络模块（mihomo）："+err.Error())
+		}
+		if p := h.checkDNS(ctx); p != "" {
+			problems = append(problems, p)
 		}
 		return h.finish(problems)
 	}
@@ -89,7 +96,95 @@ func (h *HealthChecker) Check(ctx context.Context) Health {
 			problems = append(problems, "网络模块（mihomo）："+err.Error())
 		}
 	}
+	if p := h.checkDNS(ctx); p != "" {
+		problems = append(problems, p)
+	}
 	return h.finish(problems)
+}
+
+// checkDNS 手机的 DNS（mihomo 监听 -dns-listen，例如 10.88.0.1:1053）在不在（踩坑 #131）。
+// 开机时 mihomo 比手机网桥先起，DNS 绑不上那个地址只报一行错、之后不再试，手机就全解析不了域名（代理检测走 127.0.0.1，
+// 看不出来）。发现不通：先让 mihomo 重读配置（会重新绑 DNS），还不行就重启 mihomo 服务。网桥地址还没有时不动（等它起来）。
+func (h *HealthChecker) checkDNS(ctx context.Context) string {
+	if h.Syncer == nil || h.Syncer.Opt.DNSListen == "" {
+		return ""
+	}
+	addr := h.Syncer.Opt.DNSListen
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil || h.dnsUp(ctx, addr) {
+		return ""
+	}
+	if !h.hasAddr(host) {
+		return "手机网桥（" + host + "）还没起来：手机暂时上不了网（Docker 起来后会自动好）"
+	}
+	if err := h.Syncer.reload(ctx); err == nil && h.waitDNS(ctx, addr) {
+		h.markHealed("手机的 DNS（" + addr + "）没在监听，已让网络模块重读配置修好")
+		return ""
+	}
+	cmd := []string{"rc-service", "prism-phone-mihomo", "restart"}
+	if _, err := exec.LookPath("rc-service"); err != nil && h.Run == nil {
+		cmd = []string{"systemctl", "restart", "prism-phone-mihomo"}
+	}
+	if out, err := h.run(ctx, cmd[0], cmd[1:]...); err != nil {
+		return "手机的 DNS（" + addr + "）没在监听，重启网络模块失败：" + strings.TrimSpace(out) + "（手机解析不了域名）"
+	}
+	if h.waitDNS(ctx, addr) {
+		h.markHealed("手机的 DNS（" + addr + "）没在监听，已重启网络模块修好")
+		return ""
+	}
+	return "手机的 DNS（" + addr + "）没在监听，自动修没修好（手机解析不了域名，看 /var/log/pp-mihomo.log）"
+}
+
+func (h *HealthChecker) dnsUp(ctx context.Context, addr string) bool {
+	dial := h.Dial
+	if dial == nil {
+		d := net.Dialer{Timeout: 2 * time.Second}
+		dial = d.DialContext
+	}
+	c, err := dial(ctx, "tcp", addr)
+	if err != nil {
+		return false
+	}
+	_ = c.Close()
+	return true
+}
+
+func (h *HealthChecker) waitDNS(ctx context.Context, addr string) bool {
+	for i := 0; i < 5; i++ {
+		if h.dnsUp(ctx, addr) {
+			return true
+		}
+		select {
+		case <-ctx.Done():
+			return false
+		case <-time.After(time.Second):
+		}
+	}
+	return false
+}
+
+func (h *HealthChecker) hasAddr(ip string) bool {
+	if h.HasAddr != nil {
+		return h.HasAddr(ip)
+	}
+	addrs, err := net.InterfaceAddrs()
+	if err != nil {
+		return true // 查不了就当有，照常尝试修
+	}
+	for _, a := range addrs {
+		if n, ok := a.(*net.IPNet); ok && n.IP.String() == ip {
+			return true
+		}
+	}
+	return false
+}
+
+func (h *HealthChecker) markHealed(msg string) {
+	now := time.Now().UTC()
+	h.mu.Lock()
+	h.healed = &now
+	h.mu.Unlock()
+	log.Printf("网络模块：%s", msg)
 }
 
 func (h *HealthChecker) finish(problems []string) Health {
@@ -113,7 +208,7 @@ func (h *HealthChecker) Last() *Health {
 // Loop 一直查，直到 ctx 结束。
 func (h *HealthChecker) Loop(ctx context.Context, every time.Duration) {
 	for {
-		c, cancel := context.WithTimeout(ctx, 10*time.Second)
+		c, cancel := context.WithTimeout(ctx, 25*time.Second) // DNS 自愈（重读配置 / 重启 mihomo）要多等几秒
 		h.Check(c)
 		cancel()
 		select {
