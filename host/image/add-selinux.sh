@@ -60,6 +60,10 @@ done
 for f in system/lib64/libselinux.so system/lib64/libbinder.so vendor/lib64/libbinder.so; do
   mkdir -p "$W/x/$(dirname $f)"; docker cp "$cid:/$f" "$W/x/$f" >/dev/null 2>&1 || true
 done
+# 根目录下 system_ext / product / odm 多半是指向 /system/... 的链接：往链接里拷文件 docker build 会失败，记下真实位置
+for d in system_ext product odm; do
+  docker cp "$cid:/$d" "$W/x/lnk_$d" >/dev/null 2>&1 || true
+done
 docker rm "$cid" >/dev/null
 
 # ---- 2) 换掉被改过的库（只换带 HACKED 的那份） ----
@@ -142,6 +146,14 @@ for root, _, files in os.walk("/w/rc"):
 print(f"服务补 seclabel：{added} 个；算出来还是 init 的（照原样）：{skipped} 个")
 EOF
 '
+
+# 改过的 rc 挪到链接指向的真实目录
+for d in system_ext product odm; do
+  [ -L "$W/x/lnk_$d" ] && [ -d "$O/$d" ] || continue
+  t=$(readlink "$W/x/lnk_$d" | sed 's#^/##')
+  mkdir -p "$O/$t"; cp -a "$O/$d/." "$O/$t/"; rm -rf "$O/$d"
+  log "rc：/$d → /$t"
+done
 
 # ---- 5) 出新镜像 ----
 docker image inspect "$img-orig-sel" >/dev/null 2>&1 || docker tag "$img" "$img-orig-sel"
