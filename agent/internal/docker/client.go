@@ -93,6 +93,8 @@ type ContainerSpec struct {
 	Network    string
 	IPv4       string
 	Privileged bool
+	// MacAddress 网卡 MAC（空 = Docker 自己分配 02:42:…，一看就是 Docker，踩坑 #130）。
+	MacAddress string
 	// Entrypoint 不为空时替换镜像的入口（开机时长归零的启动器用，见 timens 包）。
 	Entrypoint []string
 }
@@ -119,6 +121,12 @@ func (c *Client) CreateContainer(ctx context.Context, spec ContainerSpec) (strin
 	}
 	if len(spec.Entrypoint) > 0 {
 		body["Entrypoint"] = spec.Entrypoint
+	}
+	if spec.MacAddress != "" {
+		// API 1.44 起在网络端点里设；老版本认容器配置里的。两处写同一个值，新老 Docker 都生效。
+		body["MacAddress"] = spec.MacAddress
+		ep := body["NetworkingConfig"].(map[string]any)["EndpointsConfig"].(map[string]any)[spec.Network].(map[string]any)
+		ep["MacAddress"] = spec.MacAddress
 	}
 	var out struct {
 		ID string `json:"Id"`

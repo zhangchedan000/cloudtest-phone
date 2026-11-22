@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/zhangchedan000/prism-phone/agent/internal/store"
@@ -144,6 +145,21 @@ func (s *Service) resolvedValues(p store.Phone, st store.State) map[string]any {
 	m := map[string]any{}
 	for _, r := range s.resolve(p, st) {
 		m[r.Key] = r.Value
+	}
+	return m
+}
+
+// ethMAC 手机 eth0 的 MAC（踩坑 #130）：用机型档案里这台手机的 wifiMac（每台随机、不重复）。
+// 不设的话 Docker 给 02:42:xx…，App 读 /sys/class/net/eth0/address（这台没 SELinux）一看就是 Docker 容器。
+// 开了虚拟 WiFi 时 eth0 挪进路由器那边当上行，和 wlan0（也是 wifiMac）不在同一个二层网里，不冲突。
+// 格式不对或是组播地址就不设（交给 Docker），不挡开机。
+func ethMAC(byKey map[string]any) string {
+	m := strings.ToLower(strings.TrimSpace(str(byKey["wifiMac"])))
+	if !validMAC(m) || strings.HasPrefix(m, "02:42:") {
+		return ""
+	}
+	if b, err := strconv.ParseUint(m[:2], 16, 8); err != nil || b&1 == 1 {
+		return ""
 	}
 	return m
 }

@@ -1023,6 +1023,7 @@ func (s *Service) Start(ctx context.Context, id string) error {
 		NanoCPUs:   int64(s.cfg.CPUs * 1e9),
 		Network:    s.cfg.Network,
 		IPv4:       p.IP,
+		MacAddress: ethMAC(byKey),
 		Privileged: true,
 	})
 	if err != nil {
