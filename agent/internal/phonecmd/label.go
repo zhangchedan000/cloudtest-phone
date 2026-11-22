@@ -181,6 +181,15 @@ func lgetxattr(p string) string {
 
 type mount struct{ point, fstype string }
 
+func isMount(all []mount, p string) bool {
+	for _, m := range all {
+		if m.point == p {
+			return true
+		}
+	}
+	return false
+}
+
 // mounts 这个挂载命名空间里的挂载（/proc/self/mountinfo：第 5 列挂载点，" - " 后第一列文件系统类型）。
 func mounts() []mount {
 	b, err := os.ReadFile("/proc/self/mountinfo")
@@ -308,10 +317,19 @@ func label(boot bool) (int, error) {
 		}
 	}
 	if boot {
+		// 安卓开机往根目录写的 /metadata、/cache：容器根目录是 overlay，运行时新建 / 拷上来的文件在手机的 SELinux
+		// 命名空间里一律没有标签（overlay 用 Docker 的身份建上层文件），aconfigd 读不了 → keystore2 崩 → init 关机。
+		// 真机这两个是单独分区；这里各挂一块内存盘（容器每次开机都是新的一层，本来就不留东西），里面新建的文件按规则打标签
+		for _, d := range []string{"/metadata", "/cache"} {
+			if !isMount(all, d) {
+				_ = os.MkdirAll(d, 0o755)
+				_ = syscall.Mount("tmpfs", d, "tmpfs", syscall.MS_NOSUID|syscall.MS_NODEV|syscall.MS_NOEXEC, "mode=0755")
+			}
+			n += l.Relabel(d, true, nil)
+		}
 		n += l.Relabel("/dev", true, map[string]bool{"/dev/pts": true, "/dev/shm": true, "/dev/mqueue": true, tmp: true,
 			"/dev/__properties__": true, "/dev/socket": true})
 		n += l.Relabel("/", false, nil) // 容器根目录在 Docker 每次新建的那一层，没有标签
-		n += l.Relabel("/metadata", true, nil)
 	}
 	return n, nil
 }

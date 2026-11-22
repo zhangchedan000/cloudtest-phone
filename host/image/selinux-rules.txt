@@ -112,3 +112,5 @@ allow netd system_file dir write,add_name
 allow netd system_file file create,open,read,write,lock,getattr
 allow system_suspend sysfs file read,open,getattr
 allow vold_prepare_subdirs checkin_data_file dir relabelfrom
+# /metadata、/cache 是 pp-cmdd 挂的内存盘（真机是单独分区）
+allow file_type tmpfs filesystem associate
