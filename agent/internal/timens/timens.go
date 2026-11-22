@@ -11,7 +11,8 @@
 //	/pp-init pp-init <开机时长秒数> /init <镜像原来的参数...>
 //
 // 它先建时间命名空间、设好偏移，再 exec 安卓的 init（exec 时进程进入新的时间命名空间，
-// init 和它所有子进程都在里面）。
+// init 和它所有子进程都在里面）。有的内核 exec 不切命名空间（魔云腾 Q1），arm64 上改由内嵌的单线程小启动器
+// pp-timens 做 unshare + setns + exec（helper_arm64.go，踩坑 #132）。
 package timens
 
 import (
@@ -68,6 +69,12 @@ func Run(args []string) {
 	if len(args) < 2 {
 		fmt.Fprintln(os.Stderr, "用法：pp-init <开机时长秒数> <程序> [参数...]")
 		os.Exit(2)
+	}
+	// 先用单线程小启动器（arm64 板子）：魔云腾 Q1 内核 exec 时不把进程切进新时间命名空间，Go 自己 unshare 后
+	// exec 出来的安卓 init 建不了线程（踩坑 #98）；pp-timens 单线程里 setns 自己进去再 exec，就没这个问题（踩坑 #132）。
+	if len(helper) > 0 {
+		err := execHelper(args) // 成功就不返回
+		fmt.Fprintf(os.Stderr, "pp-init：单线程启动器起不来（%v），改用老办法\n", err)
 	}
 	// unshare / 写偏移 / exec 必须在同一个系统线程上（命名空间是按线程记的）。
 	runtime.LockOSThread()
