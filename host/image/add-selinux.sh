@@ -19,7 +19,7 @@ img=$1; ver=$2
 B=${PP_BUILD:-/mmc/pp-build}
 log(){ echo "$(date +%T) [selinux] $*"; }
 die(){ echo "[selinux] 错误：$*" >&2; exit 1; }
-SEL_VER=14
+SEL_VER=15
 cur=$(docker image inspect -f '{{index .Config.Labels "prism.selinux"}}' "$img" 2>/dev/null || true)
 [ "$cur" = "$SEL_VER" ] && { log "$img 已经做好（第 $SEL_VER 版），跳过"; exit 0; }
 base=$img
@@ -138,13 +138,33 @@ cat "$W/x"/fc.[1-5] > "$W/x/file_contexts"
 log "同进程显卡库：vendor_file_contexts 里 same_process_hal_file 共 $n 条"
 chmod 644 "$O/vendor/etc/selinux/vendor_file_contexts"
 
-# ---- 2) 换掉被改过的库（只换带 HACKED 的那份） ----
+# ---- 2) 换掉被改过的库（带 HACKED 的；或者像安卓 14 的 libselinux 那样，setfscreatecon 被改成直接返回 0） ----
+stubbed() { # $1 = .so：导出函数 $2 的头两条指令是 mov w0, wzr; ret
+  python3 - "$1" "$2" <<'PYEOF'
+import struct, sys
+b = open(sys.argv[1], "rb").read()
+if b[:4] != b"\x7fELF" or b[4] != 2: sys.exit(1)
+shoff, = struct.unpack_from("<Q", b, 0x28); shentsize, shnum = struct.unpack_from("<HH", b, 0x3a)
+sh = [struct.unpack_from("<IIQQQQIIQQ", b, shoff + i * shentsize) for i in range(shnum)]
+dyn = [x for x in sh if x[1] == 11]               # SHT_DYNSYM
+if not dyn: sys.exit(1)
+d = dyn[0]; strtab = sh[d[6]]
+for i in range(d[5] // 24):
+    name, info, other, shndx, value, size = struct.unpack_from("<IBBHQQ", b, d[4] + i * 24)
+    n = b[strtab[4] + name:b.index(b"\0", strtab[4] + name)].decode()
+    if n == sys.argv[2] and value:
+        off = next(x[4] + value - x[3] for x in sh if x[1] == 1 and x[3] <= value < x[3] + x[5])
+        sys.exit(0 if struct.unpack_from("<II", b, off) == (0x2a1f03e0, 0xd65f03c0) else 1)
+sys.exit(1)
+PYEOF
+}
 for f in system/lib64/libselinux.so system/lib64/libbinder.so vendor/lib64/libbinder.so; do
   [ -f "$W/x/$f" ] || continue
-  grep -q HACKED "$W/x/$f" || continue
+  grep -q HACKED "$W/x/$f" || { case $f in *libselinux.so) stubbed "$W/x/$f" setfscreatecon || continue ;; *) continue ;; esac; }
   case $f in system/*) src=$DS/lib64/$(basename $f) ;; vendor/*) src=$DV/lib64/$(basename $f) ;; esac
   [ -f "$src" ] || die "要换 /$f，但 dobox Q$ver 里没有 $src"
   grep -q HACKED "$src" && die "$src 也是改过的"
+  case $f in *libselinux.so) stubbed "$src" setfscreatecon && die "$src 的 setfscreatecon 也是空的" ;; esac
   mkdir -p "$O/$(dirname $f)"; cp "$src" "$O/$f"; chmod 644 "$O/$f"
   log "换原版 /$f"
 done
