@@ -97,7 +97,7 @@ echo "ifaces=$(ls /sys/class/net 2>&1 | tr "\n" " ")"
 echo "wifi_ssid=$(dumpsys wifi 2>/dev/null | grep -m1 -oE "SSID: [^,]*")"
 echo "wm_size=$(wm size | tail -1)"; echo "wm_density=$(wm density | tail -1)"
 echo "battery=$(dumpsys battery | grep -E " level| status| temperature" | tr -s " " | tr "\n" " ")"
-echo "gles=$(dumpsys SurfaceFlinger 2>/dev/null | grep -m1 GLES)"
+echo "gles=$(dumpsys SurfaceFlinger 2>/dev/null | grep -m1 "GLES: ")"
 echo "cpu_hw=$(grep -m1 -i hardware /proc/cpuinfo)"; echo "nproc=$(nproc)"; echo "memtotal=$(grep MemTotal /proc/meminfo)"
 echo "uname=$(uname -r)"; echo "uptime=$(cut -d" " -f1 /proc/uptime)"; echo "boot_id=$(cat /proc/sys/kernel/random/boot_id)"
 echo "tellprops=$(getprop | grep -ciE "redroid|goldfish|ranchu|qemu|vbox|docker|cuttlefish")"
@@ -200,7 +200,7 @@ for r in rows:
     if r.get("dev_tells", "0") not in ("0", ""): bad.append(f"{i} /dev 有 {r.get('dev_tells')} 个模拟器设备名")
     if r.get("ro.debuggable") != "0" or r.get("ro.build.type") != "user": bad.append(f"{i} 构建类型 {r.get('ro.build.type')} debuggable={r.get('ro.debuggable')}")
     if "cannot run as root" not in r.get("adb_root", "") : bad.append(f"{i} adb root 结果：{r.get('adb_root','')[:80]}")
-    if r.get("spec_gapps") == "true" and r.get("gms") != "1": bad.append(f"{i} 谷歌版没有 GMS")
+    if r.get("spec_gapps") == "true" and not (r.get("gms", "0").isdigit() and int(r.get("gms")) >= 1): bad.append(f"{i} 谷歌版没有 GMS")
 print()
 print("问题：" if bad else "问题：无")
 for b in bad: print("  - " + b)

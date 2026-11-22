@@ -1,5 +1,7 @@
 # 复制到板子 /etc/conf.d/prism-phone-agent，然后 chmod 600。OpenRC 启动 prism-phone-agent 时自动读。
 # 访问令牌：网页登录用，监听 0.0.0.0 必须设、至少 16 位（生成：head -c 18 /dev/urandom | base64）
 PP_TOKEN="改成你自己的令牌"
+# 宿主机守护（host-guard）要开着：手机开机会改宿主机 pid_max / vm.* 等全局设置（踩坑 #58、#126）。
+# 内存超卖 3：每台按机型 8GB 记账，实际每台只用 1~2GB；3 倍才能开满 8 台（开机前还会看实际剩余内存）。
 # 魔云腾 Q1 当前在用的参数（13/14/15/16 普通版 + 14/15/16 谷歌版、Mali 硬件加速、REDIRECT 网络模块）
-PP_ARGS="-listen 0.0.0.0:8099 -data /mmc/pp-data -gpu-family Mali-G610 -gpu-mode host -images 13=cnflysky/redroid-rk3588:lineage-20-wifi-tel-resign-apps,14=prism-redroid-mali:14-wifi-tel-resign-apps,15=prism-redroid-mali:15-wifi-tel-apps,16=prism-redroid-mali:16-wifi-tel-apps -max-running 8 -mem-overcommit 2.5 -mihomo-api 127.0.0.1:9090 -dns-listen 10.88.0.1:1053 -redir -no-wifi -no-host-guard -no-timens -gapps-images 14=prism-redroid-mali:14-gms-wifi-tel-resign-apps,15=prism-redroid-mali:15-gms-wifi-tel-apps,16=prism-redroid-mali:16-gms-wifi-tel-apps -dev-host"
+PP_ARGS="-listen 0.0.0.0:8099 -data /mmc/pp-data -gpu-family Mali-G610 -gpu-mode host -images 13=cnflysky/redroid-rk3588:lineage-20-wifi-tel-resign-apps,14=prism-redroid-mali:14-wifi-tel-resign-apps,15=prism-redroid-mali:15-wifi-tel-apps,16=prism-redroid-mali:16-wifi-tel-apps -max-running 8 -mem-overcommit 3 -mihomo-api 127.0.0.1:9090 -dns-listen 10.88.0.1:1053 -redir -no-wifi -no-timens -gapps-images 14=prism-redroid-mali:14-gms-wifi-tel-resign-apps,15=prism-redroid-mali:15-gms-wifi-tel-apps,16=prism-redroid-mali:16-gms-wifi-tel-apps -dev-host"
