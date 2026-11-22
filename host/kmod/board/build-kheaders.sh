@@ -18,7 +18,9 @@ import tarfile, sys
 with tarfile.open('/sys/kernel/kheaders.tar.xz', 'r:xz') as t:
     t.extractall('$K/kheaders')
 " 2>/dev/null
-grep -q 'UTS_RELEASE "'"$(uname -r)"'"' "$K/kheaders/include/generated/utsrelease.h" || { echo "kheaders 不是正在跑的内核的"; exit 1; }
+# 版本号从 /proc/version 取：这块板子上 uname -r 被改成了 5.10.198（魔云腾内核的伪装），/proc/version 才是真的 6.1.141
+rel=$(cut -d' ' -f3 /proc/version)
+grep -q "UTS_RELEASE \"$rel\"" "$K/kheaders/include/generated/utsrelease.h" || { echo "kheaders 不是正在跑的内核（$rel）的"; exit 1; }
 log "板子内核头文件：$(du -sh "$K/kheaders" | cut -f1)"
 
 # 核对用的小模块：照头文件里的原型重新「导出」几个内核函数，只为让 genksyms 算出 CRC（不会加载）
