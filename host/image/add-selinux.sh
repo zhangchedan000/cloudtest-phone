@@ -106,7 +106,7 @@ docker run --rm --privileged --platform linux/arm64 -v "$W:/w" -v "$B/kmod/aptca
 import os, re, selinux
 data = open("/w/x/policy", "rb").read()
 fd = os.open("/sys/fs/selinux/load", os.O_WRONLY); assert os.write(fd, data) == len(data); os.close(fd)
-h = selinux.selabel_open(selinux.SELABEL_CTX_FILE, [(selinux.SELABEL_OPT_PATH, "/w/x/file_contexts")], 1)
+selinux.matchpathcon_init("/w/x/file_contexts")
 cls = selinux.string_to_security_class("process")
 INIT = "u:r:init:s0"
 added = skipped = 0
@@ -127,7 +127,7 @@ for root, _, files in os.walk("/w/rc"):
                 if not has:
                     exe = m.group(2)
                     try:
-                        _, fcon = selinux.selabel_lookup(h, exe, 0o100755)
+                        _, fcon = selinux.matchpathcon(exe, 0o100755)
                         _, dom = selinux.security_compute_create(INIT, fcon, cls)
                     except OSError as e:
                         dom = None; print(f"  ? {m.group(1)} {exe}: {e}")
