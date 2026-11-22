@@ -147,7 +147,19 @@ func (m *Modem) csq() string {
 }
 
 // Handle 处理一行命令，返回要回的各行（最后一行是 OK / ERROR）。
+// ranchu（安卓 16 电话 HAL）的每条请求只认「结果行 / +CME ERROR: n」，从来不认光秃秃的 ERROR：
+// 回 ERROR 它就等 3 秒超时、关掉连接，下一行上报到来时读线程报错直接崩，HAL 每 10 秒重启一次、
+// 运营商时有时无（踩坑 #125，开机时框架会发 AT+CCHO 开 SIM 逻辑通道）。所以 ranchu 口味下把 ERROR
+// 换成 +CME ERROR: 4（不支持，它转成 REQUEST_NOT_SUPPORTED 正常返回给框架）。
 func (m *Modem) Handle(line string) []string {
+	out := m.handle(line)
+	if m.ranchu() && len(out) > 0 && out[len(out)-1] == "ERROR" {
+		out[len(out)-1] = "+CME ERROR: 4"
+	}
+	return out
+}
+
+func (m *Modem) handle(line string) []string {
 	if !strings.HasPrefix(strings.ToUpper(line), "AT") {
 		return []string{"ERROR"}
 	}

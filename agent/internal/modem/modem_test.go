@@ -234,3 +234,17 @@ func TestRanchuStkAndHeartbeat(t *testing.T) {
 type writerFunc func([]byte) (int, error)
 
 func (f writerFunc) Write(p []byte) (int, error) { return f(p) }
+
+// ranchu 不认光秃秃的 ERROR（等超时、关连接、崩溃重启循环，踩坑 #125）：失败一律回 +CME ERROR: 4。
+func TestRanchuErrorIsCmeError(t *testing.T) {
+	m := New(Spec{Signal: 20, RSRP: 95, Dialect: DialectRanchu}, nil)
+	for _, c := range []string{"AT+CCHO=A00000015141434C00", "AT+CCHC=1", "ATD10086;", "AT+CUSD=1,\"*100#\""} {
+		if r := m.Handle(c); len(r) != 1 || r[0] != "+CME ERROR: 4" {
+			t.Fatalf("%s：%v", c, r)
+		}
+	}
+	// 别的口味照旧回 ERROR
+	if r := New(Spec{}, nil).Handle("AT+CCHO=A000"); len(r) != 1 || r[0] != "ERROR" {
+		t.Fatalf("非 ranchu：%v", r)
+	}
+}
