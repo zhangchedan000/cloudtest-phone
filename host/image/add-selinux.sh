@@ -19,7 +19,7 @@ img=$1; ver=$2
 B=${PP_BUILD:-/mmc/pp-build}
 log(){ echo "$(date +%T) [selinux] $*"; }
 die(){ echo "[selinux] 错误：$*" >&2; exit 1; }
-SEL_VER=11
+SEL_VER=12
 cur=$(docker image inspect -f '{{index .Config.Labels "prism.selinux"}}' "$img" 2>/dev/null || true)
 [ "$cur" = "$SEL_VER" ] && { log "$img 已经做好（第 $SEL_VER 版），跳过"; exit 0; }
 base=$img
@@ -79,8 +79,14 @@ mkdir -p "$O/vendor/etc/selinux"
 cp "$W/x/vendor_file_contexts" "$O/vendor/etc/selinux/vendor_file_contexts"
 for kv in "/dev/mali0 u:object_r:gpu_device:s0" "/dev/mpp_service u:object_r:video_device:s0" "/dev/rga u:object_r:video_device:s0" \
           "/dev/dri(/.*)? u:object_r:gpu_device:s0" "/dev/loop[0-9]+ u:object_r:loop_device:s0" \
-          "/vendor/bin/hw/android\.hardware\.media\.c2@1\.1-service u:object_r:mediacodec_exec:s0"; do
+          "/vendor/bin/hw/android\.hardware\.media\.c2@1\.1-service u:object_r:mediacodec_exec:s0" \
+          "/vendor/bin/hw/android\.hardware\.gatekeeper@1\.0-service\.software u:object_r:hal_gatekeeper_default_exec:s0" \
+          "/vendor/bin/hw/android\.hardware\.thermal@2\.0-service\.mock u:object_r:hal_thermal_default_exec:s0"; do
   p=${kv%% *}
+  # redroid 自己加的 HAL 程序规则里没写类型：落到 vendor_file，init 起它不切域、以 init 身份跑，往 hwservicemanager
+  # 注册被拒（锁屏密码 gatekeeper、温度 thermal），安卓一直等它开不了机。按真机同名 HAL 的类型标；规则里没这个类型就不加
+  t=${kv##*:object_r:}; t=${t%%:*}
+  grep -qa "$t" "$W/x/policy" || continue
   # 硬件编解码服务（host/image/add-hwcodec.sh 从 dobox 移植的）不在就不加
   case $p in /vendor/bin/hw/*) [ -f "$W/x/has_c2" ] || continue ;; esac
   grep -q "^$p[[:space:]]" "$W/x/file_contexts" || { echo "$kv" >> "$O/vendor/etc/selinux/vendor_file_contexts"; echo "$kv" >> "$W/x/file_contexts"; log "设备标签：$kv"; }
@@ -222,7 +228,7 @@ for root, _, files in os.walk("/w/rc"):
                     if dom and dom != INIT:
                         out.append(f"    seclabel {dom}"); changed = True; added += 1
                     else:
-                        skipped += 1
+                        skipped += 1; print(f"  init 身份：{m.group(1)} {exe}")
             i += 1
         if changed:
             dst = "/w/overlay" + rel; os.makedirs(os.path.dirname(dst), exist_ok=True)
