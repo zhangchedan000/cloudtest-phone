@@ -164,7 +164,11 @@ type Service struct {
 }
 
 func NewService(cfg Config, d Docker, st *store.Store, cat *Catalog, models []Model) *Service {
-	return &Service{cfg: cfg, docker: d, store: st, cat: cat, models: models, now: time.Now, run: execRunner{}, raw: execRaw{}, async: true, newRadio: wifi.NewRadioInNetns}
+	s := &Service{cfg: cfg, docker: d, store: st, cat: cat, models: models, now: time.Now, async: true, newRadio: wifi.NewRadioInNetns}
+	// 开了真 SELinux 的手机，docker exec 自动改走手机里的命令小助手（踩坑 #135）
+	s.run = phoneExecRunner{inner: execRunner{}, s: s}
+	s.raw = phoneExecRaw{inner: execRaw{}, s: s}
+	return s
 }
 
 // SetNetworkGuard 接上网络模块（mihomo）的开机前检查。
@@ -1013,6 +1017,9 @@ func (s *Service) Start(ctx context.Context, id string) error {
 	}
 	if entrypoint != nil {
 		binds = append(binds, s.cfg.InitHelper+":"+initMount+":ro")
+		if b := s.selinuxBind(ctx, p.ID, image, entrypoint); b != "" {
+			binds = append(binds, b)
+		}
 	}
 	_, err = s.docker.CreateContainer(ctx, docker.ContainerSpec{
 		Entrypoint: entrypoint,
@@ -1400,7 +1407,7 @@ func (s *Service) initEntrypoint(ctx context.Context, image string) []string {
 	if !s.cfg.Timens {
 		head = append(head, "--no-timens") // 不归零开机时长，但 pp-init 照常喂传感器/RIL（踩坑 #98）
 	}
-	if s.cfg.SELinux != "" && s.imageLabel(ctx, image, "prism.selinux") == "1" {
+	if s.cfg.SELinux != "" && s.imageLabel(ctx, image, "prism.selinux") != "" {
 		head = append(head, "--selinux="+s.cfg.SELinux) // 安卓开机前加载它自己的 SELinux 规则（踩坑 #135）
 	}
 	head = append(head, "0")

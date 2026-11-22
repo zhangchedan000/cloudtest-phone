@@ -6,7 +6,7 @@
 // setns() 进时间命名空间会把「自己」和「子进程」一起切过去，但要求调用者是单线程；管家是 Go 程序（天生多线程），
 // 所以由它 exec 这个不依赖任何库的小程序：unshare → 写偏移 → setns 自己进去 → exec 安卓 init。
 //
-// 用法：pp-timens [--selinux=permissive|enforcing] <开机时长秒数> <程序> [参数...]
+// 用法：pp-timens [--selinux=permissive|enforcing] [--cmdd=<管家程序>] <开机时长秒数> <程序> [参数...]
 // 任何一步失败都照样 exec 程序（开机时长保持宿主机的，绝不因此开不了机）。
 //
 // --selinux（踩坑 #135）：先给这台手机加载安卓自己的 SELinux 规则，再启动安卓。
@@ -14,9 +14,16 @@
 // 容器里挂 selinuxfs 就是这台手机自己的一套，加载规则、开强制模式都不影响宿主机和别的手机。做的事和安卓
 // init 的 selinux_setup 阶段一样：挂 selinuxfs → 把 /vendor/etc/selinux/precompiled_sepolicy 写进 load →
 // 设模式 → 下一次 exec 进 u:r:init:s0。失败就照旧不开 SELinux 启动。
+// --cmdd：加载完规则后拉起手机里的命令小助手（<管家程序> pp-cmdd /data/.ppc/s，见 agent/internal/phonecmd），
+// 它先给挂进来的文件补标签，补完往 fd 3 写一个字节，这边等到了（最多 60 秒）再启动安卓。
 // 编译（arm64，不链接 libc）：sh host/timens/build.sh
 
+#define SYS_dup3 24
 #define SYS_mount 40
+#define SYS_pipe2 59
+#define SYS_read 63
+#define SYS_ppoll 73
+#define SYS_clone 220
 #define SYS_openat 56
 #define SYS_fstat 80
 #define SYS_munmap 215
@@ -106,7 +113,29 @@ static int put(const char *path, const char *buf, long n) {
 	return w == n ? 0 : -1;
 }
 
-// 加载这台手机自己的 SELinux 规则。返回 0 = 成功（之后 exec 会进 init 域）
+// 拉起命令小助手，等它补完标签
+static void start_cmdd(const char *exe, char **envp) {
+	int fds[2];
+	if (sc(SYS_pipe2, (long)fds, O_CLOEXEC, 0, 0) != 0) { say("pp-timens: pipe failed\n"); return; }
+	long pid = sc(SYS_clone, 17 /* SIGCHLD */, 0, 0, 0);
+	if (pid == 0) {
+		sc(SYS_dup3, fds[1], 3, 0, 0);  // 写端放到 fd 3（dup3 不带 O_CLOEXEC，exec 后还在）
+		char *av[] = {(char *)exe, "pp-cmdd", "/data/.ppc/s", 0};
+		sc(SYS_execve, (long)exe, (long)av, (long)envp, 0);
+		say("pp-timens: exec cmdd failed\n");
+		sc(SYS_exit, 1, 0, 0, 0);
+	}
+	sc(SYS_close, fds[1], 0, 0, 0);
+	if (pid < 0) { say("pp-timens: clone failed\n"); sc(SYS_close, fds[0], 0, 0, 0); return; }
+	struct { int fd; short events, revents; } pfd = {fds[0], 1 /* POLLIN */, 0};
+	struct ts to = {60, 0};
+	char c;
+	if (sc6(SYS_ppoll, (long)&pfd, 1, (long)&to, 0, 0, 0) == 1) sc(SYS_read, fds[0], (long)&c, 1, 0);
+	else say("pp-timens: cmdd not ready in 60s\n");
+	sc(SYS_close, fds[0], 0, 0, 0);
+}
+
+// 加载这台手机自己的 SELinux 规则。返回 0 = 成功
 static int selinux_setup(int enforcing) {
 	long r = sc6(SYS_mount, (long)"selinuxfs", (long)"/sys/fs/selinux", (long)"selinuxfs", 0, 0, 0);
 	if (r != 0 && r != -16 /* EBUSY：已经挂了 */) { say("pp-timens: mount selinuxfs failed\n"); return -1; }
@@ -122,8 +151,6 @@ static int selinux_setup(int enforcing) {
 	sc(SYS_munmap, p, size, 0, 0);
 	if (r != 0) { say("pp-timens: load policy failed\n"); return -1; }
 	if (put("/sys/fs/selinux/enforce", enforcing ? "1" : "0", 1) != 0) say("pp-timens: set enforce failed\n");
-	// 下一次 exec（安卓 init）进 init 域，和 selinux_setup 阶段 setexeccon 一样
-	if (put("/proc/self/attr/exec", "u:r:init:s0", 11) != 0) say("pp-timens: setexeccon init failed\n");
 	return 0;
 }
 
@@ -132,9 +159,14 @@ void cmain(long *sp) {
 	char **argv = (char **)(sp + 1);
 	char **envp = argv + argc + 1;
 	int se = -1;  // -1 不动 SELinux，0 只记录不拦截，1 强制
-	if (argc > 1 && streq(argv[1], "--selinux=permissive")) se = 0;
-	if (argc > 1 && streq(argv[1], "--selinux=enforcing")) se = 1;
-	if (se >= 0 || (argc > 1 && argv[1][0] == '-' && argv[1][1] == '-')) {
+	const char *cmdd = 0;
+	while (argc > 1 && argv[1][0] == '-' && argv[1][1] == '-') {
+		if (streq(argv[1], "--selinux=permissive")) se = 0;
+		if (streq(argv[1], "--selinux=enforcing")) se = 1;
+		const char *a = argv[1], *k = "--cmdd=";
+		int i = 0;
+		while (k[i] && a[i] == k[i]) i++;
+		if (!k[i] && a[i]) cmdd = a + i;
 		argv[1] = argv[0];  // 去掉这个选项
 		argv++;
 		argc--;
@@ -170,7 +202,15 @@ void cmain(long *sp) {
 	}
 	if (old >= 0) sc(SYS_close, old, 0, 0, 0);
 	// SELinux 放在最后（时间命名空间那几步用的 /proc 文件不受规则影响）
-	if (se >= 0 && selinux_setup(se) != 0) say("pp-timens: SELinux not loaded, booting without it\n");
+	if (se >= 0) {
+		if (selinux_setup(se) == 0) {
+			if (cmdd) start_cmdd(cmdd, envp);
+			// 下一次 exec（安卓 init）进 init 域，和安卓 selinux_setup 阶段的 setexeccon 一样（小助手已经起来了，不受影响）
+			if (put("/proc/self/attr/exec", "u:r:init:s0", 11) != 0) say("pp-timens: setexeccon init failed\n");
+		} else {
+			say("pp-timens: SELinux not loaded, booting without it\n");
+		}
+	}
 	sc(SYS_execve, (long)argv[2], (long)(argv + 2), (long)envp, 0);
 	say("pp-timens: execve failed\n");
 	sc(SYS_exit, 1, 0, 0, 0);

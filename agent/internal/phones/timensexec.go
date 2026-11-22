@@ -18,6 +18,9 @@ const androidPath = "PATH=/product/bin:/apex/com.android.runtime/bin:/apex/com.a
 
 // phoneCommand 在手机里跑命令：开了时间命名空间就用 nsenter（含时间命名空间），否则 docker exec。
 func (s *Service) phoneCommand(ctx context.Context, id string, args ...string) *exec.Cmd {
+	if sock := s.cmdSock(containerName(id)); sock != "" {
+		return s.cmdClientCommand(ctx, sock, args) // 开了真 SELinux 的手机（踩坑 #135）
+	}
 	if s.cfg.InitHelper != "" {
 		if info, err := s.docker.InspectContainer(ctx, containerName(id)); err == nil && info.State.Pid > 0 {
 			if _, err := exec.LookPath("nsenter"); err == nil {

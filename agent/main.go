@@ -33,6 +33,14 @@ import (
 var version = "dev"
 
 func main() {
+	// 手机里的命令小助手（踩坑 #135）：pp-timens 加载完手机的 SELinux 规则后拉起，先给挂进来的文件补标签，再等管家的命令
+	if len(os.Args) > 2 && os.Args[1] == "pp-cmdd" {
+		runCmdServer(os.Args[2])
+	}
+	// 客户端：管家把「docker exec 手机 命令」换成「管家 pp-cmdc 套接字 [-e K=V]... -- 命令」
+	if len(os.Args) > 2 && os.Args[1] == "pp-cmdc" {
+		runCmdClient(os.Args[2:])
+	}
 	// 容器里的启动器模式（开机时长归零，见 timens 包）：不跑管家，建好时间命名空间就 exec 安卓 init。
 	if len(os.Args) > 2 && os.Args[1] == "pp-init" {
 		args := os.Args[2:]

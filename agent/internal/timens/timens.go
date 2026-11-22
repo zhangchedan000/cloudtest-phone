@@ -77,7 +77,8 @@ func Run(args []string, seMode string) {
 	if len(helper) > 0 {
 		hargs := args
 		if seMode != "" {
-			hargs = append([]string{"--selinux=" + seMode}, args...)
+			// 加载完规则后由 pp-timens 拉起手机里的命令小助手（自己这个程序，pp-cmdd 模式），等它补完标签再启动安卓
+			hargs = append([]string{"--selinux=" + seMode, "--cmdd=" + os.Args[0]}, args...)
 		}
 		err := execHelper(hargs) // 成功就不返回
 		fmt.Fprintf(os.Stderr, "pp-init：单线程启动器起不来（%v），改用老办法\n", err)
