@@ -502,7 +502,7 @@ func HostReady(ctx context.Context, run Runner) error {
 		}
 	}
 	// WPA2 热点要 AES-CCMP（ccm 模块）。有的内核不会自动加载，缺了 hostapd 报 "key addition failed"（踩坑 #57）
-	if _, err := os.Stat("/sys/module/ccm"); err != nil {
+	if _, err := os.Stat("/sys/module/ccm"); err != nil && !cryptoHas("ccm(aes)") {
 		if out, err := run.Run(ctx, "modprobe", "ccm"); err != nil {
 			return fmt.Errorf("加载 ccm（WPA2 加密）失败：%v %s", err, out)
 		}
@@ -534,4 +534,21 @@ func renamePhy(ctx context.Context, run Runner, pid string) string {
 		}
 	}
 	return ""
+}
+
+// cryptoProc 内核算法表（测试时换掉）。
+var cryptoProc = "/proc/crypto"
+
+// cryptoHas 内核里已经有这个算法（编进内核的不会出现在 /sys/module 下，例如魔云腾 Q1 的 CCM，踩坑 #129）。
+func cryptoHas(name string) bool {
+	b, err := os.ReadFile(cryptoProc)
+	if err != nil {
+		return false
+	}
+	for _, l := range strings.Split(string(b), "\n") {
+		if f := strings.SplitN(l, ":", 2); len(f) == 2 && strings.TrimSpace(f[0]) == "name" && strings.TrimSpace(f[1]) == name {
+			return true
+		}
+	}
+	return false
 }
