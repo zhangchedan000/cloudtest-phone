@@ -6,7 +6,7 @@
 #   sh /tmp/bootstrap.sh --check    # 只检查前提条件，不改任何东西
 #
 # 前提（脚本会先查）：root；Alpine；NVMe 大盘挂在 /mmc；内核有 binder（静态 /dev/binder1.. 或 binderfs）；
-#   /mmc/pp-dist 里有老板子 export-dist.sh 导出的 android-images.tar.gz、mihomo-arm64.gz（蓝牙包可选）。
+#   /mmc/pp-dist 里有老板子 export-dist.sh 导出的 android-images.tar.gz（mihomo 没有就从官方下、蓝牙包没有就从仓库下）。
 # 做的事：apk 换阿里源 + 装软件包 → Docker（数据放 /mmc）→ 导入安卓镜像 → 装 mihomo / 小屏程序 →
 #   生成访问口令 → 调 install.sh 装管家和全部系统配置 → 打印网页地址和口令。重复跑没关系（已做的跳过）。
 # 刷机、改 root 口令、开 SSH 见 docs/上板流程.md；Desktop Commander 远程（可选）也见那里。
@@ -15,6 +15,9 @@ REPO=${PP_REPO:-zhangchedan000/cloudtest-phone}
 REF=${PP_REF:-main}
 RAW="https://raw.githubusercontent.com/$REPO/$REF"
 D=/mmc/pp-dist
+# mihomo：/mmc/pp-dist 里没有就从官方 GitHub 发布页下（和 Q1 上在用的是同一个文件，解压后 sha256 一致）
+MIHOMO_URL=https://github.com/MetaCubeX/mihomo/releases/download/v1.19.34/mihomo-linux-arm64-v1.19.34.gz
+MIHOMO_SHA=022da41e03ce70641a2f50c485b4f69ade8f1c7aeeece2cf1ec45c614a029441   # 解压后的程序
 CHECK=0; [ "${1:-}" = --check ] && CHECK=1
 say() { echo "$(date '+%T') $*"; }
 die() { say "✗ $*"; exit 1; }
@@ -27,8 +30,8 @@ grep -q '^ID=alpine' /etc/os-release 2>/dev/null && ok "Alpine $(sed -n 's/^VERS
 mountpoint -q /mmc 2>/dev/null && ok "/mmc 挂着，剩 $(df -h /mmc | awk 'NR==2{print $4}')" || { say "✗ /mmc 没挂（NVMe 大盘）"; bad=1; }
 if [ -e /dev/binder1 ] || grep -q binder /proc/filesystems; then ok "内核有 binder"; else say "✗ 内核没有 binder（Redroid 跑不了）"; bad=1; fi
 [ -f "$D/android-images.tar.gz" ] && ok "安卓镜像包在" || { say "✗ 没有 $D/android-images.tar.gz（从老板子拷 /mmc/pp-dist，老板子上先跑 host/board/export-dist.sh）"; bad=1; }
-[ -f "$D/mihomo-arm64.gz" ] && ok "mihomo 包在" || { say "✗ 没有 $D/mihomo-arm64.gz"; bad=1; }
-[ -f "$D/pp-rootcanal-arm64-bundle.tgz" ] && ok "蓝牙芯片模拟器包在" || say "· 没有蓝牙芯片模拟器包（手机蓝牙会关着，别的照常）"
+[ -f "$D/mihomo-arm64.gz" ] && ok "mihomo 包在" || say "· 没有 $D/mihomo-arm64.gz：装的时候从官方 GitHub 下（校验 sha256）"
+[ -f "$D/pp-rootcanal-arm64-bundle.tgz" ] && ok "蓝牙芯片模拟器包在" || say "· 没有蓝牙芯片模拟器包：装的时候从仓库 tools/dist 下（没有就手机蓝牙关着，别的照常）"
 if [ -f "$D/MANIFEST.txt" ] && command -v sha256sum >/dev/null; then
   # 不用 -s / --status：busybox 和 coreutils 的 sha256sum 参数不一样，只看退出码
   if (cd "$D" && grep -E '^[0-9a-f]{64} ' MANIFEST.txt | sha256sum -c >/dev/null 2>&1); then ok "复用件校验通过（MANIFEST.txt）"; else say "✗ 复用件校验不过（拷坏了？在 $D 里跑 sha256sum -c MANIFEST.txt 看哪个）"; bad=1; fi
@@ -84,6 +87,13 @@ ok "安卓镜像"
 
 # ---------- 4. mihomo / 小屏程序 ----------
 if [ ! -x /usr/local/bin/mihomo ]; then
+  if [ ! -f "$D/mihomo-arm64.gz" ]; then
+    say "从官方 GitHub 下 mihomo"
+    mkdir -p "$D"
+    curl -fsSL --retry 3 -m 600 -o "$D/mihomo-arm64.gz.part" "$MIHOMO_URL" || die "下载 mihomo 失败（网络？）"
+    [ "$(pigz -dc "$D/mihomo-arm64.gz.part" | sha256sum | cut -d' ' -f1)" = "$MIHOMO_SHA" ] || { rm -f "$D/mihomo-arm64.gz.part"; die "mihomo 校验不对"; }
+    mv "$D/mihomo-arm64.gz.part" "$D/mihomo-arm64.gz"
+  fi
   pigz -dc "$D/mihomo-arm64.gz" > /usr/local/bin/mihomo && chmod 755 /usr/local/bin/mihomo || die "装 mihomo 失败"
 fi
 /usr/local/bin/mihomo -v >/dev/null 2>&1 || die "mihomo 跑不起来"

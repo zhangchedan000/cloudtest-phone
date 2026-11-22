@@ -152,6 +152,17 @@ has() { case "$changed " in *" $1 "*) return 0 ;; esac; return 1; }
 
 # ---------- 5.5 蓝牙芯片模拟器（踩坑 #122）：有包没装就装；没包就不装（管家会把蓝牙关着） ----------
 RCB=/mmc/pp-dist/pp-rootcanal-arm64-bundle.tgz
+RCB_SHA=46d384c9a2104f128c9efe354abad905072661e3729556f0991a297cdcad62c6
+# 本地没有就从仓库 tools/dist 取（20M 以内的复用件放仓库，换板不怕老板子坏）
+if [ ! -f "$RCB" ] && [ ! -x /opt/pp-rootcanal/pp-rootcanal ] && [ -d /mmc ]; then
+  mkdir -p /mmc/pp-dist
+  if curl -fsSL --retry 3 -m 300 -o "$RCB.part" "$RAW/tools/dist/pp-rootcanal-arm64-bundle.tgz" 2>/dev/null &&
+     [ "$(sha256sum "$RCB.part" | cut -d' ' -f1)" = "$RCB_SHA" ]; then
+    mv "$RCB.part" "$RCB" && say "从仓库取到蓝牙芯片模拟器包"
+  else
+    rm -f "$RCB.part"
+  fi
+fi
 if [ -f "$RCB" ] && [ ! -x /opt/pp-rootcanal/pp-rootcanal ]; then
   tar xzf "$RCB" -C /opt && say "装蓝牙芯片模拟器（/opt/pp-rootcanal）"
 fi

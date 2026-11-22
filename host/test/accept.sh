@@ -87,6 +87,7 @@ while [ "$done_n" -lt "$TOTAL" ]; do
     echo "$r" | awk -F'\t' -v OFS='\t' -v id="$id" -v gms="$gms" -v imei="$imei" -v bootid="$bootid" \
       '{print id,$1,$2,$3,$4,$5,gms,$7,$8,imei,$10,$11,$12,$13,$17,$14,$15,bootid,$16,$18}' >> "$OUT"
     bt=$(echo "$r" | cut -f13); fa=$(echo "$r" | cut -f7)
+    [ "$VER" = 13 ] && bt=ON   # 安卓 13 没有蓝牙模拟，关着是正常的
     if [ "$bt" != ON ]; then
       { echo "== $id 蓝牙=$bt $(date '+%F %T')"; docker exec "$C" sh -c 'dumpsys bluetooth_manager 2>/dev/null | head -60; echo ==; logcat -d 2>/dev/null | grep -iE "BluetoothManagerService|bluetooth.*(hal|hci)|AdapterState|btif|Bluetooth.*(crash|died|timeout)" | tail -150; echo ==crash; logcat -d -b crash 2>/dev/null | tail -60'
         echo "== 宿主："; pgrep -af "rootcanal.*$id" ; ls -la /run/ppbt-*"$id"* 2>/dev/null; } > "$DIR/accept-$tag-bt-$id.log" 2>&1
@@ -105,10 +106,12 @@ while [ "$done_n" -lt "$TOTAL" ]; do
 done
 
 # 汇总
-python3 - "$OUT" "$GAPPS" "$PROXY" <<'EOF'
+python3 - "$OUT" "$GAPPS" "$PROXY" "$VER" <<'EOF'
 import csv, sys
 rows = list(csv.DictReader(open(sys.argv[1]), delimiter='\t'))
-gapps, proxy = sys.argv[2] == "1", sys.argv[3]
+gapps, proxy, ver = sys.argv[2] == "1", sys.argv[3], int(sys.argv[4])
+# 安卓 13（cnflysky lineage 底子）：没做蓝牙模拟（镜像 prism.bt=0，蓝牙本来就关着），模拟器传感器 14 个
+min_sensors = 14 if ver == 13 else 16
 n = len(rows)
 def cnt(f): return sum(1 for r in rows if f(r))
 def uniq(k):
@@ -117,13 +120,13 @@ def uniq(k):
 items = [
     ("开机", cnt(lambda r: r["boot"] == "1")),
     ("Mali", cnt(lambda r: r["mali"].startswith("Mali"))),
-    ("传感器≥16", cnt(lambda r: r["sensors"].isdigit() and int(r["sensors"]) >= 16)),
+    (f"传感器≥{min_sensors}", cnt(lambda r: r["sensors"].isdigit() and int(r["sensors"]) >= min_sensors)),
     ("电话服务", cnt(lambda r: r["phone"] == "found")),
     ("拨号短信", cnt(lambda r: r["dialer"].isdigit() and int(r["dialer"]) >= 2)),
     ("无系统崩溃", cnt(lambda r: r["fatal"] == "0")),
     ("电话进程不崩", cnt(lambda r: r["phonecrash"] == "0")),
     ("读到IMEI", cnt(lambda r: len(r["imei"]) == 15)),
-    ("蓝牙ON", cnt(lambda r: r["bt"] == "ON")),
+    ("蓝牙ON", cnt(lambda r: r["bt"] == "ON" or ver == 13)),
     ("蓝牙不崩", cnt(lambda r: r["btcrash"] == "0")),
     ("电话HAL不崩", cnt(lambda r: r["radiocrash"] == "0")),
 ]
@@ -143,4 +146,4 @@ echo "结果：$OUT"
 #   phone 电话服务 iphonesubinfo 注册（found）；dialer 拨号 + 短信装上（2）；gms 谷歌服务进程 + Play 商店；
 #   fatal system_server 崩溃次数（0）；phonecrash com.android.phone 崩溃次数（0）；
 #   imei App 层读到的 15 位 IMEI（每台唯一）；sim / operator / net 真代理时 SIM 状态、运营商、网络制式；
-#   bt 蓝牙状态（宿主装了 rootcanal 时应为 ON，踩坑 #122）；btcrash com.android.bluetooth 崩溃次数；radiocrash 电话 HAL（radio-service）崩溃次数（0，踩坑 #125）；androidId / serial / bootid 身份（每台唯一）。
+#   bt 蓝牙状态（宿主装了 rootcanal 时应为 ON，踩坑 #122；安卓 13 没有蓝牙模拟、不算）；sensors 安卓 13 是 14 个；btcrash com.android.bluetooth 崩溃次数；radiocrash 电话 HAL（radio-service）崩溃次数（0，踩坑 #125）；androidId / serial / bootid 身份（每台唯一）。
