@@ -101,7 +101,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("PUT /api/groups/{id}", s.updateGroup)
 	mux.HandleFunc("DELETE /api/groups/{id}", s.deleteGroup)
 	if s.web != nil {
-		mux.Handle("/", http.FileServerFS(s.web))
+		mux.Handle("/", newStaticHandler(s.web)) // gzip + 缓存（static.go）
 	}
 	return s.cors(s.auth(mux))
 }
