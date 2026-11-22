@@ -125,7 +125,7 @@ for root, _, files in os.walk("/w/rc"):
             m = re.match(r"^service\s+(\S+)\s+(\S+)", l)
             if m:
                 # 服务那一行用 \ 续行时（比如 vold 的启动参数分好几行），seclabel 要加在续行结束之后，不然把参数截断了
-                while lines[i].rstrip().endswith("\\") and i + 1 < len(lines):
+                while lines[i].rstrip().endswith(chr(92)) and i + 1 < len(lines):
                     i += 1; out.append(lines[i])
                 j = i + 1; has = False
                 while j < len(lines) and not re.match(r"^(service|on|import)\s", lines[j]):
