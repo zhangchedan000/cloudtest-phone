@@ -110,7 +110,7 @@ echo "pkgs=$(pm list packages 2>/dev/null | wc -l)"; echo "gms=$(pm list package
 echo "tz_now=$(date +%Z%z)"
 echo "ping=$(ping -c1 -W3 1.1.1.1 >/dev/null 2>&1 && echo ok || echo fail)"
 '
-: > "$DIR/adb.txt"
+: > "$DIR/adb.txt"; rm -f "$DIR"/*.kv "$DIR/stream.txt"
 while read -r id ver g cc px; do
   [ "$(docker inspect -f '{{.State.Running}}' "pp-$id" 2>/dev/null)" = true ] || { echo "$id 没开起来" >> "$DIR/adb.txt"; continue; }
   ip=$(curl -s -H "$H" "$API/phones" | python3 -c 'import sys,json
@@ -120,8 +120,9 @@ for p in json.load(sys.stdin):
   curl -s -m60 -X PUT -H "$H" -H 'Content-Type: application/json' -d '{"adb":true}' "$API/phones/$id" -o /dev/null
   curl -s -m20 -X POST -H "$H" -H 'Content-Type: application/json' -d "{\"key\":\"$KEY\"}" "$API/phones/$id/adb-key" -o /dev/null
   sleep 2
-  c=$(adb connect "$ip:5555" 2>&1 | tr '\n' ' ')
-  st=$(adb -s "$ip:5555" get-state 2>&1)
+  # adb 会读标准输入：不重定向的话会把 while 循环要读的列表吃掉，只测到第一台
+  c=$(adb connect "$ip:5555" </dev/null 2>&1 | tr '\n' ' ')
+  st=$(adb -s "$ip:5555" get-state </dev/null 2>&1)
   echo "$id ip=$ip connect=[$c] state=$st" >> "$DIR/adb.txt"
   {
     echo "id=$id"; echo "spec_ver=$ver"; echo "spec_gapps=$g"; echo "spec_cc=$cc"; echo "spec_proxy=$px"
@@ -131,8 +132,8 @@ for p in json.load(sys.stdin):
 d=json.load(open(sys.argv[1])); d=d.get("proxies",d) if isinstance(d,dict) else d
 for p in d:
     if p["id"]==sys.argv[2]: c=p.get("check") or p.get("lastCheck") or {}; print(c.get("exitIp") or c.get("ip") or "")' "$DIR/proxies.json" "$px" 2>/dev/null)"
-    adb -s "$ip:5555" shell "$PULL" 2>&1
-    echo "adb_root=$(adb -s "$ip:5555" root 2>&1 | tr '\n' ' ')"
+    adb -s "$ip:5555" shell "$PULL" </dev/null 2>&1
+    echo "adb_root=$(adb -s "$ip:5555" root </dev/null 2>&1 | tr '\n' ' ')"
   } > "$DIR/$id.kv"
 done < "$DIR/phones.txt"
 log "ADB 拉值完成（$(grep -c 'state=device' "$DIR/adb.txt")/$(wc -l < "$DIR/phones.txt") 台连上）"
@@ -142,6 +143,8 @@ log "同时开 $(wc -l < "$DIR/phones.txt") 路实时画面 30 秒"
 while read -r id _; do
   [ "$(docker inspect -f '{{.State.Running}}' "pp-$id" 2>/dev/null)" = true ] || continue
   ( b=$(curl -s -m30 -H "$H" "$API/phones/$id/stream?w=720&h=1600" -o /dev/null -w '%{size_download}'); echo "$id $b" >> "$DIR/stream.txt" ) &
+  # 画面要动起来才像真在用（静止画面编码几乎不耗 CPU）：每 2 秒左右滑一下桌面
+  docker exec "pp-$id" sh -c 'for i in $(seq 1 14); do input swipe 900 1300 150 1300 250; sleep 1; input swipe 150 1300 900 1300 250; sleep 1; done' </dev/null >/dev/null 2>&1 &
 done < "$DIR/phones.txt"
 sleep 15
 {
