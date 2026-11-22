@@ -142,7 +142,7 @@ func handle(c net.Conn) {
 	}
 	// 内置命令：管家挂完伪造文件后让小助手再补一遍标签
 	if req.Args[0] == RelabelCmd {
-		n, err := LabelBoot()
+		n, err := LabelBinds()
 		msg := fmt.Sprintf("补了 %d 个标签\n", n)
 		code := byte(0)
 		if err != nil {

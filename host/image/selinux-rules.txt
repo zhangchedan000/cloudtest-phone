@@ -33,3 +33,82 @@ allow system_server sysfs file read,open,getattr
 allow storaged sysfs file read,open,getattr
 # 带分类（c512,c768…）的 App 写 gralloc 共享内存：多级安全约束要求目标是「可信对象」（RK 真机这么标）
 mlstrusted hal_graphics_allocator_default_tmpfs
+# —— 以下按宽松模式开机抓到的拦截补（踩坑 #135）——
+# 文件系统 associate：标签打在容器的 devtmpfs / devpts / tmpfs、overlay 根目录、宿主机盘（伪造文件 bind）上
+allow dev_type device filesystem associate
+allow dev_type devpts filesystem associate
+allow dev_type tmpfs filesystem associate
+allow sysfs_type tmpfs filesystem associate
+allow sysfs_type labeledfs filesystem associate
+allow proc_type tmpfs filesystem associate
+allow proc_type labeledfs filesystem associate
+allow rootfs labeledfs filesystem associate
+# init：第一阶段建的 /dev/socket、/dev/__properties__ 继承了 /dev 的 device 标签，第二阶段要重打
+allow init device dir relabelfrom
+allow init device chr_file relabelfrom,read,write,open,ioctl,getattr
+allow init device file relabelfrom
+allow init dev_type dir relabelto
+allow init dev_type chr_file relabelto
+allow init dev_type file relabelto
+# init：容器根目录设共享挂载、redroid 的伪造文件挂载
+allow init rootfs dir mounton
+allow init proc_vmallocinfo file mounton
+allow init sysfs_power file mounton
+# init：redroid 自己加的服务没有 seclabel（vendor 程序，以 init 身份跑）
+allow init vendor_file file execute,execute_no_trans,map,read,open,getattr
+allow init same_process_hal_file file execute,map,read,open,getattr
+allow init init netlink_route_socket create,bind,read,write,nlmsg_read,nlmsg_write,getattr,setopt,getopt
+allow init hal_radio_service service_manager add,find
+allow init gpu_device chr_file getattr
+allow init video_device chr_file getattr
+allow init dmabuf_system_heap_device chr_file getattr
+allow init devpts chr_file ioctl
+# init 建的套接字（redroid 去掉了按服务算套接字标签，套接字都是 init 标签）
+allow domain init unix_dgram_socket read,write,getattr,getopt,setopt
+allow domain init unix_stream_socket read,write,getattr,getopt,setopt,accept,listen,shutdown
+# vendor_init：redroid 的 rc 和伪造的 vendor/build.prop
+allow vendor_init rootfs dir write,add_name,create
+allow vendor_init devpts chr_file setattr
+allow vendor_init apex_module_data_file dir search
+allow vendor_init apex_tethering_data_file dir search,write,remove_name
+allow vendor_init apex_tethering_data_file file unlink
+allow vendor_init bootloader_prop property_service set
+allow vendor_init system_prop property_service set
+allow vendor_init use_memfd_prop property_service set
+allow vendor_init cold_boot_done_prop property_service set
+# toolbox：redroid 开机脚本改设备权限、设 ro.hardware.egl 这些
+allow toolbox input_device dir getattr,read,open,search,write,remove_name,rmdir
+allow toolbox input_device chr_file getattr,unlink
+allow toolbox device dir write,remove_name,search,read,open,getattr
+allow toolbox gpu_device chr_file getattr,setattr
+allow toolbox gpu_device dir search,getattr
+allow toolbox video_device chr_file getattr,setattr
+allow toolbox dmabuf_heap_device chr_file getattr,setattr
+allow toolbox dmabuf_system_heap_device chr_file getattr,setattr
+allow toolbox toolbox capability fsetid,fowner,chown
+allow toolbox init fifo_file write,getattr
+allow toolbox property_socket sock_file write
+allow toolbox debug_prop property_service set
+allow toolbox bootloader_prop property_service set
+allow toolbox exported_default_prop property_service set
+# 硬件 HAL（容器里的设备节点 / 伪终端）
+allow hal_bluetooth_default serial_device chr_file read,write,open,ioctl,getattr
+allow hal_sensors_default device chr_file read,write,open,ioctl,getattr
+allow odsign devpts chr_file read,write,open,ioctl,getattr
+allow hal_graphics_composer_default vndbinder_device chr_file read,write,open,ioctl,map
+allow hal_graphics_composer_default hal_graphics_allocator_service service_manager find
+allow hal_graphics_composer_default hal_graphics_composer_server_tmpfs file ioctl
+allow mediacodec dmabuf_heap_device chr_file read,open,ioctl,getattr,map
+allow mediacodec proc_version file read,open,getattr
+allow hal_graphics_allocator_default dmabuf_heap_device chr_file read,open,ioctl,getattr,map
+allow hal_graphics_allocator_default property_socket sock_file write
+allow hal_graphics_allocator_default vendor_default_prop property_service set
+allow hal_wifi_default property_socket sock_file write
+allow hal_wifi_default vendor_default_prop property_service set
+allow hal_wifi_default hal_wifi_default netlink_route_socket create,bind,read,write,nlmsg_read,getattr,setopt,getopt
+allow domain tmpfs file read,write,map,getattr,ioctl
+allow apexd device blk_file read,write,open,ioctl,getattr
+allow netd system_file dir write,add_name
+allow netd system_file file create,open,read,write,lock,getattr
+allow system_suspend sysfs file read,open,getattr
+allow vold_prepare_subdirs checkin_data_file dir relabelfrom

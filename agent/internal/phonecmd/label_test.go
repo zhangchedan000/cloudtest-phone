@@ -31,9 +31,9 @@ func TestLookup(t *testing.T) {
 		m    os.FileMode
 		want string
 	}{
-		{"/system/bin/init", 0, "u:object_r:init_exec:s0"},        // 纯路径条目优先于后面的正则
-		{"/system/bin/logd", 0, "u:object_r:daemon_exec:s0"},      // 后面的正则胜过前面的正则
-		{"/system/bin/sh", 0, "u:object_r:shell_exec:s0"},         // 类型对
+		{"/system/bin/init", 0, "u:object_r:init_exec:s0"},              // 纯路径条目优先于后面的正则
+		{"/system/bin/logd", 0, "u:object_r:daemon_exec:s0"},            // 后面的正则胜过前面的正则
+		{"/system/bin/sh", 0, "u:object_r:shell_exec:s0"},               // 类型对
 		{"/system/bin/sh", os.ModeSymlink, "u:object_r:system_file:s0"}, // 类型不对就往前找
 		{"/vendor/bin/hw/android.hardware.media.c2@1.1-service", 0, "u:object_r:mediacodec_exec:s0"},
 		{"/dev/binder", os.ModeCharDevice | os.ModeDevice, "u:object_r:binder_device:s0"},

@@ -220,9 +220,16 @@ var kernelFS = map[string]bool{"proc": true, "sysfs": true, "cgroup": true, "cgr
 // 小助手照挂载表找不全，所以管家直接告诉它。
 const BindsFile = "/data/.ppc/binds"
 
-// LabelBoot 开机前的补标签：宿主机挂进来的文件 / 目录（Docker bind，文件系统是宿主机的盘）+ /dev 整个。
+// LabelBoot 开机前的补标签：宿主机挂进来的文件 / 目录（Docker bind，文件系统是宿主机的盘）+ /dev 整个
+// + 容器根目录 + /metadata（容器那一层里以前没开 SELinux 时建的，没有标签）。
 // 挂在 /proc、/sys 下面的伪造文件用新挂一份 proc / sysfs 里同一路径的标签（genfscon 定的，比如 proc_cpuinfo）。
-func LabelBoot() (int, error) {
+func LabelBoot() (int, error) { return label(true) }
+
+// LabelBinds 开机后管家又挂了伪造文件：只补管家清单里的挂载。/dev 这时不能再整个重打：安卓 init 建的属性文件
+// （/dev/__properties__/<类型>）、套接字的标签是按类型现打的，file_contexts 里没有，重打会全变成 device。
+func LabelBinds() (int, error) { return label(false) }
+
+func label(boot bool) (int, error) {
 	l, err := LoadLabeler(FileContextFiles)
 	if err != nil {
 		return 0, err
@@ -263,7 +270,10 @@ func LabelBoot() (int, error) {
 		return n
 	}
 	n := 0
-	all := mounts()
+	var all []mount
+	if boot {
+		all = mounts()
+	}
 	if b, err := os.ReadFile(BindsFile); err == nil {
 		seen := map[string]bool{}
 		for _, m := range all {
@@ -277,9 +287,10 @@ func LabelBoot() (int, error) {
 	}
 	for _, m := range all {
 		mp := m.point
-		// 伪造的 /proc、/sys 内容（tmpfs / 宿主机文件 bind）照真文件打；真正的 proc / sysfs / cgroup 挂载不碰
+		// 伪造的 /proc、/sys 内容（tmpfs / 宿主机文件 bind）照真文件打；内核自己的文件系统（proc、sysfs、cgroup、
+		// /sys/kernel/tracing 的 tracefs、pstore…）标签由规则定，不碰
 		fake := (strings.HasPrefix(mp, "/proc/") || strings.HasPrefix(mp, "/sys/")) && !strings.HasPrefix(mp, "/sys/fs/cgroup") &&
-			m.fstype != "proc" && m.fstype != "sysfs" && !strings.HasPrefix(m.fstype, "cgroup")
+			(m.fstype == "tmpfs" || !kernelFS[m.fstype]) && !strings.HasPrefix(m.fstype, "cgroup")
 		if !fake && (kernelFS[m.fstype] || mp == "/" || mp == "/data" || strings.HasPrefix(mp, "/data/.pp") || strings.HasPrefix(mp, tmp)) {
 			continue
 		}
@@ -296,7 +307,11 @@ func LabelBoot() (int, error) {
 			n += l.Relabel(mp, true, nil)
 		}
 	}
-	n += l.Relabel("/dev", true, map[string]bool{"/dev/pts": true, "/dev/shm": true, "/dev/mqueue": true, tmp: true})
-	n += l.Relabel("/", false, nil) // 容器根目录在 Docker 每次新建的那一层，没有标签
+	if boot {
+		n += l.Relabel("/dev", true, map[string]bool{"/dev/pts": true, "/dev/shm": true, "/dev/mqueue": true, tmp: true,
+			"/dev/__properties__": true, "/dev/socket": true})
+		n += l.Relabel("/", false, nil) // 容器根目录在 Docker 每次新建的那一层，没有标签
+		n += l.Relabel("/metadata", true, nil)
+	}
 	return n, nil
 }

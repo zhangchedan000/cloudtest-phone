@@ -149,19 +149,20 @@ func (s *Service) addBindPaths(id string, paths []string) {
 }
 
 // relabelDataOnce 开了真 SELinux 的手机第一次开机：/data 里以前（没开 SELinux 时）建的文件都没有标签或标签不对，
-// 让小助手用安卓自己的 restorecon 整个重打一遍（App 数据按 seapp_contexts 打，带 App 自己的分类）。只做一次（/data 里留记号）。
+// 让小助手用安卓自己的 restorecon 整个重打一遍（-D：App 数据目录 /data/data、/data/user 也打，按 seapp_contexts，
+// 带 App 自己的分类；不加 -D 安卓会跳过这些目录）。只做一次（/data 里留记号）。
 func (s *Service) relabelDataOnce(ctx context.Context, id string) {
 	sock := s.cmdSock(containerName(id))
 	if sock == "" {
 		return
 	}
-	const mark = "/data/system/.pp_se_relabeled"
+	const mark = "/data/system/.pp_se_relabeled2"
 	if _, err := s.run.Run(ctx, s.cfg.InitHelper, "pp-cmdc", sock, "--", "test", "-f", mark); err == nil {
 		return
 	}
 	cctx, cancel := context.WithTimeout(ctx, 10*time.Minute)
 	defer cancel()
-	if out, err := s.run.Run(cctx, s.cfg.InitHelper, "pp-cmdc", sock, "--", "restorecon", "-R", "-F", "/data"); err != nil {
+	if out, err := s.run.Run(cctx, s.cfg.InitHelper, "pp-cmdc", sock, "--", "restorecon", "-R", "-F", "-D", "/data"); err != nil {
 		log.Printf("手机 %s：/data 重打 SELinux 标签失败：%v %s", id, err, out)
 		return
 	}
