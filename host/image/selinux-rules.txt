@@ -117,3 +117,14 @@ allow file_type tmpfs filesystem associate
 # RK 硬件编解码（mpp / codec2）读一堆不带前缀的调试属性（落在 default_prop）：被拒时 libc 要往 logd 写一行，
 # 这几个系统调用不在编解码服务的 seccomp 白名单里 → SIGSYS 被杀 → 系统服务拿不到编解码器、整个框架崩
 allow mediacodec default_prop file read,open,getattr,map
+# redroid 的电话驱动（A15 mtkfusionrild / A16 radio-service.mtk）没写 seclabel、以 init 身份跑：
+# 连管家的模拟基带（本机 TCP 9600）、拿系统休眠服务（wakelock）
+allow init init tcp_socket create,connect,read,write,getattr,setopt,getopt,shutdown
+allow init port tcp_socket name_connect
+allow init node tcp_socket node_bind
+allow init hal_system_suspend_service service_manager find
+allow init system_suspend binder call,transfer
+allow system_suspend init binder call,transfer
+# netd 给管家在手机网络里起的程序（vendor.sensord，kernel 身份）的套接字打标记
+allow netd kernel tcp_socket read,write,getattr,getopt,setopt
+allow netd kernel udp_socket read,write,getattr,getopt,setopt

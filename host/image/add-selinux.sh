@@ -19,7 +19,7 @@ img=$1; ver=$2
 B=${PP_BUILD:-/mmc/pp-build}
 log(){ echo "$(date +%T) [selinux] $*"; }
 die(){ echo "[selinux] 错误：$*" >&2; exit 1; }
-SEL_VER=13
+SEL_VER=14
 cur=$(docker image inspect -f '{{index .Config.Labels "prism.selinux"}}' "$img" 2>/dev/null || true)
 [ "$cur" = "$SEL_VER" ] && { log "$img 已经做好（第 $SEL_VER 版），跳过"; exit 0; }
 base=$img
