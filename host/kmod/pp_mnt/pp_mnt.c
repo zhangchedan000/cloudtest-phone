@@ -35,6 +35,10 @@
 #include <linux/uidgid.h>
 #include <linux/errno.h>
 #include <linux/timekeeping.h>
+#include <linux/time_namespace.h>
+#include <linux/input.h>
+#include <linux/nsproxy.h>
+#include <net/net_namespace.h>
 
 #include "rewrite.h"
 
@@ -72,6 +76,16 @@ static struct pp_slot *pp_find(struct pid_namespace *ns)
 		if (slots[i].ns == ns)
 			return &slots[i];
 	return NULL;
+}
+
+/* 读的进程看到的开机时长（秒）：宿主机 boottime + 它所在时间命名空间的偏移 */
+static long long pp_up_sec(void)
+{
+	struct timespec64 ts;
+
+	ktime_get_boottime_ts64(&ts);
+	timens_add_boottime(&ts);
+	return ts.tv_sec;
 }
 
 /* ---------- kretprobe ---------- */
@@ -119,13 +133,13 @@ static void pp_done(struct kretprobe_instance *ri, int mode)
 		if (mode == PP_UPTIME) {
 			n = pp_rewrite_uptime(m->buf + d->start, blen, out, PP_LINE_MAX, num_online_cpus());
 		} else if (mode == PP_STAT) {
-			long long bt = pp_parse_btime(m->buf + d->start, blen);
+			/* 开机时长按读的进程所在的时间命名空间算（和 /proc/uptime 一致）。btime 也按它重算：
+			 * 魔云腾 Q1 内核的 btime 不跟时间命名空间走（还是宿主机开机时刻，几台一样，踩坑 #134）。 */
+			long long up = pp_up_sec();
+			long long now = (long long)ktime_get_real_seconds();
 
-			if (bt > 1000000000LL) { /* 读到合理的 btime 才改，否则原样（防算出离谱值） */
-				long long up = (long long)ktime_get_real_seconds() - bt;
-
-				n = pp_rewrite_stat(m->buf + d->start, blen, out, PP_LINE_MAX, num_online_cpus(), up);
-			}
+			if (up > 0 && now > 1000000000LL)
+				n = pp_rewrite_stat(m->buf + d->start, blen, out, PP_LINE_MAX, num_online_cpus(), up, now - up);
 		} else {
 			n = pp_rewrite(m->buf + d->start, blen, out, PP_LINE_MAX, mode, &s->cfg);
 		}
@@ -250,20 +264,177 @@ PP_NET_PROBE(rp_udp6, "udp6_seq_show");
 static struct kretprobe *net_probes[] = { &rp_tcp4, &rp_tcp6, &rp_udp4, &rp_udp6 };
 static bool net_ok[ARRAY_SIZE(net_probes)];
 
-/* /proc/bus/input/devices：删掉 QEMU / virtio 等虚拟机输入设备那几块（踩坑 #82）。 */
+/*
+ * /proc/bus/input/devices：删掉 QEMU / virtio 等虚拟机输入设备、魔云腾宿主机的 LG 虚拟设备那几块（踩坑 #82、#134）。
+ * 另外每台手机的虚拟触摸屏（uinput，名字都是 fts_ts 之类）在宿主机上是同一张列表，开着 8 台每台都能看到 8 个——
+ * 记下每个输入设备是在哪个 PID 命名空间里建的（hook input_register_device），手机里读的时候别的手机建的整块删掉，
+ * 只留自己的和宿主机真硬件（电源键等）。只比指针、不持引用（命名空间释放后地址被复用也只是多显示一块）。
+ */
+#define PP_INDEV_MAX 512
+struct pp_indev {
+	void *dev;
+	struct pid_namespace *ns;
+};
+static struct pp_indev indevs[PP_INDEV_MAX];
+static DEFINE_SPINLOCK(indev_lock);
+
+static int pp_indev_reg_pre(struct kprobe *p, struct pt_regs *regs)
+{
+	void *dev = (void *)regs_get_kernel_argument(regs, 0);
+	struct pid_namespace *ns = task_active_pid_ns(current);
+	unsigned long flags;
+	int i, free = -1;
+
+	if (!dev || !ns || ns == &init_pid_ns)
+		return 0;
+	spin_lock_irqsave(&indev_lock, flags);
+	for (i = 0; i < PP_INDEV_MAX; i++) {
+		if (indevs[i].dev == dev) {
+			free = i;
+			break;
+		}
+		if (free < 0 && !indevs[i].dev)
+			free = i;
+	}
+	if (free >= 0) {
+		indevs[free].dev = dev;
+		indevs[free].ns = ns;
+	}
+	spin_unlock_irqrestore(&indev_lock, flags);
+	return 0;
+}
+
+static int pp_indev_unreg_pre(struct kprobe *p, struct pt_regs *regs)
+{
+	void *dev = (void *)regs_get_kernel_argument(regs, 0);
+	unsigned long flags;
+	int i;
+
+	spin_lock_irqsave(&indev_lock, flags);
+	for (i = 0; i < PP_INDEV_MAX; i++)
+		if (indevs[i].dev == dev) {
+			indevs[i].dev = NULL;
+			indevs[i].ns = NULL;
+		}
+	spin_unlock_irqrestore(&indev_lock, flags);
+	return 0;
+}
+
+static struct kprobe indev_probes[] = {
+	{ .symbol_name = "input_register_device", .pre_handler = pp_indev_reg_pre },
+	{ .symbol_name = "input_unregister_device", .pre_handler = pp_indev_unreg_pre },
+};
+static bool indev_ok;
+
+/* 这个输入设备是别的命名空间（别的手机）建的吗 */
+static bool pp_indev_foreign(void *dev, struct pid_namespace *me)
+{
+	unsigned long flags;
+	bool foreign = false;
+	int i;
+
+	spin_lock_irqsave(&indev_lock, flags);
+	for (i = 0; i < PP_INDEV_MAX; i++)
+		if (indevs[i].dev == dev) {
+			foreign = indevs[i].ns != me;
+			break;
+		}
+	spin_unlock_irqrestore(&indev_lock, flags);
+	return foreign;
+}
+
+struct pp_input_ri {
+	struct pp_ri base;
+	void *dev;
+};
+
+static int pp_input_entry(struct kretprobe_instance *ri, struct pt_regs *regs)
+{
+	struct pp_input_ri *d = (struct pp_input_ri *)ri->data;
+	void *v = (void *)regs_get_kernel_argument(regs, 1);
+
+	if (pp_entry(ri, regs))
+		return 1;
+	/* input_devices_seq_show(seq, v)：v 是 input_dev_list 上的 dev->node */
+	d->dev = v ? (void *)container_of((struct list_head *)v, struct input_dev, node) : NULL;
+	return 0;
+}
+
 static int pp_ret_input(struct kretprobe_instance *ri, struct pt_regs *regs)
 {
+	struct pp_input_ri *d = (struct pp_input_ri *)ri->data;
+	struct seq_file *m = d->base.m;
+
+	if (indev_ok && d->dev && m && m->buf && m->count > d->base.start && m->count < m->size &&
+	    pp_indev_foreign(d->dev, task_active_pid_ns(current))) {
+		m->count = d->base.start; /* 别的手机的设备：整块删掉 */
+		return 0;
+	}
 	pp_done(ri, PP_INPUT);
 	return 0;
 }
 static struct kretprobe rp_input = {
 	.kp.symbol_name = "input_devices_seq_show",
-	.entry_handler = pp_entry,
+	.entry_handler = pp_input_entry,
 	.handler = pp_ret_input,
-	.data_size = sizeof(struct pp_ri),
+	.data_size = sizeof(struct pp_input_ri),
 	.maxactive = 64,
 };
 static bool input_ok;
+
+/*
+ * 手机里的无线网卡名（踩坑 #76 / #134）：真机是 phy0，我们的是 pps<手机ID>（管家建网卡时起的，用来找它）。
+ * 管家把网卡搬进手机的网络命名空间后改名 phy0，但内核 cfg80211_dev_check_name 有两条限制：名字全内核唯一、
+ * 「phyN」只许 N 等于它自己的编号（编号全局递增，开过几十台以后早就不是 0 了）——所以一直改不成。
+ * 每台手机的网络命名空间里只有自己这一块网卡，/sys/class/ieee80211 也按网络命名空间分开，重名没有冲突。
+ * 这里只对「不在宿主机网络命名空间里的进程」把改成 phy<数字> 的 -EINVAL 放行；宿主机里照旧。
+ * 关机前管家会把名字改回 pps…（网卡回到宿主机时不和别的 phy0 撞名）。
+ */
+struct pp_phy_ri {
+	bool hit;
+};
+
+static bool pp_is_phyn(const char *s)
+{
+	int i;
+
+	if (!s || s[0] != 'p' || s[1] != 'h' || s[2] != 'y' || !s[3])
+		return false;
+	for (i = 3; s[i]; i++)
+		if (s[i] < '0' || s[i] > '9' || i > 6)
+			return false;
+	return true;
+}
+
+static int pp_phy_entry(struct kretprobe_instance *ri, struct pt_regs *regs)
+{
+	struct pp_phy_ri *d = (struct pp_phy_ri *)ri->data;
+	const char *name = (const char *)regs_get_kernel_argument(regs, 1);
+	struct nsproxy *nsp = current->nsproxy;
+
+	if (!nsp || !nsp->net_ns || nsp->net_ns == &init_net || !pp_is_phyn(name))
+		return 1;
+	d->hit = true;
+	return 0;
+}
+
+static int pp_phy_ret(struct kretprobe_instance *ri, struct pt_regs *regs)
+{
+	struct pp_phy_ri *d = (struct pp_phy_ri *)ri->data;
+
+	if (d->hit && (long)regs_return_value(regs) == -EINVAL)
+		regs_set_return_value(regs, 0);
+	return 0;
+}
+
+static struct kretprobe rp_phy = {
+	.kp.symbol_name = "cfg80211_dev_check_name",
+	.entry_handler = pp_phy_entry,
+	.handler = pp_phy_ret,
+	.data_size = sizeof(struct pp_phy_ri),
+	.maxactive = 8,
+};
+static bool phy_ok;
 
 /* /proc/uptime（踩坑 #90）：空闲时间（第二个数）本来是宿主机累计的，几台一样、远大于本机开机时长，一看就不对。
  * 改成 ≈ 本机开机时长 × 在线 CPU 数 × 0.98（像刚开机不久、基本空闲的真机）。 */
@@ -511,6 +682,12 @@ static int __init pp_mnt_init(void)
 			if (!statfs_ok[i])
 				pr_info("pp_mnt: 没挂上 %s（statfs 类型号照旧）\n", statfs_probes[i].symbol_name);
 		}
+		indev_ok = register_kprobes(indev_probes, ARRAY_SIZE(indev_probes)) == 0;
+		if (!indev_ok)
+			pr_info("pp_mnt: 没挂上 input_register_device（别的手机的输入设备照样看得到）\n");
+		phy_ok = register_kretprobe(&rp_phy) == 0;
+		if (!phy_ok)
+			pr_info("pp_mnt: 没挂上 cfg80211_dev_check_name（手机里网卡名改不成 phy0）\n");
 		input_ok = register_kretprobe(&rp_input) == 0;
 		if (!input_ok)
 			pr_info("pp_mnt: 没挂上 input_devices_seq_show（/proc/bus/input/devices 照旧）\n");
@@ -540,6 +717,10 @@ static void __exit pp_mnt_exit(void)
 		unregister_kretprobe(&rp_uptime);
 	if (input_ok)
 		unregister_kretprobe(&rp_input);
+	if (phy_ok)
+		unregister_kretprobe(&rp_phy);
+	if (indev_ok)
+		unregister_kprobes(indev_probes, ARRAY_SIZE(indev_probes));
 	for (i = 0; i < ARRAY_SIZE(statfs_probes); i++)
 		if (statfs_ok[i])
 			unregister_kprobe(&statfs_probes[i]);

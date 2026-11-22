@@ -350,12 +350,15 @@ static int pp_mem(const char *h, int hn, const char *n)
  * /proc/bus/input/devices（踩坑 #82）：每次 input_devices_seq_show 输出一块输入设备信息。
  * 名字带 QEMU / virtio / VMware / VirtualBox / goldfish 的是虚拟机/模拟器的输入设备——真机里
  * 不该有「QEMU QEMU USB Tablet/Keyboard/Mouse」这种，整块删掉；触摸屏 fts_ts、电源键等原样保留。
+ * 魔云腾 Q1 宿主机给它自己的 30 个实例建的虚拟输入设备「LG TouchScreen:N」「LG KeyBoard:N」（每台手机都能看到 60 个）也删。
+ * 别的手机的虚拟触摸屏（同名 fts_ts）不按名字删，由 pp_mnt.c 按「谁建的」判断（踩坑 #134）。
  */
 static int pp_rewrite_input(const char *in, int len)
 {
 	if (pp_mem(in, len, "QEMU") || pp_mem(in, len, "virtio") ||
 	    pp_mem(in, len, "VMware") || pp_mem(in, len, "VirtualBox") ||
-	    pp_mem(in, len, "Goldfish") || pp_mem(in, len, "goldfish"))
+	    pp_mem(in, len, "Goldfish") || pp_mem(in, len, "goldfish") ||
+	    pp_mem(in, len, "\"LG TouchScreen") || pp_mem(in, len, "\"LG KeyBoard"))
 		return 0; /* 整块删掉 */
 	return -1; /* 其余原样 */
 }
@@ -437,7 +440,8 @@ static int pp_rewrite_uptime(const char *in, int len, char *out, int max, int nc
 /*
  * /proc/stat 的 cpu / cpuN 行是宿主机从开机到现在的累计时间（USER_HZ=100 的 tick），几台手机一模一样、
  * 而且和本机开机时长完全不符（母机级相关性，踩坑 #94）。按本机开机时长 up_sec 重算：每核总 tick=up_sec*100，
- * 基本空闲（idle 97%、system 1.5%、user 补余）；聚合 cpu 行 ×核数。btime、intr、ctxt 等其余行原样。
+ * 基本空闲（idle 97%、system 1.5%、user 补余）；聚合 cpu 行 ×核数。ctxt / processes 按开机时长估；
+ * btime > 0 时 btime 行换成它（魔云腾 Q1 内核的 btime 不跟时间命名空间走，还是宿主机的开机时刻，踩坑 #134）；intr 等其余行原样。
  */
 static int pp_fmt_u64(unsigned long long v, char *buf)
 {
@@ -508,7 +512,7 @@ static void pp_stat_num_line(struct pp_out *o, const char *label, int llen, unsi
 	pp_puts(o, "\n");
 }
 
-static int pp_rewrite_stat(const char *in, int len, char *out, int max, int ncpu, long long up_sec)
+static int pp_rewrite_stat(const char *in, int len, char *out, int max, int ncpu, long long up_sec, long long btime)
 {
 	struct pp_out o = { out, 0, max, 0 };
 	int i = 0;
@@ -532,6 +536,8 @@ static int pp_rewrite_stat(const char *in, int len, char *out, int max, int ncpu
 		} else if (le - ls > 10 && memcmp(in + ls, "processes ", 10) == 0) {
 			/* 开机以来 fork 的进程总数：同上 */
 			pp_stat_num_line(&o, "processes ", 10, (unsigned long long)up_sec * 3ULL + 500ULL);
+		} else if (btime > 0 && le - ls > 6 && memcmp(in + ls, "btime ", 6) == 0) {
+			pp_stat_num_line(&o, "btime ", 6, (unsigned long long)btime);
 		} else {
 			pp_put(&o, in + ls, le - ls);
 		}

@@ -100,6 +100,9 @@ int main(void)
 	/* /proc/bus/input/devices：QEMU / virtio 的输入设备整块删，真机的（fts_ts、电源键）原样 */
 	check(4, "I: Bus=0003 Vendor=0627 Product=0001\nN: Name=\"QEMU QEMU USB Tablet\"\nH: Handlers=mouse0 event1\n\n", "");
 	check(4, "I: Bus=0003 Vendor=0627\nN: Name=\"QEMU QEMU USB Keyboard\"\nH: Handlers=kbd event2\n\n", "");
+	/* 魔云腾宿主机的 LG 虚拟输入设备整块删 */
+	check(4, "I: Bus=0003 Vendor=1004 Product=6000\nN: Name=\"LG TouchScreen:7\"\nS: Sysfs=/devices/virtual/input/input40\n\n", "");
+	check(4, "I: Bus=0003 Vendor=1004\nN: Name=\"LG KeyBoard:12\"\nH: Handlers=kbd event50\n\n", "");
 	check(4, "I: Bus=0018 Vendor=0000\nN: Name=\"fts_ts\"\nH: Handlers=event3\n\n",
 	      "I: Bus=0018 Vendor=0000\nN: Name=\"fts_ts\"\nH: Handlers=event3\n\n");
 	check(4, "I: Bus=0019 Vendor=0000\nN: Name=\"Power Button\"\nH: Handlers=kbd event0\n\n",
@@ -187,11 +190,18 @@ int main(void)
 			"procs_blocked 0\n"
 			"softirq 888 1 2 3\n";
 		char out[2048];
-		int n = pp_rewrite_stat(in, (int)strlen(in), out, sizeof(out), 4, 700);
+		int n = pp_rewrite_stat(in, (int)strlen(in), out, sizeof(out), 4, 700, 0);
 		out[n < 0 ? 0 : n] = 0;
 		if (n < 0 || strcmp(out, want) != 0) {
 			fails++;
 			printf("FAIL stat\n--- got ---\n%s--- want ---\n%s", n < 0 ? "(放不下)\n" : out, want);
+		}
+		/* btime 给了就换（Q1 内核的 btime 是宿主机的，按本机开机时长算的值替换） */
+		n = pp_rewrite_stat(in, (int)strlen(in), out, sizeof(out), 4, 700, 1795330000LL);
+		out[n < 0 ? 0 : n] = 0;
+		if (n < 0 || !strstr(out, "\nbtime 1795330000\n") || strstr(out, "1795064107")) {
+			fails++;
+			printf("FAIL stat btime 替换\n%s", out);
 		}
 		if (pp_parse_btime(in, (int)strlen(in)) != 1795064107LL) {
 			fails++;
