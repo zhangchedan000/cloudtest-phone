@@ -73,7 +73,9 @@ check() {
   done
   pgrep -f '^/bin/sh /usr/local/bin/fan-control.sh' >/dev/null && say "✓ 风扇脚本在跑" || { say "✗ 风扇脚本没在跑（满载会过热）"; bad=1; }
   [ -x /opt/pp-rootcanal/pp-rootcanal ] && [ -x /usr/local/bin/pp-rootcanal ] && say "✓ 蓝牙芯片模拟器" || say "· 没装蓝牙芯片模拟器（手机蓝牙关着；包放 /mmc/pp-dist/pp-rootcanal-arm64-bundle.tgz 再跑一次）"
-  if [ -d /sys/module/mac80211_hwsim ]; then say "✓ 虚拟 WiFi 驱动已加载"; else say "· 虚拟 WiFi 驱动没加载（手机走有线网 eth0；只有魔云腾 Q1 这版内核有现成驱动，踩坑 #129）"; fi
+  if [ -d /sys/module/wlan ] || [ -d /sys/module/mac80211_hwsim ]; then say "✓ 虚拟 WiFi 驱动已加载"; else say "· 虚拟 WiFi 驱动没加载（手机走有线网 eth0；只有魔云腾 Q1 这版内核有现成驱动，踩坑 #129）"; fi
+  if [ -e /proc/pp_mnt ]; then say "✓ 去痕迹模块 pp_mnt 已加载"; else say "· 去痕迹模块 pp_mnt 没加载（手机里能看到别的手机的触摸屏、宿主机 CPU 时间等，踩坑 #134）"; fi
+  if [ -e /proc/pp_uts ]; then say "✓ 内核版本号模块 pp_uts 已加载"; else say "· 内核版本号模块 pp_uts 没加载"; fi
   case " $(sed -n 's/^PP_ARGS="\(.*\)"$/\1/p' /etc/conf.d/prism-phone-agent 2>/dev/null) " in *" -no-wifi "*) say "· 管家带着 -no-wifi（手机走有线网）";; esac
   netstat -tln 2>/dev/null | grep -q ':2375 ' && { say "✗ docker 2375 端口开着"; bad=1; } || say "✓ docker 2375 已关"
   [ -f /etc/conf.d/prism-phone-agent ] && [ "$(stat -c %a /etc/conf.d/prism-phone-agent)" = 600 ] && say "✓ 令牌文件权限 600" || { say "✗ /etc/conf.d/prism-phone-agent 不在或权限不是 600"; bad=1; }
@@ -177,21 +179,32 @@ if [ -x /opt/pp-rootcanal/pp-rootcanal ]; then
   cmp -s "$DL/pp-rootcanal.wrapper" /usr/local/bin/pp-rootcanal || { install -m 755 "$DL/pp-rootcanal.wrapper" /usr/local/bin/pp-rootcanal; say "更新 /usr/local/bin/pp-rootcanal"; }
 fi
 
-# ---------- 5.6 虚拟 WiFi 驱动 mac80211_hwsim（踩坑 #129）：只给【和编它时一模一样的内核】装 ----------
-# 魔云腾内核没带这个驱动；仓库里的 .ko 是按 Q1 这版内核自带的头文件编的，换了内核（哪怕版本号一样）结构可能不同，不能装。
+# ---------- 5.6 自己编的内核模块（踩坑 #129 / #134）：只给【和编它们时一模一样的内核】装 ----------
+#   wlan.ko    虚拟 WiFi 驱动（内核的 mac80211_hwsim 改了名，手机里看不出是 WiFi 模拟器）
+#   pp_uts.ko  每台手机自己的内核版本号（uname）
+#   pp_mnt.ko  手机里读到的挂载表 / 输入设备 / CPU 时间 / 开机时间 / 本机端口 / 模块列表 / 网卡名去痕迹
+# 魔云腾内核没带这些；仓库里的 .ko 是按 Q1 这版内核自带的头文件编的，换了内核（哪怕版本号一样）结构可能不同，不能装。
 KMOD_DIR=tools/dist/kmod/mytos-q1-6.1.141
 KMOD_KERNEL="Linux version 6.1.141 (root@SWDM8607) (clang version 10.0.6 for Android NDK) #278 SMP PREEMPT Mon Oct 19 06:29:17 UTC 2026"
 if [ "$(cat /proc/version 2>/dev/null)" = "$KMOD_KERNEL" ]; then
-  fetch "$KMOD_DIR/mac80211_hwsim.ko" hwsim.ko
-  fetch "$KMOD_DIR/mac80211_hwsim.ko.sha256" hwsim.ko.sha256
-  if [ "$(sha256sum "$DL/hwsim.ko" | cut -d' ' -f1)" = "$(cut -d' ' -f1 "$DL/hwsim.ko.sha256")" ]; then
-    mkdir -p /opt/prism-phone/kmod
-    cmp -s "$DL/hwsim.ko" /opt/prism-phone/kmod/mac80211_hwsim.ko || { install -m 644 "$DL/hwsim.ko" /opt/prism-phone/kmod/mac80211_hwsim.ko; say "装虚拟 WiFi 驱动（/opt/prism-phone/kmod/mac80211_hwsim.ko）"; }
-    printf '%s\n' "$KMOD_KERNEL" > /opt/prism-phone/kmod/kernel.txt   # 管家 init.d 开机加载前按它核对内核
-    [ -d /sys/module/mac80211_hwsim ] || { insmod /opt/prism-phone/kmod/mac80211_hwsim.ko radios=0 && say "加载虚拟 WiFi 驱动"; }
-  else
-    say "· 虚拟 WiFi 驱动校验不对，没装（手机照旧用有线网）"
-  fi
+  mkdir -p /opt/prism-phone/kmod
+  printf '%s\n' "$KMOD_KERNEL" > /opt/prism-phone/kmod/kernel.txt   # 管家 init.d 开机加载前按它核对内核
+  for m in wlan pp_uts pp_mnt; do
+    fetch "$KMOD_DIR/$m.ko" "$m.ko"
+    fetch "$KMOD_DIR/$m.ko.sha256" "$m.ko.sha256"
+    if [ "$(sha256sum "$DL/$m.ko" | cut -d' ' -f1)" != "$(cut -d' ' -f1 "$DL/$m.ko.sha256")" ]; then
+      say "· 内核模块 $m 校验不对，没装"; continue
+    fi
+    if ! cmp -s "$DL/$m.ko" "/opt/prism-phone/kmod/$m.ko"; then
+      install -m 644 "$DL/$m.ko" "/opt/prism-phone/kmod/$m.ko"; say "装内核模块 /opt/prism-phone/kmod/$m.ko"
+      # 新版本：没手机在跑时换上（有手机在跑就等下次开机）
+      if [ -d "/sys/module/$m" ] && [ "$(docker ps -q 2>/dev/null | wc -l)" = 0 ]; then rmmod "$m" 2>/dev/null && say "卸下旧的 $m"; fi
+    fi
+  done
+  # 以前用的原名驱动：没手机在跑时换成 wlan
+  if [ -d /sys/module/mac80211_hwsim ] && [ "$(docker ps -q 2>/dev/null | wc -l)" = 0 ]; then rmmod mac80211_hwsim && say "卸下原名的 mac80211_hwsim（换成 wlan）"; fi
+  rm -f /opt/prism-phone/kmod/mac80211_hwsim.ko
+  rc-service prism-phone-agent kmods >/dev/null 2>&1 || true
   apk info -e hostapd >/dev/null 2>&1 && apk info -e iw >/dev/null 2>&1 && apk info -e dnsmasq >/dev/null 2>&1 && apk info -e iproute2 >/dev/null 2>&1 || { apk add -q iw hostapd dnsmasq iproute2 && say "装 WiFi 用的 iw / hostapd / dnsmasq / iproute2"; }
 fi
 

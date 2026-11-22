@@ -35,10 +35,25 @@ start_pre() {
   # local.d 在所有服务之后才跑：binder 设备和网络转发规则这里先补上（两个脚本都可重复执行）
   [ -e /dev/vndbinder ] || sh /etc/local.d/binder-nodes.start
   nft list table ip prism_redir >/dev/null 2>&1 || sh /etc/local.d/pp-redir.start
-  # 虚拟 WiFi 驱动（踩坑 #129）：只在内核和编它时一模一样时加载（kernel.txt 由 install.sh 写）
-  k=/opt/prism-phone/kmod
-  if [ ! -d /sys/module/mac80211_hwsim ] && [ -f "$k/mac80211_hwsim.ko" ] && [ "$(cat /proc/version)" = "$(cat "$k/kernel.txt" 2>/dev/null)" ]; then
-    insmod "$k/mac80211_hwsim.ko" radios=0 || ewarn "虚拟 WiFi 驱动加载失败（手机走有线网）"
-  fi
+  load_kmods
   return 0
+}
+
+# 自己编的内核模块（踩坑 #129 / #134）：只在内核和编它们时一模一样时加载（kernel.txt 由 install.sh 写）。
+# 都要在手机开机前加载：pp_mnt 要看着手机建触摸屏才知道是谁的。
+extra_commands="kmods"
+description_kmods="加载自己编的内核模块（WiFi 驱动 / pp_uts / pp_mnt）"
+kmods() {
+  load_kmods
+}
+
+load_kmods() {
+  k=/opt/prism-phone/kmod
+  [ "$(cat /proc/version)" = "$(cat "$k/kernel.txt" 2>/dev/null)" ] || return 0
+  if [ ! -d /sys/module/wlan ] && [ ! -d /sys/module/mac80211_hwsim ] && [ -f "$k/wlan.ko" ]; then
+    insmod "$k/wlan.ko" radios=0 || ewarn "虚拟 WiFi 驱动加载失败（手机走有线网）"
+  fi
+  for m in pp_uts pp_mnt; do
+    [ -d "/sys/module/$m" ] || [ ! -f "$k/$m.ko" ] || insmod "$k/$m.ko" || ewarn "内核模块 $m 加载失败（手机里会多些痕迹，不影响开机）"
+  done
 }

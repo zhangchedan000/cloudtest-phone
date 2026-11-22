@@ -49,7 +49,7 @@ docker run --rm --platform linux/arm64 -v "$K:/k" -w /k/src debian:12-slim bash 
   grep -q "CONFIG_MYT_FS 1" include/generated/autoconf.h
   for m in pp_mnt pp_uts wlan; do
     echo "== $m"
-    make -s M=/k/ext/$m modules 2>&1 | grep -v "^ *$" | tail -20
+    make -s M=/k/ext/$m modules 2>&1 | tail -20
     cp /k/ext/$m/$m.ko /k/out/
     modinfo -F vermagic /k/out/$m.ko
   done
