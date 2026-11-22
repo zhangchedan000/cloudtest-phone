@@ -541,6 +541,29 @@ static struct kretprobe rp_modules = {
 };
 static bool modules_ok;
 
+/*
+ * 宿主机的「紧急按钮」/proc/sysrq-trigger（踩坑 #136）：手机容器是特权的，安卓重启时卸载分区卸不干净会往里写 u
+ * （宿主机所有文件系统紧急改只读）——实测一台手机 vold 失败触发重启，整块板子瘫了。容器里在 /proc/sysrq-trigger 上
+ * 挂 /dev/null 挡不住：安卓开机会在 /proc 上再挂一层新的 proc。所以在内核里挡：不在宿主机 PID 命名空间里的进程
+ * （所有容器）写它，把用户缓冲区指针换成 0，内核读不到字符直接返回 -EFAULT，什么都不做。
+ */
+static int pp_sysrq_pre(struct kprobe *p, struct pt_regs *regs)
+{
+	struct pid_namespace *ns = task_active_pid_ns(current);
+
+	if (!ns || ns == &init_pid_ns)
+		return 0;
+#ifdef CONFIG_ARM64
+	regs->regs[1] = 0; /* write_sysrq_trigger(file, buf, count, ppos)：buf */
+#elif defined(CONFIG_X86_64)
+	regs->si = 0;
+#endif
+	pr_notice_ratelimited("pp_mnt: 挡住了容器里写 /proc/sysrq-trigger（pid %d %s）\n", task_pid_nr(current), current->comm);
+	return 0;
+}
+static struct kprobe kp_sysrq = { .symbol_name = "write_sysrq_trigger", .pre_handler = pp_sysrq_pre };
+static bool sysrq_ok;
+
 /* ---------- /proc/pp_mnt ---------- */
 
 static struct pid_namespace *pp_ns_of(long nr)
@@ -697,6 +720,9 @@ static int __init pp_mnt_init(void)
 			if (!statfs_ok[i])
 				pr_info("pp_mnt: 没挂上 %s（statfs 类型号照旧）\n", statfs_probes[i].symbol_name);
 		}
+		sysrq_ok = register_kprobe(&kp_sysrq) == 0;
+		if (!sysrq_ok)
+			pr_warn("pp_mnt: 没挂上 write_sysrq_trigger（容器里的安卓还能按宿主机的紧急按钮！）\n");
 		indev_ok = register_kprobes(indev_probes, ARRAY_SIZE(indev_probes)) == 0;
 		if (!indev_ok)
 			pr_info("pp_mnt: 没挂上 input_register_device（别的手机的输入设备照样看得到）\n");
@@ -734,6 +760,8 @@ static void __exit pp_mnt_exit(void)
 		unregister_kretprobe(&rp_input);
 	if (phy_ok)
 		unregister_kretprobe(&rp_phy);
+	if (sysrq_ok)
+		unregister_kprobe(&kp_sysrq);
 	if (indev_ok)
 		unregister_kprobes(indev_probes, ARRAY_SIZE(indev_probes));
 	for (i = 0; i < ARRAY_SIZE(statfs_probes); i++)
