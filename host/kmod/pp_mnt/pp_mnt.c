@@ -38,6 +38,7 @@
 #include <linux/time_namespace.h>
 #include <linux/input.h>
 #include <linux/nsproxy.h>
+#include <linux/nl80211.h>
 #include <net/net_namespace.h>
 
 #include "rewrite.h"
@@ -588,6 +589,87 @@ static int pp_fsdown_pre(struct kprobe *p, struct pt_regs *regs)
 	pr_notice_ratelimited("pp_mnt: 挡住了容器里停用文件系统（pid %d %s）\n", task_pid_nr(current), current->comm);
 	return 0;
 }
+/*
+ * WiFi 扫描结果的时间（踩坑 #135）：nl80211 给每个热点带 NL80211_BSS_LAST_SEEN_BOOTTIME（宿主机的开机时间），
+ * wpa_supplicant 用自己的 CLOCK_BOOTTIME 减它算「多久以前扫到的」。手机在时间命名空间里、开机时长改过，
+ * 两边差了偏移量（几十天）→ 热点被当成很久以前扫到的，「scan result not recent enough」一直不连。
+ * 在 nl80211_dump_scan 期间（记下是哪个进程），把它往外写的这个属性加上该进程时间命名空间的开机时间偏移。
+ * nl80211_send_bss 被内联了，所以挂 nla_put_64bit：nla_put_u64_64bit 传的是调用方栈上的临时变量，原地改不影响别人。
+ */
+#define PP_SCAN_SLOTS 32
+static struct task_struct *pp_scan_task[PP_SCAN_SLOTS];
+static atomic_t pp_scan_n = ATOMIC_INIT(0);
+static DEFINE_SPINLOCK(pp_scan_lock);
+
+static int pp_scan_entry(struct kretprobe_instance *ri, struct pt_regs *regs)
+{
+	struct nsproxy *nsp = current->nsproxy;
+	int i;
+
+	*(int *)ri->data = -1;
+	if (!nsp || !nsp->time_ns || (!nsp->time_ns->offsets.boottime.tv_sec && !nsp->time_ns->offsets.boottime.tv_nsec))
+		return 1;
+	spin_lock(&pp_scan_lock);
+	for (i = 0; i < PP_SCAN_SLOTS; i++)
+		if (!pp_scan_task[i]) {
+			pp_scan_task[i] = current;
+			*(int *)ri->data = i;
+			atomic_inc(&pp_scan_n);
+			break;
+		}
+	spin_unlock(&pp_scan_lock);
+	return *(int *)ri->data < 0;
+}
+
+static int pp_scan_ret(struct kretprobe_instance *ri, struct pt_regs *regs)
+{
+	int i = *(int *)ri->data;
+
+	if (i >= 0) {
+		spin_lock(&pp_scan_lock);
+		pp_scan_task[i] = NULL;
+		atomic_dec(&pp_scan_n);
+		spin_unlock(&pp_scan_lock);
+	}
+	return 0;
+}
+
+static struct kretprobe rp_scan = {
+	.kp.symbol_name = "nl80211_dump_scan",
+	.entry_handler = pp_scan_entry,
+	.handler = pp_scan_ret,
+	.data_size = sizeof(int),
+	.maxactive = 32,
+};
+static bool scan_ok;
+
+static int pp_nla64_pre(struct kprobe *p, struct pt_regs *regs)
+{
+	struct timespec64 ts;
+	u64 *v;
+	int i;
+	bool mine = false;
+
+	if (!atomic_read(&pp_scan_n))
+		return 0;
+	/* nla_put_64bit(skb, attrtype, attrlen, data, padattr) */
+	if ((int)regs_get_kernel_argument(regs, 1) != NL80211_BSS_LAST_SEEN_BOOTTIME ||
+	    (int)regs_get_kernel_argument(regs, 2) != sizeof(u64))
+		return 0;
+	for (i = 0; i < PP_SCAN_SLOTS; i++)
+		if (READ_ONCE(pp_scan_task[i]) == current)
+			mine = true;
+	if (!mine)
+		return 0;
+	v = (u64 *)regs_get_kernel_argument(regs, 3);
+	ts = ns_to_timespec64(*v);
+	timens_add_boottime(&ts);
+	*v = timespec64_to_ns(&ts);
+	return 0;
+}
+static struct kprobe kp_nla64 = { .symbol_name = "nla_put_64bit", .pre_handler = pp_nla64_pre };
+static bool nla64_ok;
+
 static struct kprobe kp_ext4down = { .symbol_name = "ext4_ioctl", .pre_handler = pp_fsdown_pre };
 static struct kprobe kp_f2fsdown = { .symbol_name = "f2fs_ioctl", .pre_handler = pp_fsdown_pre };
 static bool ext4down_ok, f2fsdown_ok;
@@ -755,6 +837,10 @@ static int __init pp_mnt_init(void)
 		if (!ext4down_ok)
 			pr_warn("pp_mnt: 没挂上 ext4_ioctl（容器里的安卓关机时还能停用宿主机的盘！）\n");
 		f2fsdown_ok = register_kprobe(&kp_f2fsdown) == 0;
+		nla64_ok = register_kprobe(&kp_nla64) == 0;
+		scan_ok = nla64_ok && register_kretprobe(&rp_scan) == 0;
+		if (!scan_ok)
+			pr_info("pp_mnt: 没挂上 nl80211_dump_scan / nla_put_64bit（手机里 WiFi 扫描结果时间照旧，可能连不上）\n");
 		indev_ok = register_kprobes(indev_probes, ARRAY_SIZE(indev_probes)) == 0;
 		if (!indev_ok)
 			pr_info("pp_mnt: 没挂上 input_register_device（别的手机的输入设备照样看得到）\n");
@@ -796,6 +882,10 @@ static void __exit pp_mnt_exit(void)
 		unregister_kprobe(&kp_sysrq);
 	if (ext4down_ok)
 		unregister_kprobe(&kp_ext4down);
+	if (scan_ok)
+		unregister_kretprobe(&rp_scan);
+	if (nla64_ok)
+		unregister_kprobe(&kp_nla64);
 	if (f2fsdown_ok)
 		unregister_kprobe(&kp_f2fsdown);
 	if (indev_ok)
