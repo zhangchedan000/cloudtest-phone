@@ -22,7 +22,7 @@ fi
 log "源码 $(sed -n 's/^SUBLEVEL = //p' "$K/src/Makefile" | head -1) @ $(cd "$K/src" && git rev-parse --short HEAD)"
 cp "$here/compare-crcs.py" "$K/"
 # 3) 在 Debian 容器里编：配置 = 板子的 + 要的模块；vmlinux 编完 modpost 出我们自己的 CRC，再编模块
-docker run --rm -v "$K:/k" -w /k/src debian:12-slim sh -ec '
+docker run --rm --platform linux/arm64 -v "$K:/k" -w /k/src debian:12-slim sh -ec '
   apt-get update -qq && apt-get install -y -qq --no-install-recommends build-essential bc flex bison libssl-dev libelf-dev kmod python3 cpio >/dev/null
   cp /k/config.board .config
   scripts/config --module MAC80211_HWSIM
