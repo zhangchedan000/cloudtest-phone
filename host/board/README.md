@@ -14,7 +14,11 @@ sh /tmp/pp-install.sh --check  # 只体检不改
 
 `install.sh` 会：补必需软件包（nftables、logrotate）→ 备份到 `/mmc/pp-save/board-bak-*.tgz` → 下载并按 sha256 校验管家 → 只换有变化的文件、只重启受影响的服务（有手机在跑时不重启 docker）→ 管家 40 秒起不来自动回滚 → 体检。不碰 SSH、Desktop Commander、mihomo 程序和代理配置、安卓镜像、手机数据。
 
-## 一键铺到新板子（手动方式）
+## 新板子第一次装（推荐）
+
+老板子：`sh host/board/export-dist.sh` → 拷 `/mmc/pp-dist` 到新板 → 新板：`sh host/board/bootstrap.sh`（先 `--check`）。详见 `docs/上板流程.md` 开头。
+
+## 一键铺到新板子（手动方式，bootstrap.sh 出问题时参考）
 
 ```sh
 # 在新板子上（root），仓库 clone 下来后：

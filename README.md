@@ -38,7 +38,9 @@
 
 ### 板子（魔云腾 Q1 / Alpine，正式环境）
 
-板子上 root 执行（不用 clone 仓库）。新板子第一次装先看 [`docs/上板流程.md`](docs/上板流程.md)（刷机、binder、导入安卓镜像）：
+**新板子第一次装**：老板子上 `host/board/export-dist.sh` 打包复用件到 `/mmc/pp-dist` → 拷到新板 → 新板上 `sh bootstrap.sh`（[`docs/上板流程.md`](docs/上板流程.md) 开头「换新板快速流程」）。
+
+**日常更新 / 体检**：板子上 root 执行（不用 clone 仓库）：
 
 ```sh
 wget -qO /tmp/pp-install.sh https://raw.githubusercontent.com/zhangchedan000/cloudtest-phone/main/host/board/install.sh
