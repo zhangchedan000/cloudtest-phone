@@ -128,3 +128,5 @@ allow system_suspend init binder call,transfer
 # netd 给管家在手机网络里起的程序（vendor.sensord，kernel 身份）的套接字打标记
 allow netd kernel tcp_socket read,write,getattr,getopt,setopt
 allow netd kernel udp_socket read,write,getattr,getopt,setopt
+# 传感器 HAL 和 system_server 之间的事件队列（memfd，system_server_tmpfs）：被拒时传感器服务反复崩溃，App 偶尔看到 0 个传感器
+allow hal_sensors_default system_server_tmpfs file read,write,map,getattr
