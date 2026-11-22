@@ -19,7 +19,7 @@ img=$1; ver=$2
 B=${PP_BUILD:-/mmc/pp-build}
 log(){ echo "$(date +%T) [selinux] $*"; }
 die(){ echo "[selinux] 错误：$*" >&2; exit 1; }
-SEL_VER=3
+SEL_VER=4
 cur=$(docker image inspect -f '{{index .Config.Labels "prism.selinux"}}' "$img" 2>/dev/null || true)
 [ "$cur" = "$SEL_VER" ] && { log "$img 已经做好（第 $SEL_VER 版），跳过"; exit 0; }
 base=$img
@@ -112,6 +112,21 @@ os.makedirs(os.path.dirname(dst), exist_ok=True)
 open(dst, "wb").write(b); os.chmod(dst, 0o755)
 print(f"init：0x{off:x} 处 HACKED 长度改成 0")
 EOF
+
+# ---- 3b) 规则补丁（host/image/selinux-rules.txt，sepatch 用官方 libsepol 加进二进制规则） ----
+here=$(cd "$(dirname "$0")" && pwd)
+RULES=${PP_SEL_RULES:-$here/selinux-rules.txt}
+SEPATCH_C=${PP_SEPATCH_C:-$here/sepatch.c}
+[ -f "$RULES" ] && [ -f "$SEPATCH_C" ] || die "缺 $RULES 或 $SEPATCH_C（和本脚本放一起）"
+cp "$RULES" "$W/x/rules.txt"; cp "$SEPATCH_C" "$W/x/sepatch.c"
+docker run --rm --platform linux/arm64 -v "$W:/w" -v "$B/kmod/aptcache:/aptc" debian:12-slim bash -ec '
+  apt-get update -qq >/dev/null 2>&1; apt-get install -y -qq --no-install-recommends -o Dir::Cache::Archives=/aptc gcc libc6-dev libsepol-dev >/dev/null 2>&1
+  gcc -O2 -o /tmp/sepatch /w/x/sepatch.c -l:libsepol.a
+  /tmp/sepatch /w/x/policy /w/x/policy.patched /w/x/rules.txt
+'
+mkdir -p "$O/vendor/etc/selinux"
+cp "$W/x/policy.patched" "$O/vendor/etc/selinux/precompiled_sepolicy"; chmod 644 "$O/vendor/etc/selinux/precompiled_sepolicy"
+cp "$W/x/policy.patched" "$W/x/policy"   # 后面算 seclabel、打标签都用补过的
 
 # ---- 4) 服务补 seclabel（在加载了这台镜像规则的临时容器里让内核算） ----
 docker run --rm --privileged --platform linux/arm64 -v "$W:/w" -v "$B/kmod/aptcache:/aptc" debian:12-slim bash -ec '

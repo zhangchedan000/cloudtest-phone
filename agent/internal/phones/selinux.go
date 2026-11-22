@@ -122,10 +122,28 @@ func (s *Service) cmdClientCommand(ctx context.Context, sock string, args []stri
 	return cmd
 }
 
-// relabelPhone 开了真 SELinux 的手机：让命令小助手重新给挂进来的东西补标签（管家开机后才挂的伪造文件）。
-func (s *Service) relabelPhone(ctx context.Context, id string) {
-	if sock := s.cmdSock(containerName(id)); sock != "" {
-		_, _ = s.run.Run(ctx, s.cfg.InitHelper, "pp-cmdc", sock, "--", phonecmd.RelabelCmd)
+// relabelPhone 开了真 SELinux 的手机：让命令小助手重新给挂进来的东西补标签（管家开机后才挂的伪造文件，extra 是它们在手机里的路径）。
+func (s *Service) relabelPhone(ctx context.Context, id string, extra []string) {
+	sock := s.cmdSock(containerName(id))
+	if sock == "" {
+		return
+	}
+	s.addBindPaths(id, extra)
+	_, _ = s.run.Run(ctx, s.cfg.InitHelper, "pp-cmdc", sock, "--", phonecmd.RelabelCmd)
+}
+
+// addBindPaths 往「挂进手机的路径」清单里加（小助手补标签用，见 phonecmd.BindsFile）。
+func (s *Service) addBindPaths(id string, paths []string) {
+	if len(paths) == 0 {
+		return
+	}
+	f, err := os.OpenFile(filepath.Join(s.cmdDir(id), "binds"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	for _, p := range paths {
+		_, _ = f.WriteString(p + "\n")
 	}
 }
 
@@ -140,4 +158,16 @@ func (s *Service) selinuxBind(ctx context.Context, id, image string, entrypoint 
 		return ""
 	}
 	return d + ":" + cmdMount
+}
+
+// writeBindPaths 开机前：把这台手机所有 bind 挂载在手机里的路径写给小助手（它开机前照这个补标签）。
+func (s *Service) writeBindPaths(id string, binds []string) {
+	var ps []string
+	for _, b := range binds {
+		f := strings.Split(b, ":")
+		if len(f) >= 2 && strings.HasPrefix(f[1], "/") {
+			ps = append(ps, f[1])
+		}
+	}
+	s.addBindPaths(id, ps)
 }

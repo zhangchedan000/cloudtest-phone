@@ -216,6 +216,10 @@ var kernelFS = map[string]bool{"proc": true, "sysfs": true, "cgroup": true, "cgr
 	"mqueue": true, "selinuxfs": true, "binder": true, "debugfs": true, "tracefs": true, "bpf": true, "pstore": true,
 	"configfs": true, "fusectl": true, "securityfs": true, "functionfs": true, "overlay": true}
 
+// BindsFile 管家写的「挂进手机的路径」清单（一行一个）：手机的挂载表被 pp_mnt 改写过（宿主机挂进来的 bind 都藏了），
+// 小助手照挂载表找不全，所以管家直接告诉它。
+const BindsFile = "/data/.ppc/binds"
+
 // LabelBoot 开机前的补标签：宿主机挂进来的文件 / 目录（Docker bind，文件系统是宿主机的盘）+ /dev 整个。
 // 挂在 /proc、/sys 下面的伪造文件用新挂一份 proc / sysfs 里同一路径的标签（genfscon 定的，比如 proc_cpuinfo）。
 func LabelBoot() (int, error) {
@@ -259,7 +263,19 @@ func LabelBoot() (int, error) {
 		return n
 	}
 	n := 0
-	for _, m := range mounts() {
+	all := mounts()
+	if b, err := os.ReadFile(BindsFile); err == nil {
+		seen := map[string]bool{}
+		for _, m := range all {
+			seen[m.point] = true
+		}
+		for _, p := range strings.Split(string(b), "\n") {
+			if p = strings.TrimSpace(p); p != "" && !seen[p] {
+				all = append(all, mount{point: p, fstype: "bind"})
+			}
+		}
+	}
+	for _, m := range all {
 		mp := m.point
 		// 伪造的 /proc、/sys 内容（tmpfs / 宿主机文件 bind）照真文件打；真正的 proc / sysfs / cgroup 挂载不碰
 		fake := (strings.HasPrefix(mp, "/proc/") || strings.HasPrefix(mp, "/sys/")) && !strings.HasPrefix(mp, "/sys/fs/cgroup") &&

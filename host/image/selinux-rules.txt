@@ -1,0 +1,25 @@
+# 给手机的 SELinux 规则补的几条（踩坑 #135），host/image/add-selinux.sh 用 sepatch 加进 precompiled_sepolicy。
+# 格式：permissive <域> ／ allow <源> <目标> <类> <权限,...>
+
+# 管家的命令小助手（pp-timens 加载完规则后拉起，身份 u:r:kernel:s0，见 agent/internal/phonecmd）：
+# 它替管家跑 settings / am / input / screenrecord…，权限范围没法一条条列，设成只记录不拦截。
+# 真机上 kernel 域只有内核线程，App 读不到规则，看不出来。
+permissive kernel
+# 小助手起的命令把输出管道交给系统服务（比如 cmd / dumpsys 的输出由 system_server 写）
+allow domain kernel fd use
+allow domain kernel fifo_file read,write,getattr,ioctl,append
+
+# apex 里没写 seclabel、改不了配置的服务（statsd、aconfigd），通信接口由 init 建，身份是 init 的
+allow domain init unix_dgram_socket sendto
+allow domain init unix_stream_socket connectto
+
+# hwservicemanager 拿不到 hwbinder 带的调用方身份时按进程查（getpidcon）
+allow hwservicemanager domain dir search
+allow hwservicemanager domain file read,open
+allow hwservicemanager domain process getattr
+
+# 外部存储：MediaProvider 自己开 /dev/fuse
+allow mediaprovider_app fuse_device chr_file read,write,open,getattr,ioctl
+
+# 拿不到开机 ID 时 libcutils 退回开 /dev/ashmem
+allow domain ashmem_device chr_file read,write,open,getattr,ioctl,map

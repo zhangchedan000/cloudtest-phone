@@ -253,7 +253,7 @@ func (s *Service) applyFakes(ctx context.Context, id string) {
 	// 卸掉临时挂载点并删除目录，安卓根目录里不留痕迹。
 	_, _ = s.run.Run(ctx, "docker", "exec", name, "umount", "-l", fakeMount)
 	_, _ = s.run.Run(ctx, "docker", "exec", name, "rmdir", fakeMount)
-	s.relabelPhone(ctx, id) // 开了真 SELinux 的手机：刚挂上的伪造文件补标签（踩坑 #135）
+	s.relabelPhone(ctx, id, applied) // 开了真 SELinux 的手机：刚挂上的伪造文件补标签（踩坑 #135）
 	s.fakes.set(id, FakeStatus{State: "applied", Applied: applied, Skipped: skipped})
 }
 

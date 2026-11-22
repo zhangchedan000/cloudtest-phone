@@ -1019,6 +1019,7 @@ func (s *Service) Start(ctx context.Context, id string) error {
 		binds = append(binds, s.cfg.InitHelper+":"+initMount+":ro")
 		if b := s.selinuxBind(ctx, p.ID, image, entrypoint); b != "" {
 			binds = append(binds, b)
+			s.writeBindPaths(p.ID, binds)
 		}
 	}
 	_, err = s.docker.CreateContainer(ctx, docker.ContainerSpec{
