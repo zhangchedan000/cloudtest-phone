@@ -421,7 +421,8 @@ static int pp_phy_ret(struct kretprobe_instance *ri, struct pt_regs *regs)
 {
 	struct pp_phy_ri *d = (struct pp_phy_ri *)ri->data;
 
-	if (d->hit && (long)regs_return_value(regs) == -EINVAL)
+	/* 返回值是 int：只看 w0（x0 高 32 位不保证是符号扩展） */
+	if (d->hit && (int)regs_return_value(regs) == -EINVAL)
 		regs_set_return_value(regs, 0);
 	return 0;
 }
@@ -508,7 +509,7 @@ static int pp_modules_ret(struct kretprobe_instance *ri, struct pt_regs *regs)
 {
 	struct pp_open_ri *d = (struct pp_open_ri *)ri->data;
 
-	if (regs_return_value(regs) == 0 && d->file) {
+	if ((int)regs_return_value(regs) == 0 && d->file) {
 		seq_release(d->inode, d->file); /* 释放 seq_open 分配的 seq_file，避免泄漏 */
 		d->file->private_data = NULL;   /* 失败的 open 不会再调 release，置空多一层保险 */
 		regs_set_return_value(regs, (unsigned long)(-EACCES));
