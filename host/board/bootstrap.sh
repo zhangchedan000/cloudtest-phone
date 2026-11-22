@@ -89,6 +89,15 @@ if curl -fsSL --retry 3 -o /tmp/pp-patch-modem-prop.sh "$RAW/host/image/patch-mo
     case "$img" in *:16-*) PP_BUILD=/mmc/pp-build sh /tmp/pp-patch-modem-prop.sh "$img" || say "· $img 补丁没打上（不影响开机）" ;; esac
   done
 fi
+# 实时画面硬件 H.264 编码（踩坑 #133）：从导入的魔云腾 dobox 同版本镜像里取 Rockchip Codec2 叠进安卓 14/15/16 镜像
+if docker images | grep -q 'mytos/dobox' && curl -fsSL --retry 3 -o /tmp/pp-add-hwcodec.sh "$RAW/host/image/add-hwcodec.sh"; then
+  for img in $(cat "$D/android-images.list" 2>/dev/null); do
+    v=$(echo "$img" | sed -n 's/^prism-redroid-mali:\(1[456]\)-.*/\1/p')
+    [ -n "$v" ] || continue
+    case "$img" in *-orig*) continue ;; esac
+    PP_BUILD=/mmc/pp-build sh /tmp/pp-add-hwcodec.sh "$img" "$v" || say "· $img 没加上硬件编码（实时画面用软件编码，不影响开机）"
+  done
+fi
 ok "安卓镜像"
 
 # ---------- 4. mihomo / 小屏程序 ----------

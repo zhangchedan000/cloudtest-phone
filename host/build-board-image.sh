@@ -72,6 +72,13 @@ bash "$here/build-apps-image.sh" "$PRE_APPS" "$VER"
 
 log "5/5 校验最终镜像在不在"
 docker image inspect "$APPS" >/dev/null 2>&1 || { echo "最终镜像没生成，往上翻哪步报错"; exit 1; }
+# 实时画面硬件 H.264 编码（踩坑 #133）：有同版本魔云腾 dobox 镜像时叠上 Rockchip Codec2（没有就用软件编码，不影响别的）
+case "$VER" in 14|15|16)
+  if docker images | grep -q "mytos/dobox:Q$VER"; then
+    log "加硬件编解码 → $APPS"
+    sh "$here/image/add-hwcodec.sh" "$APPS" "$VER" || echo "· 硬件编解码没加上（实时画面用软件编码）"
+  fi ;;
+esac
 printf '\n\033[1m完成！最终镜像：%s\033[0m\n' "$APPS"
 echo "（存 tarball：docker save '$APPS' | gzip -1 > /mmc/pp-dist/android${VER}-full.tar.gz）"
 echo "$APPS"

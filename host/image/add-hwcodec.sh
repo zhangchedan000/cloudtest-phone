@@ -34,9 +34,16 @@ if [ ! -f "$DV/bin/hw/android.hardware.media.c2@1.1-service" ]; then
   dob=$(docker images --format '{{.Repository}}:{{.Tag}}' | grep "mytos/dobox:Q$ver" | head -1)
   [ -n "$dob" ] || die "没有魔云腾 dobox Q$ver 镜像"
   log "从 $dob 取 vendor"
+  LP=$B/tools/lpunpack.py; LP_SHA=600d1cab2fc7de5127fb287f4e2791718db54efb1102d0f365db0d3ec1ccf62e   # 同 host/pinned.sh
+  if [ ! -f "$LP" ]; then
+    mkdir -p "$B/tools"
+    curl -fsSL --retry 3 -o "$LP.part" https://raw.githubusercontent.com/unix3dgforce/lpunpack/master/lpunpack.py || die "下载 lpunpack.py 失败"
+    [ "$(sha256sum "$LP.part" | cut -d' ' -f1)" = "$LP_SHA" ] || { rm -f "$LP.part"; die "lpunpack.py 校验不对"; }
+    mv "$LP.part" "$LP"
+  fi
   W=$(mktemp -d "$B/dobox-x.XXXX")
   cid=$(docker create "$dob"); docker cp "$cid:/super.img" "$W/super.img" >/dev/null; docker rm "$cid" >/dev/null
-  python3 -I "$B/tools/lpunpack.py" -p vendor "$W/super.img" "$W" >/dev/null
+  python3 -I "$LP" -p vendor "$W/super.img" "$W" >/dev/null
   rm -rf "$DV"; mkdir -p "$DV"
   debugfs -R "rdump /bin /lib64 /etc $DV" "$W/vendor.img" >/dev/null 2>&1
   rm -rf "$W"
