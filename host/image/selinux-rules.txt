@@ -114,3 +114,6 @@ allow system_suspend sysfs file read,open,getattr
 allow vold_prepare_subdirs checkin_data_file dir relabelfrom
 # /metadata、/cache 是 pp-cmdd 挂的内存盘（真机是单独分区）
 allow file_type tmpfs filesystem associate
+# RK 硬件编解码（mpp / codec2）读一堆不带前缀的调试属性（落在 default_prop）：被拒时 libc 要往 logd 写一行，
+# 这几个系统调用不在编解码服务的 seccomp 白名单里 → SIGSYS 被杀 → 系统服务拿不到编解码器、整个框架崩
+allow mediacodec default_prop file read,open,getattr,map
