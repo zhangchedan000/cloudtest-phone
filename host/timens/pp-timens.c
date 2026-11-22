@@ -107,6 +107,5 @@ void cmain(long *sp) {
 	sc(SYS_exit, 1, 0, 0, 0);
 }
 
-__attribute__((naked, noreturn)) void _start(void) {
-	__asm__ volatile("mov x0, sp\n\tbl cmain\n\tbrk #0");
-}
+// 入口用纯汇编写（arm64 的 GCC 不认 naked，C 函数会先动 sp，拿不到内核放在栈顶的 argc/argv）
+__asm__(".text\n.global _start\n.type _start, %function\n_start:\n\tmov x0, sp\n\tbl cmain\n\tbrk #0\n");
