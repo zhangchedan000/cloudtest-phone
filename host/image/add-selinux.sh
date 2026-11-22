@@ -19,7 +19,7 @@ img=$1; ver=$2
 B=${PP_BUILD:-/mmc/pp-build}
 log(){ echo "$(date +%T) [selinux] $*"; }
 die(){ echo "[selinux] 错误：$*" >&2; exit 1; }
-SEL_VER=17
+SEL_VER=18
 cur=$(docker image inspect -f '{{index .Config.Labels "prism.selinux"}}' "$img" 2>/dev/null || true)
 [ "$cur" = "$SEL_VER" ] && { log "$img 已经做好（第 $SEL_VER 版），跳过"; exit 0; }
 base=$img
@@ -69,6 +69,7 @@ for d in system_ext product odm; do
   docker cp "$cid:/$d" "$W/x/lnk_$d" >/dev/null 2>&1 || true
 done
 docker cp "$cid:/vendor/etc/selinux/vendor_file_contexts" "$W/x/vendor_file_contexts" >/dev/null
+: > "$W/x/vendor_seapp_contexts"; docker cp "$cid:/vendor/etc/selinux/vendor_seapp_contexts" "$W/x/vendor_seapp_contexts" >/dev/null 2>&1 || true
 docker cp "$cid:/vendor/lib64" "$W/x/vlib64" >/dev/null
 docker cp "$cid:/vendor/bin/hw/android.hardware.media.c2@1.1-service" "$W/x/has_c2" >/dev/null 2>&1 || true
 docker rm "$cid" >/dev/null
@@ -94,6 +95,17 @@ for kv in "/dev/mali0 u:object_r:gpu_device:s0" "/dev/mpp_service u:object_r:vid
   case $p in /vendor/bin/hw/*) [ -f "$W/x/has_c2" ] || continue ;; esac
   grep -q "^$p[[:space:]]" "$W/x/file_contexts" || { echo "$kv" >> "$O/vendor/etc/selinux/vendor_file_contexts"; echo "$kv" >> "$W/x/file_contexts"; log "设备标签：$kv"; }
 done
+# 重新签过名的镜像（resign）：网络组件、蓝牙、媒体存储这几个原来各有专用签名（seinfo network_stack / bluetooth / media），
+# 现在是平台签名，按 seapp_contexts 找不到身份：网络组件、蓝牙起不来（zygote 设身份失败），媒体存储落到 platform_app。
+# 补上「平台签名的这几个」对应的行（没重新签名的镜像里它们不是平台签名，这几行不会命中）
+cp "$W/x/vendor_seapp_contexts" "$O/vendor/etc/selinux/vendor_seapp_contexts"
+cat >> "$O/vendor/etc/selinux/vendor_seapp_contexts" <<'SEAPP'
+user=network_stack seinfo=platform domain=network_stack type=radio_data_file
+user=bluetooth seinfo=platform domain=bluetooth type=bluetooth_data_file
+user=_app seinfo=platform isPrivApp=true name=com.android.providers.media.module domain=mediaprovider_app type=privapp_data_file levelFrom=all
+user=_app seinfo=platform isPrivApp=true name=com.android.providers.media.module:* domain=mediaprovider_app type=privapp_data_file levelFrom=all
+SEAPP
+chmod 644 "$O/vendor/etc/selinux/vendor_seapp_contexts"
 # App 进程里直接加载的显卡库（gralloc mapper、EGL / Vulkan 驱动）和它们依赖的 vendor 库要是 same_process_hal_file
 # （通用 vendor 规则里没写 Mali 的，落到 vendor_file，开强制模式 App 画不出界面）：按 ELF 依赖自动算
 python3 - "$W/x/vlib64" "$W/x/file_contexts" >> "$O/vendor/etc/selinux/vendor_file_contexts" <<'EOF'
