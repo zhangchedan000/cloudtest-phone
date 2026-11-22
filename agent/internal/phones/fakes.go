@@ -254,6 +254,7 @@ func (s *Service) applyFakes(ctx context.Context, id string) {
 	_, _ = s.run.Run(ctx, "docker", "exec", name, "umount", "-l", fakeMount)
 	_, _ = s.run.Run(ctx, "docker", "exec", name, "rmdir", fakeMount)
 	s.relabelPhone(ctx, id, applied) // 开了真 SELinux 的手机：刚挂上的伪造文件补标签（踩坑 #135）
+	s.relabelDataOnce(ctx, id)
 	s.fakes.set(id, FakeStatus{State: "applied", Applied: applied, Skipped: skipped})
 }
 

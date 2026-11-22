@@ -2,6 +2,7 @@ package phones
 
 import (
 	"context"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -145,6 +146,27 @@ func (s *Service) addBindPaths(id string, paths []string) {
 	for _, p := range paths {
 		_, _ = f.WriteString(p + "\n")
 	}
+}
+
+// relabelDataOnce 开了真 SELinux 的手机第一次开机：/data 里以前（没开 SELinux 时）建的文件都没有标签或标签不对，
+// 让小助手用安卓自己的 restorecon 整个重打一遍（App 数据按 seapp_contexts 打，带 App 自己的分类）。只做一次（/data 里留记号）。
+func (s *Service) relabelDataOnce(ctx context.Context, id string) {
+	sock := s.cmdSock(containerName(id))
+	if sock == "" {
+		return
+	}
+	const mark = "/data/system/.pp_se_relabeled"
+	if _, err := s.run.Run(ctx, s.cfg.InitHelper, "pp-cmdc", sock, "--", "test", "-f", mark); err == nil {
+		return
+	}
+	cctx, cancel := context.WithTimeout(ctx, 10*time.Minute)
+	defer cancel()
+	if out, err := s.run.Run(cctx, s.cfg.InitHelper, "pp-cmdc", sock, "--", "restorecon", "-R", "-F", "/data"); err != nil {
+		log.Printf("手机 %s：/data 重打 SELinux 标签失败：%v %s", id, err, out)
+		return
+	}
+	_, _ = s.run.Run(ctx, s.cfg.InitHelper, "pp-cmdc", sock, "--", "touch", mark)
+	log.Printf("手机 %s：/data 按 SELinux 规则重打了标签（第一次开 SELinux）", id)
 }
 
 // selinuxBind 开机时：这台手机要开 SELinux 就准备好命令套接字目录，返回要加的挂载（不开返回空）。
