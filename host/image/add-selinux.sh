@@ -19,7 +19,7 @@ img=$1; ver=$2
 B=${PP_BUILD:-/mmc/pp-build}
 log(){ echo "$(date +%T) [selinux] $*"; }
 die(){ echo "[selinux] 错误：$*" >&2; exit 1; }
-SEL_VER=15
+SEL_VER=16
 cur=$(docker image inspect -f '{{index .Config.Labels "prism.selinux"}}' "$img" 2>/dev/null || true)
 [ "$cur" = "$SEL_VER" ] && { log "$img 已经做好（第 $SEL_VER 版），跳过"; exit 0; }
 base=$img
@@ -79,12 +79,15 @@ mkdir -p "$O/vendor/etc/selinux"
 cp "$W/x/vendor_file_contexts" "$O/vendor/etc/selinux/vendor_file_contexts"
 for kv in "/dev/mali0 u:object_r:gpu_device:s0" "/dev/mpp_service u:object_r:video_device:s0" "/dev/rga u:object_r:video_device:s0" \
           "/dev/dri(/.*)? u:object_r:gpu_device:s0" "/dev/loop[0-9]+ u:object_r:loop_device:s0" \
+          "/system/apex/com\.android\.vndk\.v[0-9]+/lib(64)?(/.*)? u:object_r:system_lib_file:s0" \
           "/vendor/bin/hw/android\.hardware\.media\.c2@1\.1-service u:object_r:mediacodec_exec:s0" \
           "/vendor/bin/hw/android\.hardware\.gatekeeper@1\.0-service\.software u:object_r:hal_gatekeeper_default_exec:s0" \
           "/vendor/bin/hw/android\.hardware\.thermal@2\.0-service\.mock u:object_r:hal_thermal_default_exec:s0"; do
   p=${kv%% *}
   # redroid 自己加的 HAL 程序规则里没写类型：落到 vendor_file，init 起它不切域、以 init 身份跑，往 hwservicemanager
   # 注册被拒（锁屏密码 gatekeeper、温度 thermal），安卓一直等它开不了机。按真机同名 HAL 的类型标；规则里没这个类型就不加
+  # 安卓 14 的 VNDK 是展开的目录 /system/apex/com.android.vndk.v34（带版本号），规则里只写了不带版本号的，
+  # 库落到 system_file，vendor 程序（boringssl 自检等）读不了 → 开机自检失败重启
   t=${kv##*:object_r:}; t=${t%%:*}
   grep -qa "$t" "$W/x/policy" || continue
   # 硬件编解码服务（host/image/add-hwcodec.sh 从 dobox 移植的）不在就不加
