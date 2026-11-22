@@ -11,6 +11,9 @@ board = {}
 for line in open(sys.argv[2]):
     f = line.rstrip("\n").split("\t")
     board[f[1]] = int(f[0], 16)
+if not mine:
+    print("✗ .mod.c 里没有符号版本（模块没按完整内核编），不能用")
+    sys.exit(2)
 bad = [(s, c, board.get(s)) for s, c in sorted(mine.items()) if board.get(s) != c]
 print(f"模块用到 {len(mine)} 个内核符号，CRC 一致 {len(mine) - len(bad)} 个，不一致 / 板子没有 {len(bad)} 个")
 for s, c, bc in bad:

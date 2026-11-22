@@ -22,19 +22,25 @@ fi
 log "源码 $(sed -n 's/^SUBLEVEL = //p' "$K/src/Makefile" | head -1) @ $(cd "$K/src" && git rev-parse --short HEAD)"
 cp "$here/compare-crcs.py" "$K/"
 # 3) 在 Debian 容器里编：配置 = 板子的 + 要的模块；vmlinux 编完 modpost 出我们自己的 CRC，再编模块
-docker run --rm --platform linux/arm64 -v "$K:/k" -w /k/src debian:12-slim sh -ec '
+rm -f "$K/mac80211_hwsim.ko" "$K/src/drivers/net/wireless/mac80211_hwsim.ko"
+docker run --rm --platform linux/arm64 -v "$K:/k" -w /k/src debian:12-slim bash -ec '
+  set -o pipefail
   # 这个内核上 overlay 报的剩余空间不对（容器里 df 显示满），apt 下载前查空间会拒绝 → 下载缓存放挂进来的 /k（真 ext4）
   mkdir -p /k/aptcache/partial
   apt-get update -qq && apt-get install -y -qq --no-install-recommends -o Dir::Cache::Archives=/k/aptcache build-essential bc flex bison libssl-dev libelf-dev kmod python3 cpio >/dev/null
   cp /k/config.board .config
   scripts/config --module MAC80211_HWSIM
+  scripts/config --set-str INITRAMFS_SOURCE ""   # 魔云腾的配置把它构建机上的 initrd.cpio.gz 编进内核，我们没有；和模块 / CRC 无关
   touch .scmversion                         # 版本号不带 "+"（要和板子的 6.1.141 一字不差）
   make -s olddefconfig
   echo "vermagic: $(make -s kernelrelease)"
-  make -s -j"$(nproc)" vmlinux modules_prepare 2>&1 | tail -5
+  make -s -j"$(nproc)" vmlinux modules_prepare > /k/make-vmlinux.log 2>&1 || { tail -20 /k/make-vmlinux.log; exit 1; }
+  test -s Module.symvers || { echo "没有 Module.symvers（vmlinux 没编完）"; exit 1; }
   make -s -j"$(nproc)" drivers/net/wireless/mac80211_hwsim.ko 2>&1 | tail -5
+  ! grep -q "undefined!" /dev/null
   modinfo -F vermagic drivers/net/wireless/mac80211_hwsim.ko
 '
+grep -q '"module_layout"\|__versions' "$K/src/drivers/net/wireless/mac80211_hwsim.mod.c" || { log "✗ 模块里没有符号版本表（vmlinux 没编好），不能用"; exit 1; }
 cp "$K/src/drivers/net/wireless/mac80211_hwsim.ko" "$K/"
 log "编好：$K/mac80211_hwsim.ko；核对 CRC："
 python3 "$K/compare-crcs.py" "$K/src/drivers/net/wireless/mac80211_hwsim.mod.c" "$K/Module.symvers.board"
