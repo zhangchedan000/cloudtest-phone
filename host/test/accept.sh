@@ -8,7 +8,7 @@
 #   sh host/test/accept-all.sh                     # 14/15/16 普通 + 谷歌全套
 #
 # 结果：/mmc/pp-build/accept-<标签>.tsv（每台一行）+ 最后一行汇总（唯一性、各项通过数）。
-# 口令从 /etc/conf.d/prism-phone-agent 读（也可以 PP_TOKEN=… 传）。KEEP_FAILED=1：蓝牙没开 / 系统崩过的手机留着不删，方便进去查。
+# 口令从 /etc/conf.d/prism-phone-agent 读（也可以 PP_TOKEN=… 传）。KEEP_FAILED=1：蓝牙没开 / 系统崩过 / 真代理没注册上运营商的手机留着不删，方便进去查。
 # 蓝牙没开的手机会把诊断（bluetooth_manager + 相关日志）存到 /mmc/pp-build/accept-<标签>-bt-<id>.log。拆机先 docker kill 再删（踩坑 #116）。
 # 检查项说明见文件末尾。
 set -u
@@ -91,7 +91,8 @@ while [ "$done_n" -lt "$TOTAL" ]; do
         echo "== 宿主："; pgrep -af "rootcanal.*$id" ; ls -la /run/ppbt-*"$id"* 2>/dev/null; } > "$DIR/accept-$tag-bt-$id.log" 2>&1
       log "  $id 蓝牙=$bt，诊断存到 $DIR/accept-$tag-bt-$id.log"
     fi
-    if [ "${KEEP_FAILED:-0}" = 1 ] && { [ "$bt" != ON ] || [ "$fa" != 0 ]; }; then keep="$keep $id"; fi
+    op=$(echo "$r" | cut -f11)
+    if [ "${KEEP_FAILED:-0}" = 1 ] && { [ "$bt" != ON ] || [ "$fa" != 0 ] || { [ "$PROXY" != direct-dev ] && [ -z "$op" ]; }; }; then keep="$keep $id"; fi
   done
   for id in $ids; do
     case " $keep " in *" $id "*) log "  留着 $id（KEEP_FAILED=1）"; continue ;; esac
