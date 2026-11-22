@@ -8,7 +8,8 @@
 #   sh host/test/accept-all.sh                     # 14/15/16 普通 + 谷歌全套
 #
 # 结果：/mmc/pp-build/accept-<标签>.tsv（每台一行）+ 最后一行汇总（唯一性、各项通过数）。
-# 口令从 /etc/conf.d/prism-phone-agent 读（也可以 PP_TOKEN=… 传）。拆机先 docker kill 再删（踩坑 #116）。
+# 口令从 /etc/conf.d/prism-phone-agent 读（也可以 PP_TOKEN=… 传）。KEEP_FAILED=1：蓝牙没开 / 系统崩过的手机留着不删，方便进去查。
+# 蓝牙没开的手机会把诊断（bluetooth_manager + 相关日志）存到 /mmc/pp-build/accept-<标签>-bt-<id>.log。拆机先 docker kill 再删（踩坑 #116）。
 # 检查项说明见文件末尾。
 set -u
 VER=${1:?安卓版本}; TOTAL=${2:?台数}; BATCH=${3:-6}; GAPPS=${4:-0}; PROXY=${5:-direct-dev}
@@ -19,7 +20,7 @@ H="Authorization: Bearer $TOK"
 DIR=/mmc/pp-build; mkdir -p "$DIR"
 tag="v$VER"; [ "$GAPPS" = 1 ] && tag="${tag}g"; [ "$PROXY" != direct-dev ] && tag="${tag}-rp"
 OUT=$DIR/accept-$tag.tsv
-printf 'id\tboot\tmali\tsensors\tphone\tdialer\tgms\tfatal\tphonecrash\timei\tsim\toperator\tnet\tbt\tandroidId\tserial\tbootid\tfp\n' > "$OUT"
+printf 'id\tboot\tmali\tsensors\tphone\tdialer\tgms\tfatal\tphonecrash\timei\tsim\toperator\tnet\tbt\tbtcrash\tandroidId\tserial\tbootid\tfp\n' > "$OUT"
 log(){ echo "$(date +%H:%M:%S) $*"; }
 gfield=""; [ "$GAPPS" = 1 ] && gfield=',"gapps":true'
 
@@ -44,7 +45,7 @@ while [ "$done_n" -lt "$TOTAL" ]; do
   temp=$(( $(cat /sys/class/thermal/thermal_zone0/temp)/1000 ))
   [ "$temp" -gt 78 ] && { log "温度 ${temp}℃ > 78，等 60 秒降温"; sleep 60; }
   log "第 $b 批：建 $n 台（已完成 $done_n/$TOTAL，温度 ${temp}℃，根分区剩 $(df -h / | awk 'NR==2{print $4}')）"
-  ids=""
+  ids=""; keep=""
   for i in $(seq 1 "$n"); do
     body="{\"name\":\"accept-$tag-$b-$i\",\"modelId\":\"poco-x4-gt\",\"androidVersion\":$VER,\"proxyId\":\"$PROXY\"$gfield}"
     id=$(curl -s -m20 -X POST -H "$H" -H 'Content-Type: application/json' -d "$body" "$API/phones" | python3 -c 'import sys,json;print(json.load(sys.stdin).get("id",""))' 2>/dev/null)
@@ -70,17 +71,27 @@ while [ "$done_n" -lt "$TOTAL" ]; do
       pc=$(logcat -d -b crash 2>/dev/null | grep -c "Process: com.android.phone")
       sim=$(getprop gsm.sim.state); op=$(getprop gsm.operator.alpha); net=$(getprop gsm.network.type)
       bt=$(dumpsys bluetooth_manager 2>/dev/null | grep -m1 -E "^ *state:" | tr -d " " | cut -d: -f2)
+      btc=$(logcat -d -b crash 2>/dev/null | grep -c "Process: com.android.bluetooth")
       aid=$(settings get secure android_id 2>/dev/null)
-      printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s" \
-        "$bc" "${mali:-NONE}" "$sens" "${ph:-ERR}" "$dl" GMS "$fa" "$pc" SIM "${sim:-?}" "${op:-}" "${net:-}" "${bt:-?}" "$aid" "$(getprop ro.serialno)" "$(getprop ro.build.fingerprint)"' 2>/dev/null)
+      printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s" \
+        "$bc" "${mali:-NONE}" "$sens" "${ph:-ERR}" "$dl" GMS "$fa" "$pc" SIM "${sim:-?}" "${op:-}" "${net:-}" "${bt:-?}" "$aid" "$(getprop ro.serialno)" "$(getprop ro.build.fingerprint)" "$btc"' 2>/dev/null)
     gms=NA
     [ "$GAPPS" = 1 ] && gms=$(docker exec "$C" sh -c 'p=$(pidof com.google.android.gms); v=$(pm list packages com.android.vending | wc -l); echo "gms${p:+Y}${p:-N}/play$v"' 2>/dev/null)
     imei=$(imei_of "$id"); bootid=$(docker exec "$C" cat /proc/sys/kernel/random/boot_id 2>/dev/null)
     # 按列拼：把占位的 GMS / SIM 换成实际值
     echo "$r" | awk -F'\t' -v OFS='\t' -v id="$id" -v gms="$gms" -v imei="$imei" -v bootid="$bootid" \
-      '{print id,$1,$2,$3,$4,$5,gms,$7,$8,imei,$10,$11,$12,$13,$14,$15,bootid,$16}' >> "$OUT"
+      '{print id,$1,$2,$3,$4,$5,gms,$7,$8,imei,$10,$11,$12,$13,$17,$14,$15,bootid,$16}' >> "$OUT"
+    bt=$(echo "$r" | cut -f13); fa=$(echo "$r" | cut -f7)
+    if [ "$bt" != ON ]; then
+      { echo "== $id 蓝牙=$bt $(date '+%F %T')"; docker exec "$C" sh -c 'dumpsys bluetooth_manager 2>/dev/null | head -60; echo ==; logcat -d 2>/dev/null | grep -iE "BluetoothManagerService|bluetooth.*(hal|hci)|AdapterState|btif|Bluetooth.*(crash|died|timeout)" | tail -150; echo ==crash; logcat -d -b crash 2>/dev/null | tail -60'
+        echo "== 宿主："; pgrep -af "rootcanal.*$id" ; ls -la /run/ppbt-*"$id"* 2>/dev/null; } > "$DIR/accept-$tag-bt-$id.log" 2>&1
+      log "  $id 蓝牙=$bt，诊断存到 $DIR/accept-$tag-bt-$id.log"
+    fi
+    if [ "${KEEP_FAILED:-0}" = 1 ] && { [ "$bt" != ON ] || [ "$fa" != 0 ]; }; then keep="$keep $id"; fi
   done
-  for id in $ids; do docker kill "pp-$id" >/dev/null 2>&1; curl -s -m60 -X DELETE -H "$H" "$API/phones/$id" -o /dev/null; done
+  for id in $ids; do
+    case " $keep " in *" $id "*) log "  留着 $id（KEEP_FAILED=1）"; continue ;; esac
+    docker kill "pp-$id" >/dev/null 2>&1; curl -s -m60 -X DELETE -H "$H" "$API/phones/$id" -o /dev/null; done
   # shellcheck disable=SC2086
   purge_trash $ids
   done_n=$((done_n+n))
@@ -107,6 +118,7 @@ items = [
     ("电话进程不崩", cnt(lambda r: r["phonecrash"] == "0")),
     ("读到IMEI", cnt(lambda r: len(r["imei"]) == 15)),
     ("蓝牙ON", cnt(lambda r: r["bt"] == "ON")),
+    ("蓝牙不崩", cnt(lambda r: r["btcrash"] == "0")),
 ]
 if gapps: items.append(("GMS+Play", cnt(lambda r: r["gms"].startswith("gmsY") and r["gms"].endswith("play1"))))
 if proxy != "direct-dev":
@@ -124,4 +136,4 @@ echo "结果：$OUT"
 #   phone 电话服务 iphonesubinfo 注册（found）；dialer 拨号 + 短信装上（2）；gms 谷歌服务进程 + Play 商店；
 #   fatal system_server 崩溃次数（0）；phonecrash com.android.phone 崩溃次数（0）；
 #   imei App 层读到的 15 位 IMEI（每台唯一）；sim / operator / net 真代理时 SIM 状态、运营商、网络制式；
-#   bt 蓝牙状态（宿主装了 rootcanal 时应为 ON，踩坑 #122）；androidId / serial / bootid 身份（每台唯一）。
+#   bt 蓝牙状态（宿主装了 rootcanal 时应为 ON，踩坑 #122）；btcrash com.android.bluetooth 崩溃次数；androidId / serial / bootid 身份（每台唯一）。
