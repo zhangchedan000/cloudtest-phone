@@ -1,0 +1,171 @@
+#!/bin/sh
+# 让镜像能在魔云腾 Q1 上开真 SELinux（踩坑 #135）：手机里 getenforce = Enforcing，和真机一样。
+#
+# 容器版安卓（redroid）为了能在没有 SELinux 的服务器上开机，改了几个地方，都要改回来：
+#   1. /system/lib64/libselinux.so 对谁都说「SELinux 关了」、查标签一律返回假的 HACKED → 换成魔云腾 dobox 同版本的原版
+#      （导出函数、依赖一模一样）；
+#   2. libbinder.so（系统 + vendor）把内核给的「调用方 SELinux 身份」一律换成 HACKED，服务管家按它查规则会全拒 → 同上换原版；
+#   3. init 起服务时，没写 seclabel 的服务一律用 HACKED 当身份（原版这里按程序文件的标签算该进哪个域，被整段删了）
+#      → 把那一处的长度改成 0（空身份：exec 时由内核按文件标签自动切域，和原版结果一样）；
+#      能改的服务配置（system / vendor / product / system_ext / odm 下的 .rc）全部补上 seclabel：
+#      在加载了这台镜像规则的临时容器里，用内核算「init 执行这个程序文件会进哪个域」——和原版 init 算的一样；
+#   4. Docker 镜像层里的文件没有 SELinux 标签（打包时丢了）→ 在加载了规则的临时容器里用 setfiles 按镜像自己的
+#      file_contexts 给每一层打标签（必须在 SELinux 命名空间里打：宿主机直接写的标签手机那边不认）。
+# 原镜像留成 <镜像>-orig-sel；镜像加标签 prism.selinux=1（管家 -selinux 只对它生效）；重复跑会跳过已经做好的。
+#
+# 用法（root，板子上）：sh host/image/add-selinux.sh <镜像> <安卓版本 14|15|16>
+set -eu
+img=$1; ver=$2
+B=${PP_BUILD:-/mmc/pp-build}
+log(){ echo "$(date +%T) [selinux] $*"; }
+die(){ echo "[selinux] 错误：$*" >&2; exit 1; }
+SEL_VER=1
+cur=$(docker image inspect -f '{{index .Config.Labels "prism.selinux"}}' "$img" 2>/dev/null || true)
+[ "$cur" = "$SEL_VER" ] && { log "$img 已经做好（第 $SEL_VER 版），跳过"; exit 0; }
+base=$img
+if [ -n "$cur" ] && [ "$cur" != "<no value>" ]; then
+  docker image inspect "$img-orig-sel" >/dev/null 2>&1 || die "$img 是旧版（$cur），但找不到原镜像 $img-orig-sel"
+  base=$img-orig-sel
+fi
+command -v debugfs >/dev/null || die "缺 debugfs（apk add e2fsprogs-extra）"
+
+# ---- 1) 魔云腾 dobox 同版本的原版库 ----
+DS=$B/dobox$ver-system DV=$B/dobox$ver-vendor
+if [ ! -f "$DS/lib64/libbinder.so" ]; then
+  dob=$(docker images --format '{{.Repository}}:{{.Tag}}' | grep "mytos/dobox:Q$ver" | head -1)
+  [ -n "$dob" ] || die "没有魔云腾 dobox Q$ver 镜像"
+  log "从 $dob 取 system/lib64"
+  LP=$B/tools/lpunpack.py
+  [ -f "$LP" ] || die "缺 $LP（先跑一次 host/image/add-hwcodec.sh，它会下载）"
+  W=$(mktemp -d "$B/dsys.XXXX")
+  cid=$(docker create "$dob"); docker cp "$cid:/super.img" "$W/super.img" >/dev/null; docker rm "$cid" >/dev/null
+  python3 -I "$LP" -p system "$W/super.img" "$W" >/dev/null
+  mkdir -p "$DS"; debugfs -R "rdump /system/lib64 $DS" "$W/system.img" >/dev/null 2>&1 || true
+  rm -rf "$W"
+  [ -f "$DS/lib64/libbinder.so" ] || die "dobox Q$ver 的 system 里没有 libbinder.so"
+fi
+
+W=$(mktemp -d "$B/selimg.XXXX"); trap 'rm -rf "$W"' EXIT
+O=$W/overlay; mkdir -p "$O" "$W/x"
+cid=$(docker create "$base")
+docker cp "$cid:/system/bin/init" "$W/x/init" >/dev/null
+docker cp "$cid:/vendor/etc/selinux/precompiled_sepolicy" "$W/x/policy" >/dev/null || die "镜像里没有 precompiled_sepolicy"
+for f in /system/etc/selinux/plat_file_contexts /system_ext/etc/selinux/system_ext_file_contexts \
+         /product/etc/selinux/product_file_contexts /vendor/etc/selinux/vendor_file_contexts /odm/etc/selinux/odm_file_contexts; do
+  docker cp "$cid:$f" "$W/x/fc.part" >/dev/null 2>&1 && cat "$W/x/fc.part" >> "$W/x/file_contexts"
+done
+for d in system/etc/init system/etc/init/hw vendor/etc/init vendor/etc/init/hw odm/etc/init product/etc/init system_ext/etc/init; do
+  mkdir -p "$W/rc/$d"; docker cp "$cid:/$d/." "$W/rc/$d/" >/dev/null 2>&1 || true
+done
+for f in system/lib64/libselinux.so system/lib64/libbinder.so vendor/lib64/libbinder.so; do
+  mkdir -p "$W/x/$(dirname $f)"; docker cp "$cid:/$f" "$W/x/$f" >/dev/null 2>&1 || true
+done
+docker rm "$cid" >/dev/null
+
+# ---- 2) 换掉被改过的库（只换带 HACKED 的那份） ----
+for f in system/lib64/libselinux.so system/lib64/libbinder.so vendor/lib64/libbinder.so; do
+  [ -f "$W/x/$f" ] || continue
+  grep -q HACKED "$W/x/$f" || continue
+  case $f in system/*) src=$DS/lib64/$(basename $f) ;; vendor/*) src=$DV/lib64/$(basename $f) ;; esac
+  [ -f "$src" ] || die "要换 /$f，但 dobox Q$ver 里没有 $src"
+  grep -q HACKED "$src" && die "$src 也是改过的"
+  mkdir -p "$O/$(dirname $f)"; cp "$src" "$O/$f"; chmod 644 "$O/$f"
+  log "换原版 /$f"
+done
+
+# ---- 3) init：没写 seclabel 的服务不再用 HACKED（长度 6 → 0） ----
+python3 - "$W/x/init" "$O/system/bin/init" <<'EOF'
+import os, struct, sys
+src, dst = sys.argv[1:3]
+b = bytearray(open(src, "rb").read())
+MOV_W9_HA = 0x52882909            # mov w9, #0x4148 ("HA")
+MOVK_W9_CK = 0x72a96869           # movk w9, #0x4b43, lsl #16 ("CK")
+hits = []
+for i in range(4, len(b) - 8, 4):
+    if struct.unpack_from("<I", b, i)[0] != MOV_W9_HA or struct.unpack_from("<I", b, i + 4)[0] != MOVK_W9_CK:
+        continue
+    prev = struct.unpack_from("<I", b, i - 4)[0]
+    if prev & 0xffffffe0 == 0x52800180:   # mov wN, #0xc（libc++ 短字符串长度字节 6<<1）
+        hits.append((i - 4, prev))
+if len(hits) != 1:
+    if b.find(b"incorrect label") >= 0:
+        print("init 是原版（没有 HACKED 补丁），不用改"); sys.exit(0)
+    sys.exit(f"init 里找到 {len(hits)} 处 HACKED 补丁（应为 1），不敢改")
+off, prev = hits[0]
+struct.pack_into("<I", b, off, (prev & ~(0xffff << 5)) | (0 << 5))   # mov wN, #0
+os.makedirs(os.path.dirname(dst), exist_ok=True)
+open(dst, "wb").write(b); os.chmod(dst, 0o755)
+print(f"init：0x{off:x} 处 HACKED 长度改成 0")
+EOF
+
+# ---- 4) 服务补 seclabel（在加载了这台镜像规则的临时容器里让内核算） ----
+docker run --rm --privileged --platform linux/arm64 -v "$W:/w" -v "$B/kmod/aptcache:/aptc" debian:12-slim bash -ec '
+  apt-get update -qq >/dev/null 2>&1; apt-get install -y -qq --no-install-recommends -o Dir::Cache::Archives=/aptc python3 python3-selinux >/dev/null 2>&1
+  mount -t selinuxfs selinuxfs /sys/fs/selinux
+  python3 - <<EOF
+import os, re, selinux
+data = open("/w/x/policy", "rb").read()
+fd = os.open("/sys/fs/selinux/load", os.O_WRONLY); assert os.write(fd, data) == len(data); os.close(fd)
+h = selinux.selabel_open(selinux.SELABEL_CTX_FILE, [(selinux.SELABEL_OPT_PATH, "/w/x/file_contexts")], 1)
+cls = selinux.string_to_security_class("process")
+INIT = "u:r:init:s0"
+added = skipped = 0
+for root, _, files in os.walk("/w/rc"):
+    for fn in files:
+        if not fn.endswith(".rc"): continue
+        p = os.path.join(root, fn); rel = p[len("/w/rc"):]
+        lines = open(p, errors="surrogateescape").read().split("\n")
+        out, changed, i = [], False, 0
+        while i < len(lines):
+            l = lines[i]; out.append(l)
+            m = re.match(r"^service\s+(\S+)\s+(\S+)", l)
+            if m:
+                j = i + 1; has = False
+                while j < len(lines) and not re.match(r"^(service|on|import)\s", lines[j]):
+                    if re.match(r"^\s+seclabel\s", lines[j]): has = True
+                    j += 1
+                if not has:
+                    exe = m.group(2)
+                    try:
+                        _, fcon = selinux.selabel_lookup(h, exe, 0o100755)
+                        _, dom = selinux.security_compute_create(INIT, fcon, cls)
+                    except OSError as e:
+                        dom = None; print(f"  ? {m.group(1)} {exe}: {e}")
+                    if dom and dom != INIT:
+                        out.append(f"    seclabel {dom}"); changed = True; added += 1
+                    else:
+                        skipped += 1
+            i += 1
+        if changed:
+            dst = "/w/overlay" + rel; os.makedirs(os.path.dirname(dst), exist_ok=True)
+            open(dst, "w", errors="surrogateescape").write("\n".join(out)); os.chmod(dst, 0o644)
+print(f"服务补 seclabel：{added} 个；算出来还是 init 的（照原样）：{skipped} 个")
+EOF
+'
+
+# ---- 5) 出新镜像 ----
+docker image inspect "$img-orig-sel" >/dev/null 2>&1 || docker tag "$img" "$img-orig-sel"
+printf 'FROM %s\nCOPY overlay/ /\n' "$base" > "$W/Dockerfile"
+docker build -q -t "$img-sel-wip" "$W" >/dev/null
+
+# ---- 6) 给镜像每一层打标签（在加载了规则的临时容器里，setfiles 按镜像自己的 file_contexts） ----
+layers=$(docker image inspect -f '{{.GraphDriver.Data.LowerDir}}:{{.GraphDriver.Data.UpperDir}}' "$img-sel-wip" | tr ':' '\n' | grep -v '^$')
+echo "$layers" > "$W/layers"
+DR=$(docker info -f '{{.DockerRootDir}}')
+docker run --rm --privileged --platform linux/arm64 -v "$W:/w" -v "$DR:$DR" -v "$B/kmod/aptcache:/aptc" debian:12-slim bash -ec '
+  apt-get update -qq >/dev/null 2>&1; apt-get install -y -qq --no-install-recommends -o Dir::Cache::Archives=/aptc policycoreutils python3 >/dev/null 2>&1
+  mount -t selinuxfs selinuxfs /sys/fs/selinux
+  python3 -c "
+import os
+d=open(\"/w/x/policy\",\"rb\").read(); fd=os.open(\"/sys/fs/selinux/load\",os.O_WRONLY); assert os.write(fd,d)==len(d); os.close(fd)"
+  n=0
+  while read -r L; do
+    [ -d "$L" ] || continue
+    setfiles -F -r "$L" /w/x/file_contexts "$L" 2>&1 | grep -v "^setfiles: Could not set context\|No such file" | tail -3 || true
+    n=$((n + 1))
+  done < /w/layers
+  echo "打了 $n 层的标签"
+'
+printf 'FROM %s\nLABEL prism.selinux=%s\n' "$img-sel-wip" "$SEL_VER" | docker build -q -t "$img" - >/dev/null
+docker rmi "$img-sel-wip" >/dev/null 2>&1 || true
+log "✓ $img：已能开 SELinux（原镜像留在 $img-orig-sel）"
