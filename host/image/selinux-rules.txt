@@ -31,3 +31,5 @@ allow lmkd sysfs file read,open
 allow init sysfs file write,setattr,open
 allow system_server sysfs file read,open,getattr
 allow storaged sysfs file read,open,getattr
+# 带分类（c512,c768…）的 App 写 gralloc 共享内存：多级安全约束要求目标是「可信对象」（RK 真机这么标）
+mlstrusted hal_graphics_allocator_default_tmpfs

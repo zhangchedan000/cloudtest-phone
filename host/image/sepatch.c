@@ -4,6 +4,8 @@
 // 规则文件每行一条：
 //   permissive <类型>                         这个域只记录不拦截
 //   allow <源类型或属性> <目标类型或属性> <类> <权限>[,<权限>...]
+//   mlstrusted <类型>                          当成 mlstrustedobject（多级安全约束里「可信对象」）：带分类的 App 也能写它。
+//                                              约束在编译时已经展开成具体类型，所以直接改约束表达式，不只是加属性
 // 编译（Debian：apt install libsepol-dev）：gcc -O2 -o sepatch sepatch.c -l:libsepol.a（内部函数只在静态库里导出）
 #include <stdio.h>
 #include <stdlib.h>
@@ -12,6 +14,7 @@
 #include <sepol/policydb/avtab.h>
 #include <sepol/policydb/services.h>
 #include <sepol/policydb/conditional.h>
+#include <sepol/policydb/constraint.h>
 
 static policydb_t pdb;
 
@@ -49,6 +52,29 @@ static int add_allow(const char *src, const char *tgt, const char *cls, char *pe
 	return 0;
 }
 
+// 约束表达式里「目标类型属于 mlstrustedobject」的那些，把 t 也加进去
+static int add_mlstrusted(const char *name) {
+	type_datum_t *t = type_of(name), *attr = type_of("mlstrustedobject");
+	if (!t || !attr) return -1;
+	int hit = 0;
+	for (uint32_t i = 0; i < pdb.p_classes.nprim; i++) {
+		class_datum_t *c = pdb.class_val_to_struct[i];
+		if (!c) continue;
+		for (constraint_node_t *cn = c->constraints; cn; cn = cn->next)
+			for (constraint_expr_t *e = cn->expr; e; e = e->next) {
+				if (e->expr_type != CEXPR_NAMES || !(e->attr & CEXPR_TYPE) || !(e->attr & CEXPR_TARGET)) continue;
+				if (!e->type_names || !ebitmap_get_bit(&e->type_names->types, attr->s.value - 1)) continue;
+				if (ebitmap_set_bit(&e->names, t->s.value - 1, 1)) return -1;
+				hit++;
+			}
+	}
+	if (!hit) { fprintf(stderr, "sepatch: 约束里没找到 mlstrustedobject\n"); return -1; }
+	// 属性成员表也补上（getattr 之类按属性查的地方一致）
+	if (pdb.type_attr_map) ebitmap_set_bit(&pdb.type_attr_map[t->s.value - 1], attr->s.value - 1, 1);
+	if (pdb.attr_type_map) ebitmap_set_bit(&pdb.attr_type_map[attr->s.value - 1], t->s.value - 1, 1);
+	return 0;
+}
+
 int main(int argc, char **argv) {
 	if (argc != 4) { fprintf(stderr, "用法：sepatch <输入 policy> <输出 policy> <规则文件>\n"); return 2; }
 	sepol_set_policydb(&pdb);
@@ -73,6 +99,8 @@ int main(int argc, char **argv) {
 		if (!strcmp(w[0], "permissive") && k == 2) {
 			type_datum_t *t = type_of(w[1]);
 			if (!t || ebitmap_set_bit(&pdb.permissive_map, t->s.value, 1)) { bad++; continue; }
+		} else if (!strcmp(w[0], "mlstrusted") && k == 2) {
+			if (add_mlstrusted(w[1])) { bad++; continue; }
 		} else if (!strcmp(w[0], "allow") && k == 5) {
 			if (add_allow(w[1], w[2], w[3], w[4])) { bad++; continue; }
 		} else {
