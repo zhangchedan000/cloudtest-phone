@@ -13,6 +13,11 @@
 # 产出镜像名会打印在最后，并给出要加到 /etc/prism-phone/agent.env 的 -gapps-images 片段。
 # 注意：镜像较大（约 4GB），构建要下载 GApps 包，需要能访问 GitHub / 谷歌。
 set -euo pipefail
+# 板子（有 NVMe 大盘 /mmc）上没指定就默认用大盘：eMMC 根分区只有 3.5G，解模拟器镜像几个 G 会撑满（踩坑 #110/#119）
+if [ -z "${PP_BUILD:-}" ] && mountpoint -q /mmc 2>/dev/null; then
+  export PP_BUILD=/mmc/pp-build PP_TOOLS="${PP_TOOLS:-/mmc/pp-build/tools}" PP_CACHE="${PP_CACHE:-/mmc/pp-build/cache}"
+  mkdir -p "$PP_BUILD"
+fi
 
 log() { printf '[gapps] %s\n' "$*"; }
 die() { printf '[gapps] 错误：%s\n' "$*" >&2; exit 1; }

@@ -11,6 +11,11 @@
 #
 # 产出镜像带标签 prism.wifi=1、prism.sensors=1，管家程序据此决定给这台手机配 WiFi（没有这个标签就照旧用有线 eth0）。
 set -euo pipefail
+# 板子（有 NVMe 大盘 /mmc）上没指定就默认用大盘：eMMC 根分区只有 3.5G，解模拟器镜像几个 G 会撑满（踩坑 #110/#119）
+if [ -z "${PP_BUILD:-}" ] && mountpoint -q /mmc 2>/dev/null; then
+  export PP_BUILD=/mmc/pp-build PP_TOOLS="${PP_TOOLS:-/mmc/pp-build/tools}" PP_CACHE="${PP_CACHE:-/mmc/pp-build/cache}"
+  mkdir -p "$PP_BUILD"
+fi
 log() { printf '[wifi] %s\n' "$*"; }
 die() { printf '[wifi] 错误：%s\n' "$*" >&2; exit 1; }
 [ "$(id -u)" = 0 ] || die "请用 root 运行"

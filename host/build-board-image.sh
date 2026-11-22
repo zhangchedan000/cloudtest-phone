@@ -13,7 +13,7 @@
 # 只有「丢了 tarball」或「要改镜像」时才从头重建（约 20~30 分钟：下 ~800MB 模拟器镜像 + 重签 154 个 apk + 构建）。
 #
 # 前提工具（板子 Alpine）：apk add openjdk17-jre-headless zip ；gcc/readelf/unzip/losetup/python3 一般已有。
-# 大文件目录：PP_TOOLS/PP_CACHE/PP_BUILD 默认 /mmc/pp-build（板子 eMMC 根分区太小，别用默认 /opt）。
+# 大文件目录：有 /mmc 大盘时 PP_TOOLS/PP_CACHE/PP_BUILD 自动默认 /mmc/pp-build（板子 eMMC 根分区太小），不用手动传。
 #
 # 用法（root，在板子上）：
 #   PP_TOOLS=/mmc/pp-build/tools PP_CACHE=/mmc/pp-build/cache PP_BUILD=/mmc/pp-build \
@@ -21,6 +21,11 @@
 #   跑完会 docker tag 出最终镜像；想存成 tarball：
 #   docker save <最终镜像> | gzip -1 > /mmc/pp-dist/android13-full.tar.gz
 set -euo pipefail
+# 板子（有 NVMe 大盘 /mmc）上没指定就默认用大盘：eMMC 根分区只有 3.5G，解模拟器镜像几个 G 会撑满（踩坑 #110/#119）
+if [ -z "${PP_BUILD:-}" ] && mountpoint -q /mmc 2>/dev/null; then
+  export PP_BUILD=/mmc/pp-build PP_TOOLS="${PP_TOOLS:-/mmc/pp-build/tools}" PP_CACHE="${PP_CACHE:-/mmc/pp-build/cache}"
+  mkdir -p "$PP_BUILD"
+fi
 here=$(cd "$(dirname "$0")" && pwd)
 log(){ printf '\n\033[1m[board-image] ===== %s =====\033[0m\n' "$*"; }
 

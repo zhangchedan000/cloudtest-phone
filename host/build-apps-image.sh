@@ -18,6 +18,11 @@
 # 为什么要这么绕：ARM64 宿主机上 Google 预编译的 apktool/build-tools 是 x86 跑不了；这里只用系统自带的
 # arm64 aapt2 + apt 的 zipalign + apksigner.jar（Java，跟架构无关）+ 纯 python 的 lpunpack，全程不碰 x86 工具。
 set -euo pipefail
+# 板子（有 NVMe 大盘 /mmc）上没指定就默认用大盘：eMMC 根分区只有 3.5G，解模拟器镜像几个 G 会撑满（踩坑 #110/#119）
+if [ -z "${PP_BUILD:-}" ] && mountpoint -q /mmc 2>/dev/null; then
+  export PP_BUILD=/mmc/pp-build PP_TOOLS="${PP_TOOLS:-/mmc/pp-build/tools}" PP_CACHE="${PP_CACHE:-/mmc/pp-build/cache}"
+  mkdir -p "$PP_BUILD"
+fi
 log() { printf '[apps] %s\n' "$*"; }
 die() { printf '[apps] 错误：%s\n' "$*" >&2; exit 1; }
 [ "$(id -u)" = 0 ] || die "请用 root 运行"
@@ -101,14 +106,14 @@ setup_x86_aapt2() {
   fi
   docker run --rm --platform linux/amd64 debian:12-slim true >/dev/null 2>&1 || { log "docker 跑不了 x86，放弃 x86 aapt2"; return 1; }
   if [ ! -f "$TOOLS/bt35-aapt2" ]; then
-    local z; z=$(mktemp -d /opt/prism-phone/tmp-bt35.XXXX)
+    local z; z=$(mktemp -d "${PP_BUILD:-/opt/prism-phone}/tmp-bt35.XXXX")
     curl -fsSL -o "$z/bt35.zip" https://dl.google.com/android/repository/build-tools_r35_linux.zip \
       && pp_verify "$z/bt35.zip" build-tools_r35_linux.zip && \
     unzip -q "$z/bt35.zip" -d "$z/bt35" && cp "$(find "$z/bt35" -name aapt2 | head -1)" "$TOOLS/bt35-aapt2"
     rm -rf "$z"
   fi
   [ -f "$TOOLS/bt35-aapt2" ] || { log "下 build-tools r35 失败"; return 1; }
-  local d; d=$(mktemp -d /opt/prism-phone/tmp-aapt2x86.XXXX)
+  local d; d=$(mktemp -d "${PP_BUILD:-/opt/prism-phone}/tmp-aapt2x86.XXXX")
   cp "$TOOLS/bt35-aapt2" "$d/aapt2"
   cat > "$d/Dockerfile" <<'DF'
 FROM --platform=linux/amd64 debian:12-slim
