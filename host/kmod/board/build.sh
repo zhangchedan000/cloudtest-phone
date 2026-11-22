@@ -23,7 +23,9 @@ log "源码 $(sed -n 's/^SUBLEVEL = //p' "$K/src/Makefile" | head -1) @ $(cd "$K
 cp "$here/compare-crcs.py" "$K/"
 # 3) 在 Debian 容器里编：配置 = 板子的 + 要的模块；vmlinux 编完 modpost 出我们自己的 CRC，再编模块
 docker run --rm --platform linux/arm64 -v "$K:/k" -w /k/src debian:12-slim sh -ec '
-  apt-get update -qq && apt-get install -y -qq --no-install-recommends build-essential bc flex bison libssl-dev libelf-dev kmod python3 cpio >/dev/null
+  # 这个内核上 overlay 报的剩余空间不对（容器里 df 显示满），apt 下载前查空间会拒绝 → 下载缓存放挂进来的 /k（真 ext4）
+  mkdir -p /k/aptcache/partial
+  apt-get update -qq && apt-get install -y -qq --no-install-recommends -o Dir::Cache::Archives=/k/aptcache build-essential bc flex bison libssl-dev libelf-dev kmod python3 cpio >/dev/null
   cp /k/config.board .config
   scripts/config --module MAC80211_HWSIM
   touch .scmversion                         # 版本号不带 "+"（要和板子的 6.1.141 一字不差）
