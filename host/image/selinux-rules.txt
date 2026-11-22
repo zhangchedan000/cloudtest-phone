@@ -107,7 +107,7 @@ allow hal_wifi_default property_socket sock_file write
 allow hal_wifi_default vendor_default_prop property_service set
 allow hal_wifi_default hal_wifi_default netlink_route_socket create,bind,read,write,nlmsg_read,getattr,setopt,getopt
 allow domain tmpfs file read,write,map,getattr,ioctl
-allow apexd device blk_file read,write,open,ioctl,getattr
+# apexd 的 /dev/loopN 打成 loop_device（add-selinux.sh 1b），ioctl 按扩展权限放行，不能靠通用 device
 allow netd system_file dir write,add_name
 allow netd system_file file create,open,read,write,lock,getattr
 allow system_suspend sysfs file read,open,getattr
