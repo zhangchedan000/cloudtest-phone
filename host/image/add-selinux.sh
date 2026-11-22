@@ -19,7 +19,7 @@ img=$1; ver=$2
 B=${PP_BUILD:-/mmc/pp-build}
 log(){ echo "$(date +%T) [selinux] $*"; }
 die(){ echo "[selinux] 错误：$*" >&2; exit 1; }
-SEL_VER=5
+SEL_VER=6
 cur=$(docker image inspect -f '{{index .Config.Labels "prism.selinux"}}' "$img" 2>/dev/null || true)
 [ "$cur" = "$SEL_VER" ] && { log "$img 已经做好（第 $SEL_VER 版），跳过"; exit 0; }
 base=$img
@@ -50,10 +50,14 @@ O=$W/overlay; mkdir -p "$O" "$W/x"
 cid=$(docker create "$base")
 docker cp "$cid:/system/bin/init" "$W/x/init" >/dev/null
 docker cp "$cid:/vendor/etc/selinux/precompiled_sepolicy" "$W/x/policy" >/dev/null || die "镜像里没有 precompiled_sepolicy"
+# 各分区的 file_contexts 分开存（fc.1 ~ fc.5，安卓读的顺序），后面改了 vendor 那份再按顺序拼
+i=0
 for f in /system/etc/selinux/plat_file_contexts /system_ext/etc/selinux/system_ext_file_contexts \
          /product/etc/selinux/product_file_contexts /vendor/etc/selinux/vendor_file_contexts /odm/etc/selinux/odm_file_contexts; do
-  docker cp "$cid:$f" "$W/x/fc.part" >/dev/null 2>&1 && cat "$W/x/fc.part" >> "$W/x/file_contexts"
+  i=$((i + 1)); : > "$W/x/fc.$i"
+  docker cp "$cid:$f" "$W/x/fc.$i" >/dev/null 2>&1 || true
 done
+cat "$W/x"/fc.[1-5] > "$W/x/file_contexts"
 for d in system/etc/init system/etc/init/hw vendor/etc/init vendor/etc/init/hw odm/etc/init product/etc/init system_ext/etc/init; do
   mkdir -p "$W/rc/$d"; docker cp "$cid:/$d/." "$W/rc/$d/" >/dev/null 2>&1 || true
 done
@@ -117,10 +121,9 @@ for rel in sorted(seen):
     print(f"{pat} u:object_r:same_process_hal_file:s0")
 EOF
 n=$(grep -c same_process_hal_file "$O/vendor/etc/selinux/vendor_file_contexts")
-cat "$O/vendor/etc/selinux/vendor_file_contexts" > "$W/x/vfc.new"
-# 打标签用的合并 file_contexts 也换成新的 vendor_file_contexts
-grep -v -F -x -f "$W/x/vendor_file_contexts" "$W/x/file_contexts" > "$W/x/fc.other" || true
-cat "$W/x/fc.other" "$W/x/vfc.new" > "$W/x/file_contexts"
+# 打标签用的合并 file_contexts 也换成新的 vendor_file_contexts（按安卓的顺序重新拼）
+cp "$O/vendor/etc/selinux/vendor_file_contexts" "$W/x/fc.4"
+cat "$W/x"/fc.[1-5] > "$W/x/file_contexts"
 log "同进程显卡库：vendor_file_contexts 里 same_process_hal_file 共 $n 条"
 chmod 644 "$O/vendor/etc/selinux/vendor_file_contexts"
 
