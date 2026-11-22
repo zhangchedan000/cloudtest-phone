@@ -20,7 +20,7 @@ H="Authorization: Bearer $TOK"
 DIR=/mmc/pp-build; mkdir -p "$DIR"
 tag="v$VER"; [ "$GAPPS" = 1 ] && tag="${tag}g"; [ "$PROXY" != direct-dev ] && tag="${tag}-rp"
 OUT=$DIR/accept-$tag.tsv
-printf 'id\tboot\tmali\tsensors\tphone\tdialer\tgms\tfatal\tphonecrash\timei\tsim\toperator\tnet\tbt\tbtcrash\tandroidId\tserial\tbootid\tfp\tradiocrash\ttells\tvalidated\twifi\n' > "$OUT"
+printf 'id\tboot\tmali\tsensors\tphone\tdialer\tgms\tfatal\tphonecrash\timei\tsim\toperator\tnet\tbt\tbtcrash\tandroidId\tserial\tbootid\tfp\tradiocrash\ttells\tvalidated\twifi\tuptime\n' > "$OUT"
 log(){ echo "$(date +%H:%M:%S) $*"; }
 gfield=""; [ "$GAPPS" = 1 ] && gfield=',"gapps":true'
 
@@ -86,9 +86,12 @@ while [ "$done_n" -lt "$TOTAL" ]; do
     gms=NA
     [ "$GAPPS" = 1 ] && gms=$(docker exec "$C" sh -c 'p=$(pidof com.google.android.gms); v=$(pm list packages com.android.vending | wc -l); echo "gms${p:+Y}${p:-N}/play$v"' 2>/dev/null)
     imei=$(imei_of "$id"); bootid=$(docker exec "$C" cat /proc/sys/kernel/random/boot_id 2>/dev/null)
+    # 开机时长要进手机的时间命名空间读（docker exec 不进，读到的是宿主机的，踩坑 #85 / #132）
+    pid=$(docker inspect -f '{{.State.Pid}}' "$C" 2>/dev/null)
+    up=$(nsenter -t "$pid" -T -- cat /proc/uptime 2>/dev/null </dev/null | cut -d' ' -f1 | cut -d. -f1)
     # 按列拼：把占位的 GMS / SIM 换成实际值
-    echo "$r" | awk -F'\t' -v OFS='\t' -v id="$id" -v gms="$gms" -v imei="$imei" -v bootid="$bootid" \
-      '{print id,$1,$2,$3,$4,$5,gms,$7,$8,imei,$10,$11,$12,$13,$17,$14,$15,bootid,$16,$18,$19,$20,$21}' >> "$OUT"
+    echo "$r" | awk -F'\t' -v OFS='\t' -v id="$id" -v gms="$gms" -v imei="$imei" -v bootid="$bootid" -v up="${up:-}" \
+      '{print id,$1,$2,$3,$4,$5,gms,$7,$8,imei,$10,$11,$12,$13,$17,$14,$15,bootid,$16,$18,$19,$20,$21,up}' >> "$OUT"
     bt=$(echo "$r" | cut -f13); fa=$(echo "$r" | cut -f7)
     [ "$VER" = 13 ] && bt=ON   # 安卓 13 没有蓝牙模拟，关着是正常的
     if [ "$bt" != ON ]; then
@@ -135,6 +138,7 @@ items = [
     ("属性无模拟器字样", cnt(lambda r: r.get("tells") == "0")),
     ("联网验证通过", cnt(lambda r: r.get("validated") == "1")),
     ("走WiFi", cnt(lambda r: r.get("wifi") == "1")),
+    ("开机时长是自己的", cnt(lambda r: r.get("uptime", "").isdigit() and int(r["uptime"]) < 900)),
 ]
 if gapps: items.append(("GMS+Play", cnt(lambda r: r["gms"].startswith("gmsY") and r["gms"].endswith("play1"))))
 if proxy != "direct-dev":
@@ -152,4 +156,4 @@ echo "结果：$OUT"
 #   phone 电话服务 iphonesubinfo 注册（found）；dialer 拨号 + 短信装上（2）；gms 谷歌服务进程 + Play 商店；
 #   fatal system_server 崩溃次数（0）；phonecrash com.android.phone 崩溃次数（0）；
 #   imei App 层读到的 15 位 IMEI（每台唯一）；sim / operator / net 真代理时 SIM 状态、运营商、网络制式；
-#   bt 蓝牙状态（宿主装了 rootcanal 时应为 ON，踩坑 #122；安卓 13 没有蓝牙模拟、不算）；sensors 安卓 13 是 14 个；btcrash com.android.bluetooth 崩溃次数；radiocrash 电话 HAL（radio-service）崩溃次数（0，踩坑 #125）；tells getprop 里 qemu/goldfish/ranchu/redroid 字样条数（0，踩坑 #127）；validated 安卓自己的联网检测（DNS + 访问 generate_204）通过（1，踩坑 #131）；wifi 安卓当前网络是 WiFi（1，宿主机有 mac80211_hwsim 且管家没带 -no-wifi 时，踩坑 #129）；androidId / serial / bootid 身份（每台唯一）。
+#   bt 蓝牙状态（宿主装了 rootcanal 时应为 ON，踩坑 #122；安卓 13 没有蓝牙模拟、不算）；sensors 安卓 13 是 14 个；btcrash com.android.bluetooth 崩溃次数；radiocrash 电话 HAL（radio-service）崩溃次数（0，踩坑 #125）；tells getprop 里 qemu/goldfish/ranchu/redroid 字样条数（0，踩坑 #127）；validated 安卓自己的联网检测（DNS + 访问 generate_204）通过（1，踩坑 #131）；uptime 手机自己的开机时长（秒，应该只有几分钟，不是宿主机的几小时，踩坑 #132）；wifi 安卓当前网络是 WiFi（1，宿主机有 mac80211_hwsim 且管家没带 -no-wifi 时，踩坑 #129）；androidId / serial / bootid 身份（每台唯一）。
