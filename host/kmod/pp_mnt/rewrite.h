@@ -416,7 +416,30 @@ static int pp_fmt_cs(unsigned long long cs, char *buf)
 	return j;
 }
 
-static int pp_rewrite_uptime(const char *in, int len, char *out, int max, int ncpu)
+struct pp_cpuv {
+	unsigned long long usr, sys, idle;
+};
+
+/*
+ * 一个核（core 号 k）开机以来的 user / system / idle tick（总数 T）。seed=0 时是固定比例（idle 97%、system 1.5%）；
+ * seed≠0（每台手机一个，pp_mnt.c 按 PID 命名空间算）时比例按 seed 浮动、每个核也略有不同（cpu0 最忙）——
+ * 不然同一秒开机的几台手机算出来一模一样（踩坑 #134）。
+ */
+static void pp_core(unsigned long long T, unsigned int seed, int k, struct pp_cpuv *v)
+{
+	unsigned int idle_pm = 970, sys_pm = 15;
+
+	if (seed) {
+		idle_pm = 958 + seed % 25;
+		sys_pm = 10 + (seed >> 5) % 12;
+		idle_pm -= ((seed >> ((8 + 3 * k) % 29)) & 7) * 2 + (k == 0 ? 8 : 0);
+	}
+	v->idle = T * idle_pm / 1000ULL;
+	v->sys = T * sys_pm / 1000ULL;
+	v->usr = T > v->idle + v->sys ? T - v->idle - v->sys : 0;
+}
+
+static int pp_rewrite_uptime(const char *in, int len, char *out, int max, int ncpu, unsigned int seed)
 {
 	struct pp_tok t[4];
 	struct pp_out o = { out, 0, max, 0 };
@@ -428,7 +451,17 @@ static int pp_rewrite_uptime(const char *in, int len, char *out, int max, int nc
 		return -1;
 	if (pp_parse_cs(t[0], &up_cs))
 		return -1;
-	idle_cs = up_cs * (unsigned long long)ncpu * 98ULL / 100ULL;
+	if (!seed) {
+		idle_cs = up_cs * (unsigned long long)ncpu * 98ULL / 100ULL;
+	} else { /* 和 /proc/stat 的 idle 一致：各核 idle 之和（厘秒 = tick） */
+		struct pp_cpuv v;
+		int k;
+
+		for (idle_cs = 0, k = 0; k < ncpu; k++) {
+			pp_core(up_cs, seed, k, &v);
+			idle_cs += v.idle;
+		}
+	}
 	pp_putt(&o, t[0]);
 	pp_puts(&o, " ");
 	bn = pp_fmt_cs(idle_cs, buf);
@@ -482,17 +515,30 @@ static long long __attribute__((unused)) pp_parse_btime(const char *in, int len)
 	return 0;
 }
 
-static void pp_stat_cpu_line(struct pp_out *o, const char *tag, int taglen, int agg, int ncpu, long long up_sec)
+static void pp_stat_cpu_line(struct pp_out *o, const char *tag, int taglen, int agg, int ncpu, long long up_sec,
+			     unsigned int seed)
 {
 	unsigned long long ticks = (unsigned long long)up_sec * 100ULL;
-	unsigned long long idle, sys, usr;
+	unsigned long long idle = 0, sys = 0, usr = 0;
+	struct pp_cpuv v;
 	char num[24];
+	int k;
 
-	if (agg)
-		ticks *= (unsigned)ncpu;
-	idle = ticks * 97ULL / 100ULL;
-	sys = ticks * 15ULL / 1000ULL;
-	usr = ticks > idle + sys ? ticks - idle - sys : 0;
+	if (agg) { /* 聚合行 = 各核之和 */
+		for (k = 0; k < ncpu; k++) {
+			pp_core(ticks, seed, k, &v);
+			idle += v.idle;
+			sys += v.sys;
+			usr += v.usr;
+		}
+	} else {
+		for (k = 0, ncpu = 3; ncpu < taglen; ncpu++)
+			k = k * 10 + (tag[ncpu] - '0');
+		pp_core(ticks, seed, k, &v);
+		idle = v.idle;
+		sys = v.sys;
+		usr = v.usr;
+	}
 	pp_put(o, tag, taglen);
 	pp_puts(o, agg ? "  " : " ");
 	pp_put(o, num, pp_fmt_u64(usr, num));
@@ -512,7 +558,8 @@ static void pp_stat_num_line(struct pp_out *o, const char *label, int llen, unsi
 	pp_puts(o, "\n");
 }
 
-static int pp_rewrite_stat(const char *in, int len, char *out, int max, int ncpu, long long up_sec, long long btime)
+static int pp_rewrite_stat(const char *in, int len, char *out, int max, int ncpu, long long up_sec, long long btime,
+			   unsigned int seed)
 {
 	struct pp_out o = { out, 0, max, 0 };
 	int i = 0;
@@ -529,13 +576,15 @@ static int pp_rewrite_stat(const char *in, int len, char *out, int max, int ncpu
 			tagend = ls + 3;
 			while (tagend < le && in[tagend] >= '0' && in[tagend] <= '9')
 				tagend++;
-			pp_stat_cpu_line(&o, in + ls, tagend - ls, tagend == ls + 3, ncpu, up_sec);
+			pp_stat_cpu_line(&o, in + ls, tagend - ls, tagend == ls + 3, ncpu, up_sec, seed);
 		} else if (le - ls > 5 && memcmp(in + ls, "ctxt ", 5) == 0) {
 			/* 上下文切换计数：宿主机累计、几台一样。按开机时长 × 一个合理速率 */
-			pp_stat_num_line(&o, "ctxt ", 5, (unsigned long long)up_sec * 1800ULL);
+			pp_stat_num_line(&o, "ctxt ", 5, (unsigned long long)up_sec * (seed ? 1500ULL + (seed >> 11) % 700 : 1800ULL));
 		} else if (le - ls > 10 && memcmp(in + ls, "processes ", 10) == 0) {
 			/* 开机以来 fork 的进程总数：同上 */
-			pp_stat_num_line(&o, "processes ", 10, (unsigned long long)up_sec * 3ULL + 500ULL);
+			pp_stat_num_line(&o, "processes ", 10, seed ?
+					 (unsigned long long)up_sec * (25ULL + (seed >> 14) % 12) / 10ULL + 380ULL + (seed >> 18) % 250 :
+					 (unsigned long long)up_sec * 3ULL + 500ULL);
 		} else if (btime > 0 && le - ls > 6 && memcmp(in + ls, "btime ", 6) == 0) {
 			pp_stat_num_line(&o, "btime ", 6, (unsigned long long)btime);
 		} else {

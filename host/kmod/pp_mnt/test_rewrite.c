@@ -156,7 +156,7 @@ int main(void)
 		};
 		for (unsigned i = 0; i < sizeof(up) / sizeof(up[0]); i++) {
 			char out[64];
-			int n = pp_rewrite_uptime(up[i].in, (int)strlen(up[i].in), out, sizeof(out), up[i].ncpu);
+			int n = pp_rewrite_uptime(up[i].in, (int)strlen(up[i].in), out, sizeof(out), up[i].ncpu, 0);
 			const char *got = n < 0 ? up[i].in : (n == 0 ? "" : (out[n] = 0, out));
 			if (strcmp(got, up[i].want) != 0) {
 				fails++;
@@ -190,18 +190,71 @@ int main(void)
 			"procs_blocked 0\n"
 			"softirq 888 1 2 3\n";
 		char out[2048];
-		int n = pp_rewrite_stat(in, (int)strlen(in), out, sizeof(out), 4, 700, 0);
+		int n = pp_rewrite_stat(in, (int)strlen(in), out, sizeof(out), 4, 700, 0, 0);
 		out[n < 0 ? 0 : n] = 0;
 		if (n < 0 || strcmp(out, want) != 0) {
 			fails++;
 			printf("FAIL stat\n--- got ---\n%s--- want ---\n%s", n < 0 ? "(放不下)\n" : out, want);
 		}
 		/* btime 给了就换（Q1 内核的 btime 是宿主机的，按本机开机时长算的值替换） */
-		n = pp_rewrite_stat(in, (int)strlen(in), out, sizeof(out), 4, 700, 1795330000LL);
+		n = pp_rewrite_stat(in, (int)strlen(in), out, sizeof(out), 4, 700, 1795330000LL, 0);
 		out[n < 0 ? 0 : n] = 0;
 		if (n < 0 || !strstr(out, "\nbtime 1795330000\n") || strstr(out, "1795064107")) {
 			fails++;
 			printf("FAIL stat btime 替换\n%s", out);
+		}
+		/* 每台手机一个 seed：同一秒开机的两台也不一样；聚合行 = 各核之和；各核不全一样；idle 在 93%~99% */
+		{
+			char o1[2048], o2[2048];
+			unsigned long long a[5], c[4][5], sum[5] = { 0 };
+			int n1 = pp_rewrite_stat(in, (int)strlen(in), o1, sizeof(o1), 4, 700, 0, 0x9e3779b1u);
+			int n2 = pp_rewrite_stat(in, (int)strlen(in), o2, sizeof(o2), 4, 700, 0, 0x7f4a7c15u);
+			o1[n1 < 0 ? 0 : n1] = 0;
+			o2[n2 < 0 ? 0 : n2] = 0;
+			if (n1 < 0 || n2 < 0 || strcmp(o1, o2) == 0) {
+				fails++;
+				printf("FAIL stat seed：两台一样\n%s", o1);
+			}
+			if (sscanf(o1, "cpu  %llu %*u %llu %llu", &a[0], &a[1], &a[2]) != 3) {
+				fails++;
+				printf("FAIL stat seed 解析\n%s", o1);
+			} else {
+				const char *q = o1;
+				for (int k = 0; k < 2; k++) {
+					q = strstr(q, k == 0 ? "\ncpu0 " : "\ncpu1 ");
+					if (!q || sscanf(q + 1, "%*s %llu %*u %llu %llu", &c[k][0], &c[k][1], &c[k][2]) != 3) {
+						fails++;
+						printf("FAIL stat seed 核 %d\n", k);
+						break;
+					}
+				}
+				/* 输入只有 cpu0、cpu1 两行，ncpu=4：聚合按 4 核算，所以只核对比例和核间差异 */
+				if (c[0][2] == c[1][2])
+					printf("（cpu0 / cpu1 idle 相同，seed 下应略不同）\n"), fails++;
+				if (a[2] * 100 < (a[0] + a[1] + a[2]) * 93 || a[2] * 100 > (a[0] + a[1] + a[2]) * 99) {
+					fails++;
+					printf("FAIL stat seed idle 比例\n%s", o1);
+				}
+				(void)sum;
+			}
+			/* uptime 的空闲 = 各核 idle 之和 */
+			{
+				char uo[64];
+				int un = pp_rewrite_uptime("700.00 99999.00\n", 16, uo, sizeof(uo), 4, 0x9e3779b1u);
+				unsigned long long tot = 0;
+				struct pp_cpuv v;
+				char want[64];
+				for (int k = 0; k < 4; k++) {
+					pp_core(70000, 0x9e3779b1u, k, &v);
+					tot += v.idle;
+				}
+				snprintf(want, sizeof(want), "700.00 %llu.%02llu\n", tot / 100, tot % 100);
+				uo[un < 0 ? 0 : un] = 0;
+				if (un < 0 || strcmp(uo, want) != 0) {
+					fails++;
+					printf("FAIL uptime seed：%s want %s", uo, want);
+				}
+			}
 		}
 		if (pp_parse_btime(in, (int)strlen(in)) != 1795064107LL) {
 			fails++;

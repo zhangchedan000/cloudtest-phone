@@ -88,6 +88,20 @@ static long long pp_up_sec(void)
 	return ts.tv_sec;
 }
 
+/* 每台手机（每次开机）一个固定的数：PID 命名空间编号打散。CPU 时间的比例按它浮动，同一秒开机的几台也不一样 */
+static unsigned int pp_seed(void)
+{
+	struct pid_namespace *ns = task_active_pid_ns(current);
+	unsigned int x = ns ? ns->ns.inum : 1;
+
+	x ^= x >> 16;
+	x *= 0x7feb352dU;
+	x ^= x >> 15;
+	x *= 0x846ca68bU;
+	x ^= x >> 16;
+	return x ? x : 1;
+}
+
 /* ---------- kretprobe ---------- */
 
 struct pp_ri {
@@ -131,7 +145,7 @@ static void pp_done(struct kretprobe_instance *ri, int mode)
 		int blen = (int)(m->count - d->start);
 
 		if (mode == PP_UPTIME) {
-			n = pp_rewrite_uptime(m->buf + d->start, blen, out, PP_LINE_MAX, num_online_cpus());
+			n = pp_rewrite_uptime(m->buf + d->start, blen, out, PP_LINE_MAX, num_online_cpus(), pp_seed());
 		} else if (mode == PP_STAT) {
 			/* 开机时长按读的进程所在的时间命名空间算（和 /proc/uptime 一致）。btime 也按它重算：
 			 * 魔云腾 Q1 内核的 btime 不跟时间命名空间走（还是宿主机开机时刻，几台一样，踩坑 #134）。 */
@@ -139,7 +153,8 @@ static void pp_done(struct kretprobe_instance *ri, int mode)
 			long long now = (long long)ktime_get_real_seconds();
 
 			if (up > 0 && now > 1000000000LL)
-				n = pp_rewrite_stat(m->buf + d->start, blen, out, PP_LINE_MAX, num_online_cpus(), up, now - up);
+				n = pp_rewrite_stat(m->buf + d->start, blen, out, PP_LINE_MAX, num_online_cpus(), up, now - up,
+						    pp_seed());
 		} else {
 			n = pp_rewrite(m->buf + d->start, blen, out, PP_LINE_MAX, mode, &s->cfg);
 		}
