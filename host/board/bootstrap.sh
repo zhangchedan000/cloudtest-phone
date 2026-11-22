@@ -30,7 +30,8 @@ if [ -e /dev/binder1 ] || grep -q binder /proc/filesystems; then ok "内核有 b
 [ -f "$D/mihomo-arm64.gz" ] && ok "mihomo 包在" || { say "✗ 没有 $D/mihomo-arm64.gz"; bad=1; }
 [ -f "$D/pp-rootcanal-arm64-bundle.tgz" ] && ok "蓝牙芯片模拟器包在" || say "· 没有蓝牙芯片模拟器包（手机蓝牙会关着，别的照常）"
 if [ -f "$D/MANIFEST.txt" ] && command -v sha256sum >/dev/null; then
-  (cd "$D" && grep -E '^[0-9a-f]{64} ' MANIFEST.txt | sha256sum -c -s) && ok "复用件校验通过" || { say "✗ 复用件校验不过（拷坏了？）"; bad=1; }
+  # 不用 -s / --status：busybox 和 coreutils 的 sha256sum 参数不一样，只看退出码
+  if (cd "$D" && grep -E '^[0-9a-f]{64} ' MANIFEST.txt | sha256sum -c >/dev/null 2>&1); then ok "复用件校验通过（MANIFEST.txt）"; else say "✗ 复用件校验不过（拷坏了？在 $D 里跑 sha256sum -c MANIFEST.txt 看哪个）"; bad=1; fi
 fi
 [ -e /sys/class/pwm/pwmchip1 ] && ok "风扇 PWM（pwmchip1）在" || say "· 没有 pwmchip1（不是 Q1？风扇脚本要按板子改）"
 [ "$bad" = 0 ] || die "前提条件不满足，见上面 ✗"
