@@ -10,6 +10,7 @@ OLD=vendor.qemu.vport.modem
 NEW=vendor.rild.vport.modem
 HAL=/vendor/bin/hw/android.hardware.radio-service.mtk
 RC=/vendor/etc/init/init.radio.rc
+mkdir -p "${PP_BUILD:-/mmc/pp-build}"
 for img in "$@"; do
   W=$(mktemp -d "${PP_BUILD:-/mmc/pp-build}/modemprop.XXXX")
   cid=$(docker create "$img")

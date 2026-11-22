@@ -83,6 +83,12 @@ if [ "$need" = 1 ]; then
   pigz -dc "$D/android-images.tar.gz" | docker load | tail -3 || die "导入镜像失败"
 fi
 [ -f "$D/build-sources.tar.gz" ] && ! docker images | grep -q 'mytos/dobox' && { say "导入重建用底子"; pigz -dc "$D/build-sources.tar.gz" | docker load | tail -2; }
+# 导出包比仓库旧时补上镜像级的小改动（重复跑会跳过）：安卓 16 电话 HAL 属性名去 qemu 字样（踩坑 #127）
+if curl -fsSL --retry 3 -o /tmp/pp-patch-modem-prop.sh "$RAW/host/image/patch-modem-prop.sh"; then
+  for img in $(cat "$D/android-images.list" 2>/dev/null); do
+    case "$img" in *:16-*) PP_BUILD=/mmc/pp-build sh /tmp/pp-patch-modem-prop.sh "$img" || say "· $img 补丁没打上（不影响开机）" ;; esac
+  done
+fi
 ok "安卓镜像"
 
 # ---------- 4. mihomo / 小屏程序 ----------
