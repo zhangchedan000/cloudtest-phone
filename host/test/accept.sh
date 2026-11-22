@@ -49,7 +49,11 @@ while [ "$done_n" -lt "$TOTAL" ]; do
   for i in $(seq 1 "$n"); do
     body="{\"name\":\"accept-$tag-$b-$i\",\"modelId\":\"poco-x4-gt\",\"androidVersion\":$VER,\"proxyId\":\"$PROXY\"$gfield}"
     id=$(curl -s -m20 -X POST -H "$H" -H 'Content-Type: application/json' -d "$body" "$API/phones" | python3 -c 'import sys,json;print(json.load(sys.stdin).get("id",""))' 2>/dev/null)
-    if [ -n "$id" ]; then ids="$ids $id"; curl -s -m120 -X POST -H "$H" "$API/phones/$id/start" -o /dev/null; else log "  第 $i 台建失败"; fi
+    if [ -n "$id" ]; then
+      ids="$ids $id"
+      sr=$(curl -s -m120 -w '\n%{http_code}' -X POST -H "$H" "$API/phones/$id/start")
+      case "$(echo "$sr" | tail -1)" in 2*) ;; *) log "  $id 开机请求失败：$(echo "$sr" | head -c 300 | tr '\n' ' ')" ;; esac
+    else log "  第 $i 台建失败"; fi
   done
   for id in $ids; do
     for _ in $(seq 1 40); do

@@ -12,6 +12,9 @@ import (
 // tcflsh ioctl TCFLSH（arm64 / amd64 都是 0x540B，syscall 包没导出）。
 const tcflsh = 0x540B
 
+// tiocgptpeer ioctl TIOCGPTPEER（_IO('T', 0x41)，Linux 4.13+）：凭主端直接拿到它的从端，不经过 /dev/pts 路径。
+const tiocgptpeer = 0x5441
+
 // PipePaths 模拟器传感器 HAL 打开的管道文件（踩坑 #59）：安卓 14 起是 goldfish_pipe_dprctd（镜像里的 HAL 打了补丁才走它）；
 // 安卓 13 的 HAL 连 vsock 失败会自己退回 /dev/goldfish_pipe。两个都绑到同一个伪终端，哪个版本都能用。
 var PipePaths = []string{"/dev/goldfish_pipe_dprctd", "/dev/goldfish_pipe"}
@@ -60,12 +63,16 @@ func OpenPTY() (master, slave *os.File, err error) {
 		return nil, nil, err
 	}
 	name := fmt.Sprintf("/dev/pts/%d", n)
-	slave, err = os.OpenFile(name, os.O_RDWR|syscall.O_NOCTTY, 0)
-	if err != nil {
+	// 先用 TIOCGPTPEER 凭主端拿从端（踩坑 #124）：安卓 init 开机时会在 /dev/pts 上再挂一个新的 devpts，
+	// 挂上之后「/dev/pts/N」指到新实例里——要么没有、要么是安卓自己的别的终端。小助手在负载高时慢一拍，
+	// 正好撞上就配不上串口（蓝牙 HAL 打不开 /dev/ttyS1 → 连崩 6 次放弃 → 蓝牙关着）。老内核没有这个 ioctl 再按路径开。
+	if fd, _, e := syscall.Syscall(syscall.SYS_IOCTL, master.Fd(), tiocgptpeer, uintptr(os.O_RDWR|syscall.O_NOCTTY|syscall.O_CLOEXEC)); e == 0 {
+		slave = os.NewFile(fd, name)
+	} else if slave, err = os.OpenFile(name, os.O_RDWR|syscall.O_NOCTTY, 0); err != nil {
 		master.Close()
 		return nil, nil, err
 	}
-	_ = os.Chmod(name, 0o666)
+	_ = slave.Chmod(0o666)
 	_ = makeRaw(master.Fd())
 	_ = makeRaw(slave.Fd())
 	return master, slave, nil
@@ -84,7 +91,7 @@ func SetupPaths(paths []string) (master, slave *os.File, err error) {
 		if f, err := os.OpenFile(path, os.O_CREATE|os.O_RDONLY, 0o666); err == nil {
 			f.Close()
 		}
-		if err := syscall.Mount(slave.Name(), path, "", syscall.MS_BIND, ""); err != nil {
+		if err := bindPTY(slave, path); err != nil {
 			master.Close()
 			slave.Close()
 			return nil, nil, fmt.Errorf("绑到 %s：%w", path, err)
@@ -181,7 +188,7 @@ func SetupTTY(path string, gid int) (master, slave *os.File, err error) {
 	if f, err := os.OpenFile(path, os.O_CREATE|os.O_RDONLY, 0o660); err == nil {
 		f.Close()
 	}
-	if err := syscall.Mount(slave.Name(), path, "", syscall.MS_BIND, ""); err != nil {
+	if err := bindPTY(slave, path); err != nil {
 		master.Close()
 		slave.Close()
 		return nil, nil, fmt.Errorf("绑到 %s：%w", path, err)
@@ -189,4 +196,22 @@ func SetupTTY(path string, gid int) (master, slave *os.File, err error) {
 	_ = os.Chown(path, 0, gid)
 	_ = os.Chmod(path, 0o660)
 	return master, slave, nil
+}
+
+// bindPTY 把伪终端从端绑到 path。用 /proc/self/fd/N 当来源（指的就是手里这个文件），不用「/dev/pts/N」路径：
+// 安卓 init 在 /dev/pts 上挂了新 devpts 之后，那个路径就不是我们的终端了（踩坑 #124）。
+// 短暂失败重试几次；/proc 用不了才退回按路径绑。
+func bindPTY(slave *os.File, path string) error {
+	src := fmt.Sprintf("/proc/self/fd/%d", slave.Fd())
+	var err error
+	for i := 0; i < 5; i++ {
+		if err = syscall.Mount(src, path, "", syscall.MS_BIND, ""); err == nil {
+			return nil
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	if err2 := syscall.Mount(slave.Name(), path, "", syscall.MS_BIND, ""); err2 == nil {
+		return nil
+	}
+	return err
 }
