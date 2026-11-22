@@ -327,6 +327,14 @@ func label(boot bool) (int, error) {
 			}
 			n += l.Relabel(d, true, nil)
 		}
+		// Docker 的 /dev/ptmx 是指向 /dev/pts/ptmx 的链接（标签是 devpts，ioctl 按扩展权限只放行 ptmx_device）：
+		// 安卓 logwrapper 开伪终端被拦 → linkerconfig 起不来 → 系统程序找不到 APEX 里的库。换成真机那样的字符设备 5:2
+		if fi, err := os.Lstat("/dev/ptmx"); err == nil && fi.Mode()&os.ModeSymlink != 0 {
+			if os.Remove("/dev/ptmx") == nil {
+				_ = syscall.Mknod("/dev/ptmx", syscall.S_IFCHR|0o666, 5<<8|2)
+				_ = os.Chmod("/dev/ptmx", 0o666)
+			}
+		}
 		n += l.Relabel("/dev", true, map[string]bool{"/dev/pts": true, "/dev/shm": true, "/dev/mqueue": true, tmp: true,
 			"/dev/__properties__": true, "/dev/socket": true})
 		n += l.Relabel("/", false, nil) // 容器根目录在 Docker 每次新建的那一层，没有标签
