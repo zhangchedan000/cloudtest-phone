@@ -320,10 +320,9 @@ static int pp_indev_unreg_pre(struct kprobe *p, struct pt_regs *regs)
 	return 0;
 }
 
-static struct kprobe indev_probes[] = {
-	{ .symbol_name = "input_register_device", .pre_handler = pp_indev_reg_pre },
-	{ .symbol_name = "input_unregister_device", .pre_handler = pp_indev_unreg_pre },
-};
+static struct kprobe kp_indev_reg = { .symbol_name = "input_register_device", .pre_handler = pp_indev_reg_pre };
+static struct kprobe kp_indev_unreg = { .symbol_name = "input_unregister_device", .pre_handler = pp_indev_unreg_pre };
+static struct kprobe *indev_probes[] = { &kp_indev_reg, &kp_indev_unreg };
 static bool indev_ok;
 
 /* 这个输入设备是别的命名空间（别的手机）建的吗 */

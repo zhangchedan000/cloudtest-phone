@@ -31,3 +31,16 @@ func TestRenamePhy(t *testing.T) {
 		t.Fatalf("要按 wiphy 编号改：%v", r.calls)
 	}
 }
+
+func TestRestorePhyName(t *testing.T) {
+	r := &phyRun{}
+	RestorePhyName(context.Background(), r, "1234", "pps4e0d5145c9")
+	if !strings.Contains(strings.Join(r.calls, "\n"), "nsenter -t 1234 -n iw phy#7 set name pps4e0d5145c9") {
+		t.Fatalf("关机前要按 wiphy 编号改回原名：%v", r.calls)
+	}
+	r = &phyRun{}
+	RestorePhyName(context.Background(), r, "0", "pps1")
+	if len(r.calls) != 0 {
+		t.Fatalf("没有进程号就什么都不做：%v", r.calls)
+	}
+}

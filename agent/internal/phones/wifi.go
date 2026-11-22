@@ -63,6 +63,22 @@ func (s *Service) setupWifi(ctx context.Context, id, image string, byKey map[str
 	return true
 }
 
+// beforeStopWifi 停容器之前：手机里的无线网卡名改回建它时的名字（见 wifi.RestorePhyName）。没开 WiFi / 没在跑就什么都不做。
+func (s *Service) beforeStopWifi(ctx context.Context, id string) {
+	if !s.cfg.Wifi {
+		return
+	}
+	info, err := s.docker.InspectContainer(ctx, containerName(id))
+	if err != nil || info.State.Pid <= 0 {
+		return
+	}
+	p, err := wifi.PlanFor(id, "02:00:00:00:00:00", s.cfg.DataDir)
+	if err != nil {
+		return
+	}
+	wifi.RestorePhyName(ctx, s.run, strconv.Itoa(info.State.Pid), p.StaPhy)
+}
+
 // teardownWifi 关机 / 删除 / 重置后清掉路由器（没有就什么都不做）。
 func (s *Service) teardownWifi(ctx context.Context, id string) {
 	// 只需要名字（不依赖 wifiMac 字段：字段改过也能清干净）

@@ -496,7 +496,9 @@ func HostReady(ctx context.Context, run Runner) error {
 			return fmt.Errorf("缺 %s（apt-get install -y iw hostapd dnsmasq-base nftables util-linux iproute2）", c)
 		}
 	}
-	if _, err := os.Stat("/sys/module/mac80211_hwsim"); err != nil {
+	// 魔云腾 Q1 上用的是改了名的同一个驱动 wlan.ko（模块名不带 hwsim，踩坑 #134）
+	_, errW := os.Stat("/sys/module/wlan/parameters/radios")
+	if _, err := os.Stat("/sys/module/mac80211_hwsim"); err != nil && errW != nil {
 		if out, err := run.Run(ctx, "modprobe", "mac80211_hwsim", "radios=0"); err != nil {
 			return fmt.Errorf("内核没有 mac80211_hwsim：%v %s", err, out)
 		}
@@ -534,6 +536,26 @@ func renamePhy(ctx context.Context, run Runner, pid string) string {
 		}
 	}
 	return ""
+}
+
+// RestorePhyName 关机前把手机里无线网卡的名字从 phy0 改回建它时的名字（pps…）：网卡回到宿主机后
+// 不和别的手机还回来的 phy0 撞名（宿主机里 phyN 只许等于自己的编号，撞名会改不回、内核告警，踩坑 #134）。
+// 失败不要紧（Teardown 也按 phy0 删）。
+func RestorePhyName(ctx context.Context, run Runner, pid, name string) {
+	if name == "" || pid == "" || pid == "0" {
+		return
+	}
+	out, err := run.Run(ctx, "nsenter", "-t", pid, "-n", "iw", "dev", "wlan0", "info")
+	if err != nil {
+		return
+	}
+	for _, line := range strings.Split(out, "\n") {
+		f := strings.Fields(line)
+		if len(f) == 2 && f[0] == "wiphy" {
+			_, _ = run.Run(ctx, "nsenter", "-t", pid, "-n", "iw", "phy#"+f[1], "set", "name", name)
+			return
+		}
+	}
 }
 
 // cryptoProc 内核算法表（测试时换掉）。

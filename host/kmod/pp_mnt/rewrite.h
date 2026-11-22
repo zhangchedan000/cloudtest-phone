@@ -459,7 +459,7 @@ static int pp_fmt_u64(unsigned long long v, char *buf)
 }
 
 /* 从 /proc/stat 文本里读 btime（每台手机已是对的，时间命名空间调过）。读不到返回 0。 */
-static long long pp_parse_btime(const char *in, int len)
+static long long __attribute__((unused)) pp_parse_btime(const char *in, int len)
 {
 	int i = 0;
 

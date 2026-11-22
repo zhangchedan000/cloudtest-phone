@@ -1083,6 +1083,7 @@ func (s *Service) Stop(ctx context.Context, id string) error {
 	_, _ = s.run.Run(gctx, "docker", "exec", name, "sh", "-c",
 		"am broadcast -a android.intent.action.ACTION_SHUTDOWN >/dev/null 2>&1; sync")
 	cancel()
+	s.beforeStopWifi(ctx, id)
 	err := s.docker.StopContainer(ctx, name, 25)
 	s.teardownWifi(ctx, id)
 	s.stopBT(ctx, id)
@@ -1099,6 +1100,7 @@ func (s *Service) Delete(ctx context.Context, id string) error {
 	if _, err := snap.Phone(id); err != nil {
 		return err
 	}
+	s.beforeStopWifi(ctx, id)
 	if err := s.docker.RemoveContainer(ctx, containerName(id)); err != nil {
 		return err
 	}

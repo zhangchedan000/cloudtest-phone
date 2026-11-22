@@ -33,6 +33,7 @@ func (s *Service) Reset(ctx context.Context, id string, req ResetRequest) error 
 		}
 	}
 	wasRunning := s.isRunning(ctx, id)
+	s.beforeStopWifi(ctx, id)
 	if err := s.docker.RemoveContainer(ctx, containerName(id)); err != nil {
 		return fmt.Errorf("停掉旧容器：%w", err)
 	}
