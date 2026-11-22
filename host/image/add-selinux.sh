@@ -163,15 +163,26 @@ for i in range(4, len(b) - 8, 4):
     prev = struct.unpack_from("<I", b, i - 4)[0]
     if prev & 0xffffffe0 == 0x52800180:   # mov wN, #0xc（libc++ 短字符串长度字节 6<<1）
         hits.append((i - 4, prev))
-if len(hits) != 1:
-    if b.find(b"incorrect label") >= 0:
-        print("init 是原版（没有 HACKED 补丁），不用改"); sys.exit(0)
-    sys.exit(f"init 里找到 {len(hits)} 处 HACKED 补丁（应为 1），不敢改")
-off, prev = hits[0]
-struct.pack_into("<I", b, off, (prev & ~(0xffff << 5)) | (0 << 5))   # mov wN, #0
-os.makedirs(os.path.dirname(dst), exist_ok=True)
-open(dst, "wb").write(b); os.chmod(dst, 0o755)
-print(f"init：0x{off:x} 处 HACKED 长度改成 0")
+def save(msg):
+    os.makedirs(os.path.dirname(dst), exist_ok=True)
+    open(dst, "wb").write(b); os.chmod(dst, 0o755)
+    print(msg)
+if len(hits) == 1:
+    off, prev = hits[0]
+    struct.pack_into("<I", b, off, (prev & ~(0xffff << 5)) | (0 << 5))   # mov wN, #0
+    save(f"init：0x{off:x} 处 HACKED 长度改成 0")
+    sys.exit(0)
+# 安卓 14 的 redroid 写法不一样："HACKED" 是只读区里的一个字符串常量（Service::Start 里取地址构造 std::string），
+# 整个文件只出现一次：把它改成空串（首字节写 0），效果和上面一样
+lit = b"\0HACKED\0"
+if not hits and b.count(lit) == 1 and b.count(b"HACKED") == 1:
+    off = b.find(lit) + 1
+    b[off] = 0
+    save(f"init：0x{off:x} 处字符串 HACKED 改成空串")
+    sys.exit(0)
+if b.find(b"incorrect label") >= 0:
+    print("init 是原版（没有 HACKED 补丁），不用改"); sys.exit(0)
+sys.exit(f"init 里找到 {len(hits)} 处 HACKED 补丁（应为 1），不敢改")
 EOF
 
 # ---- 3b) 规则补丁（host/image/selinux-rules.txt，sepatch 用官方 libsepol 加进二进制规则） ----
