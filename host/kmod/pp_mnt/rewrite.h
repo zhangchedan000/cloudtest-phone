@@ -131,12 +131,14 @@ static int pp_host_dev(struct pp_tok src)
 	return pp_starts(src, "/dev/") && !pp_starts(src, "/dev/block/") && !pp_eq(src, "/dev/fuse"); /* 真机 /storage 也是 /dev/fuse */
 }
 
-/* 不管哪种格式都删的：mqueue、lxcfs（遮 /proc/meminfo 等）、/dev/shm、不在 /dev/pts 的 devpts（小助手绑的伪终端）、Docker 塞的 /etc 文件 */
+/* 不管哪种格式都删的：mqueue、lxcfs（遮 /proc/meminfo 等）、/dev/shm、不在 /dev/pts 的 devpts（小助手绑的伪终端）、Docker 塞的 /etc 文件、
+ * 遮宿主机紧急按钮的 /proc/sysrq-trigger（踩坑 #136） */
 static int pp_always_drop(struct pp_tok fstype, struct pp_tok mnt)
 {
 	return pp_eq(fstype, "mqueue") || pp_eq(fstype, "fuse.lxcfs") || pp_eq(mnt, "/dev/shm") ||
 	       (pp_eq(fstype, "devpts") && !pp_eq(mnt, "/dev/pts")) ||
-	       pp_eq(mnt, "/etc/resolv.conf") || pp_eq(mnt, "/etc/hostname") || pp_eq(mnt, "/etc/hosts");
+	       pp_eq(mnt, "/etc/resolv.conf") || pp_eq(mnt, "/etc/hostname") || pp_eq(mnt, "/etc/hosts") ||
+	       pp_eq(mnt, "/proc/sysrq-trigger");
 }
 
 #define PP_SYS_DEV "/dev/block/dm-0"

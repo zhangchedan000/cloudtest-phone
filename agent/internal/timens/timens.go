@@ -30,6 +30,14 @@ const (
 	clockBoottime  = 7
 )
 
+// MaskSysrq 把容器里的 /proc/sysrq-trigger 换成 /dev/null（踩坑 #136）：手机容器是特权的，这个文件就是宿主机的，
+// 安卓重启时卸载分区不干净会往里写 u（宿主机所有文件系统紧急改只读，整块板子瘫掉）。pp-timens 也做同样的事。
+func MaskSysrq() {
+	if err := syscall.Mount("/dev/null", "/proc/sysrq-trigger", "", syscall.MS_BIND, ""); err != nil {
+		fmt.Fprintf(os.Stderr, "pp-init：遮 /proc/sysrq-trigger 失败：%v\n", err)
+	}
+}
+
 // Supported 宿主机内核支持时间命名空间吗。
 func Supported() bool {
 	_, err := os.Stat("/proc/self/ns/time")
@@ -54,6 +62,7 @@ func Offsets(uptime int64, monoNow, bootNow int64) string {
 // 板子内核 CLONE_NEWTIME 有问题（exec 后建线程 EINVAL，踩坑 #98）时用：pp-init 照常喂传感器/RIL，
 // 只是开机时长还是宿主机的（等 pp_mnt 内核模块的 uptime 钩子补）。
 func Exec(args []string) {
+	MaskSysrq()
 	if len(args) < 2 {
 		fmt.Fprintln(os.Stderr, "用法：pp-init --no-timens <开机时长秒数> <程序> [参数...]")
 		os.Exit(2)
@@ -83,6 +92,7 @@ func Run(args []string, seMode string) {
 		err := execHelper(hargs) // 成功就不返回
 		fmt.Fprintf(os.Stderr, "pp-init：单线程启动器起不来（%v），改用老办法\n", err)
 	}
+	MaskSysrq()
 	// unshare / 写偏移 / exec 必须在同一个系统线程上（命名空间是按线程记的）。
 	runtime.LockOSThread()
 	uptime, _ := strconv.ParseInt(args[0], 10, 64)

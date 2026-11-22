@@ -26,6 +26,9 @@ static void check(int mi, const char *in, const char *want)
 int main(void)
 {
 	/* mountinfo */
+	/* 遮 sysrq-trigger 的 /dev/null bind（踩坑 #136）：两种格式都删 */
+	check(1, "600 482 0:5 /null /proc/sysrq-trigger rw,nosuid shared:4 - tmpfs tmpfs rw,size=65536k,mode=755\n", "");
+	check(0, "tmpfs /proc/sysrq-trigger tmpfs rw,nosuid,size=65536k,mode=755 0 0\n", "");
 	check(1, "482 156 0:53 / / rw,relatime shared:404 - " OVL "\n",
 	      "482 156 253:0 / / ro,relatime shared:404 - ext4 /dev/block/dm-0 ro,seclabel,relatime\n");
 	check(1, "537 197 0:53 /system/apex/com.android.art /apex/com.android.art rw,relatime shared:404 - " OVL "\n",

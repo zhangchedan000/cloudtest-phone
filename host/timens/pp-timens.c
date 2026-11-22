@@ -171,6 +171,11 @@ void cmain(long *sp) {
 		argv++;
 		argc--;
 	}
+	// 先堵住宿主机的「紧急按钮」（踩坑 #136）：手机容器是特权的，/proc/sysrq-trigger 就是宿主机的。
+	// 安卓重启时卸载分区卸不干净，会往里写 u（所有文件系统紧急改只读）——整块板子瘫掉（实测：vold 失败触发重启）。
+	// 换成 /dev/null：写了也没用。
+	if (sc6(SYS_mount, (long)"/dev/null", (long)"/proc/sysrq-trigger", 0, 0x1000 /* MS_BIND */, 0, 0) != 0)
+		say("pp-timens: mask sysrq-trigger failed\n");
 	if (argc < 3) {
 		say("usage: pp-timens <uptime-seconds> <program> [args...]\n");
 		sc(SYS_exit, 2, 0, 0, 0);
