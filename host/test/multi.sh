@@ -153,6 +153,11 @@ sleep 15
   top -bn1 | head -5
 } > "$DIR/host-stream.txt"
 wait
+# 每台实时画面用的编码器：c2.rk.* = 硬件（#133），c2.android.* = 软件
+while read -r id _; do
+  enc=$(docker exec "pp-$id" sh -c 'logcat -d | grep -o "allocate(c2[.a-z0-9]*encoder)" | tail -1' </dev/null 2>/dev/null)
+  echo "$id ${enc:-?}"
+done < "$DIR/phones.txt" > "$DIR/encoder.txt"
 log "画面测试完成"
 
 # ---- 汇总 ----
@@ -210,7 +215,7 @@ print("样例（第一台）：机型 %s / %s / %s，安卓 %s，指纹 %s" % (r
 print("  屏幕 %s %s，CPU %s，核 %s，%s，内核 %s，%s" % (r0.get("wm_size"), r0.get("wm_density"), r0.get("cpu_hw"), r0.get("nproc"), r0.get("memtotal"), r0.get("uname"), r0.get("gles", "")[:60]))
 print("  电池 %s，WiFi %s %s，网卡 %s，传感器 %s，ping %s" % (r0.get("battery"), r0.get("wifi_ssid"), r0.get("wifi_mac"), r0.get("ifaces"), r0.get("sensors"), r0.get("ping")))
 print()
-for f in ("host-idle.txt", "host-stream.txt", "stream.txt", "adb.txt"):
+for f in ("host-idle.txt", "host-stream.txt", "stream.txt", "encoder.txt", "adb.txt"):
     p = os.path.join(d, f)
     if os.path.exists(p):
         print(f"--- {f}"); print(open(p).read().rstrip())
