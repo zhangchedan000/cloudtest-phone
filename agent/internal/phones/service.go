@@ -671,6 +671,7 @@ var redroidBuildID = map[int]struct{ buildID, incremental string }{
 	13: {"TQ3A.230901.001", "9820097"}, // 板子 lineage-20 是安卓13：没这条就一进兜底 return nil、镜像 redroid 值全漏（踩坑 #104）
 	14: {"UD2A.240505.001.W1", "eng.frank.20240527.152423"},
 	15: {"BP1A.250505.005.D1", "eng.root"},
+	16: {"BP2A.250605.031.A3", "eng.root"}, // 没这条：机型没有安卓 16 真指纹时整套分区指纹不覆盖，redroid / test-keys / userdebug 全漏（2026-11-22 多开实测）
 }
 
 // fingerprintProps 把各分区指纹和相关 build 字段（含 ro.product.name）统一覆盖成一致的值，

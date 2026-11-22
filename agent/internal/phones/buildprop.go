@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 )
 
 // 开机前改写的 build.prop 文件（踩坑 #55）：
@@ -63,8 +64,14 @@ func dropRedroidLines(s string) string {
 	return b.String()
 }
 
+// buildPropMu 同一时刻只取一份：几台同镜像的手机一起开机、缓存还没有（比如镜像刚重做过）时，都用同一个临时容器名
+// docker create，后来的撞名失败、照镜像原样开机，redroid 原值全漏（2026-11-22 多开实测）。
+var buildPropMu sync.Mutex
+
 // imageBuildProps 镜像里原来的 build.prop（按镜像 ID 缓存在 DataDir/cache/buildprop/<ID>/）。
 func (s *Service) imageBuildProps(ctx context.Context, image string) (string, error) {
+	buildPropMu.Lock()
+	defer buildPropMu.Unlock()
 	id, err := s.run.Run(ctx, "docker", "image", "inspect", "-f", "{{.Id}}", image)
 	if err != nil || id == "" {
 		return "", fmt.Errorf("读镜像 ID：%v %s", err, id)
