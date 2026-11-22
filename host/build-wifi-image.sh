@@ -24,6 +24,7 @@ case "$ver" in
   *) die "不认识的安卓版本 $ver（支持 13 / 14 / 15 / 16）" ;;
 esac
 here=$(cd "$(dirname "$0")" && pwd)
+. "$here/pinned.sh"   # 下载件 sha256 固定值
 for c in docker gcc readelf unzip losetup python3; do command -v $c >/dev/null || die "缺 $c（apt-get install -y docker.io gcc binutils unzip util-linux）"; done
 
 W=$(mktemp -d "${PP_BUILD:-/opt/prism-phone}/tmp-wifiimg.XXXX")
@@ -34,7 +35,8 @@ trap cleanup EXIT
 CACHE="${PP_BUILD:-/opt/prism-phone}/cache"; mkdir -p "$CACHE"
 if [ ! -s "$CACHE/$emu" ]; then
   log "下载模拟器镜像 $emu（缓存到 $CACHE，和 build-telephony 共用）"
-  curl -fsSL --retry 3 -o "$CACHE/$emu.part" "https://dl.google.com/android/repository/sys-img/android/$emu" && mv "$CACHE/$emu.part" "$CACHE/$emu"
+  curl -fsSL --retry 3 -o "$CACHE/$emu.part" "https://dl.google.com/android/repository/sys-img/android/$emu" \
+    && pp_verify "$CACHE/$emu.part" "$emu" && mv "$CACHE/$emu.part" "$CACHE/$emu" || die "下载模拟器镜像 $emu 失败"
 else
   log "用已缓存的模拟器 $CACHE/$emu"
 fi

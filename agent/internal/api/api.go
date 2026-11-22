@@ -13,6 +13,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	netcfg "github.com/zhangchedan000/prism-phone/agent/internal/network"
@@ -32,6 +33,10 @@ type Server struct {
 	netCheck func(ctx context.Context, st store.State, px store.Proxy) store.ProxyCheck
 	// netHealth 网络模块的宿主机健康检查结果（策略路由、mihomo），管理页顶部告警用。
 	netHealth func() any
+
+	checkMu  sync.Mutex // cachedCheck 的缓存
+	checkRep selfcheck.Report
+	checkAt  time.Time
 }
 
 // SetNetworkHealth 接上网络模块的健康检查。
@@ -113,20 +118,38 @@ func (s *Server) auth(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
-		got := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
-		if c, err := r.Cookie("pp_token"); got == "" && err == nil {
-			got = c.Value
-			// 管理页写 cookie 时用了 encodeURIComponent，这里还原
-			if v, err := url.QueryUnescape(got); err == nil {
-				got = v
-			}
-		}
-		if subtle.ConstantTimeCompare([]byte(got), []byte(s.token)) != 1 {
+		if !s.tokenOK(r) {
 			writeErr(w, http.StatusUnauthorized, "需要登录（token 不对）")
 			return
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// tokenOK 请求带的口令对不对（请求头 Authorization: Bearer xxx，或 cookie pp_token）。没设口令时都算对。
+func (s *Server) tokenOK(r *http.Request) bool {
+	if s.token == "" {
+		return true
+	}
+	got := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+	if c, err := r.Cookie("pp_token"); got == "" && err == nil {
+		got = c.Value
+		// 管理页写 cookie 时用了 encodeURIComponent，这里还原
+		if v, err := url.QueryUnescape(got); err == nil {
+			got = v
+		}
+	}
+	return subtle.ConstantTimeCompare([]byte(got), []byte(s.token)) == 1
+}
+
+// cachedCheck 自检结果缓存 5 秒：/api/health 不用登录、谁都能频繁调，每次都真跑一遍（ping Docker、查磁盘）白耗资源。
+func (s *Server) cachedCheck() selfcheck.Report {
+	s.checkMu.Lock()
+	defer s.checkMu.Unlock()
+	if s.checkAt.IsZero() || time.Since(s.checkAt) > 5*time.Second {
+		s.checkRep, s.checkAt = s.check(), time.Now()
+	}
+	return s.checkRep
 }
 
 // safeAPIPath 挡住路径里的「..」和编码过的斜杠：{id} 这类参数会被拼进宿主机路径
@@ -175,22 +198,29 @@ func decode(r *http.Request, v any) error {
 	return nil
 }
 
-func (s *Server) health(w http.ResponseWriter, _ *http.Request) {
-	rep := s.check()
+func (s *Server) health(w http.ResponseWriter, r *http.Request) {
+	rep := s.cachedCheck()
 	status := http.StatusOK
 	if !rep.OK {
 		status = http.StatusServiceUnavailable
+	}
+	busy := s.svc != nil && s.svc.Busy()
+	// 不用登录：只告诉「好没好、忙不忙」（安装 / 自动更新脚本只看这个）；带了正确口令才给完整自检
+	// （内核、内存、磁盘这些机器信息不对没登录的人公开）。
+	if !s.tokenOK(r) {
+		writeJSON(w, status, map[string]bool{"ok": rep.OK, "busy": busy})
+		return
 	}
 	// busy：有手机正在做开机后设置，自动更新看到就先不重启管家（host/auto-update.sh）
 	writeJSON(w, status, struct {
 		selfcheck.Report
 		Busy bool `json:"busy"`
-	}{rep, s.svc != nil && s.svc.Busy()})
+	}{rep, busy})
 }
 
 func (s *Server) host(w http.ResponseWriter, _ *http.Request) {
 	cfg := s.svc.Config()
-	rep := s.check()
+	rep := s.cachedCheck()
 	out := map[string]any{
 		"id": cfg.HostID, "name": cfg.HostName, "gpuFamily": cfg.GPUFamily, "devHost": cfg.DevHost,
 		"maxRunning": cfg.MaxRunning, "androidVersions": versions(cfg.Images), "system": rep.System,

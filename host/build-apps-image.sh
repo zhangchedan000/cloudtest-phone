@@ -33,6 +33,7 @@ case "$ver" in
   *) die "不认识的安卓版本 $ver（支持 13/14/15/16）" ;;
 esac
 here=$(cd "$(dirname "$0")" && pwd)
+. "$here/pinned.sh"   # 下载件 sha256 固定值
 out="${base}-apps"
 
 # ---- 工具（幂等，缓存在 $PP_TOOLS）----
@@ -57,7 +58,8 @@ command -v aapt2 >/dev/null || log "没有 aapt2——桌面布局那步会跳�
 if [ ! -f "$APKJAR" ]; then
   BT="$TOOLS/build-tools/34.0.0"; APKJAR="$BT/lib/apksigner.jar"; APKSIGNER="java -jar $APKJAR"
   log "下载 android build-tools（取 apksigner.jar；zipalign/aapt2 用 apt 的 arm64 版）"
-  curl -fsSL -o "$TOOLS/bt.zip" https://dl.google.com/android/repository/build-tools_r34-linux.zip
+  curl -fsSL -o "$TOOLS/bt.zip" https://dl.google.com/android/repository/build-tools_r34-linux.zip \
+    && pp_verify "$TOOLS/bt.zip" build-tools_r34-linux.zip || die "下载 build-tools 失败"
   rm -rf "$TOOLS/build-tools" && mkdir -p "$TOOLS/build-tools"
   unzip -q "$TOOLS/bt.zip" -d "$TOOLS/build-tools" && rm "$TOOLS/bt.zip"
   mv "$TOOLS/build-tools/android-14" "$BT"
@@ -65,11 +67,12 @@ fi
 if [ ! -f "$TOOLS/platform.pk8" ]; then
   log "取 AOSP 平台 testkey"
   b=https://android.googlesource.com/platform/build/+/refs/tags/android-14.0.0_r1/target/product/security
-  curl -fsSL "$b/platform.pk8?format=TEXT" | base64 -d > "$TOOLS/platform.pk8.part" && mv "$TOOLS/platform.pk8.part" "$TOOLS/platform.pk8"
-  curl -fsSL "$b/platform.x509.pem?format=TEXT" | base64 -d > "$TOOLS/platform.x509.pem.part" && mv "$TOOLS/platform.x509.pem.part" "$TOOLS/platform.x509.pem"
+  curl -fsSL "$b/platform.pk8?format=TEXT" | base64 -d > "$TOOLS/platform.pk8.part" && pp_verify "$TOOLS/platform.pk8.part" platform.pk8 && mv "$TOOLS/platform.pk8.part" "$TOOLS/platform.pk8" || die "取 platform.pk8 失败"
+  curl -fsSL "$b/platform.x509.pem?format=TEXT" | base64 -d > "$TOOLS/platform.x509.pem.part" && pp_verify "$TOOLS/platform.x509.pem.part" platform.x509.pem && mv "$TOOLS/platform.x509.pem.part" "$TOOLS/platform.x509.pem" || die "取 platform.x509.pem 失败"
 fi
 [ -f "$TOOLS/lpunpack.py" ] || { curl -fsSL -o "$TOOLS/lpunpack.py.part" \
-  https://raw.githubusercontent.com/unix3dgforce/lpunpack/master/lpunpack.py && mv "$TOOLS/lpunpack.py.part" "$TOOLS/lpunpack.py"; }
+  https://raw.githubusercontent.com/unix3dgforce/lpunpack/master/lpunpack.py \
+  && pp_verify "$TOOLS/lpunpack.py.part" lpunpack.py && mv "$TOOLS/lpunpack.py.part" "$TOOLS/lpunpack.py" || die "取 lpunpack.py 失败"; }
 sign() { # sign <in.apk> <out.apk>
   local a; a=$(mktemp --suffix=.apk)
   if command -v zipalign >/dev/null; then zipalign -p -f 4 "$1" "$a"; else cp "$1" "$a"; fi
@@ -99,7 +102,8 @@ setup_x86_aapt2() {
   docker run --rm --platform linux/amd64 debian:12-slim true >/dev/null 2>&1 || { log "docker 跑不了 x86，放弃 x86 aapt2"; return 1; }
   if [ ! -f "$TOOLS/bt35-aapt2" ]; then
     local z; z=$(mktemp -d /opt/prism-phone/tmp-bt35.XXXX)
-    curl -fsSL -o "$z/bt35.zip" https://dl.google.com/android/repository/build-tools_r35_linux.zip
+    curl -fsSL -o "$z/bt35.zip" https://dl.google.com/android/repository/build-tools_r35_linux.zip \
+      && pp_verify "$z/bt35.zip" build-tools_r35_linux.zip && \
     unzip -q "$z/bt35.zip" -d "$z/bt35" && cp "$(find "$z/bt35" -name aapt2 | head -1)" "$TOOLS/bt35-aapt2"
     rm -rf "$z"
   fi
@@ -134,7 +138,7 @@ CACHE=${PP_CACHE:-/opt/prism-phone/cache}; mkdir -p "$CACHE"
 if [ ! -s "$CACHE/$emu" ]; then
   log "下载模拟器系统镜像 $emu（缓存到 $CACHE）"
   curl -fsSL --retry 3 -o "$CACHE/$emu.part" "https://dl.google.com/android/repository/sys-img/android/$emu" \
-    && mv "$CACHE/$emu.part" "$CACHE/$emu"
+    && pp_verify "$CACHE/$emu.part" "$emu" && mv "$CACHE/$emu.part" "$CACHE/$emu" || die "下载模拟器镜像 $emu 失败"
 else
   log "用已缓存的模拟器镜像 $CACHE/$emu"
 fi

@@ -42,6 +42,7 @@ case "$ver" in
   *) die "不认识的安卓版本 $ver（支持 13/14/15/16）" ;;
 esac
 here=$(cd "$(dirname "$0")" && pwd)
+. "$here/pinned.sh"   # 下载件 sha256 固定值
 out="${base}-tel"
 
 PP_BUILD=${PP_BUILD:-/mmc/pp-build}
@@ -51,17 +52,19 @@ for c in java zip unzip python3 losetup curl; do command -v "$c" >/dev/null || d
 APKSIGNER="java -jar $TOOLS/apksigner.jar"
 if [ ! -f "$TOOLS/apksigner.jar" ]; then
   log "下载 android build-tools（取 apksigner.jar）"
-  curl -fsSL -o "$TOOLS/bt.zip" https://dl.google.com/android/repository/build-tools_r34-linux.zip
+  curl -fsSL -o "$TOOLS/bt.zip" https://dl.google.com/android/repository/build-tools_r34-linux.zip \
+    && pp_verify "$TOOLS/bt.zip" build-tools_r34-linux.zip || die "下载 build-tools 失败"
   (cd "$TOOLS" && unzip -q -o bt.zip 'android-14/lib/apksigner.jar' && cp android-14/lib/apksigner.jar apksigner.jar && rm -rf bt.zip android-14)
 fi
 if [ ! -f "$TOOLS/platform.pk8" ]; then
   log "取 AOSP 平台 testkey"
   b=https://android.googlesource.com/platform/build/+/refs/tags/android-14.0.0_r1/target/product/security
-  curl -fsSL "$b/platform.pk8?format=TEXT" | base64 -d > "$TOOLS/platform.pk8.part" && mv "$TOOLS/platform.pk8.part" "$TOOLS/platform.pk8"
-  curl -fsSL "$b/platform.x509.pem?format=TEXT" | base64 -d > "$TOOLS/platform.x509.pem.part" && mv "$TOOLS/platform.x509.pem.part" "$TOOLS/platform.x509.pem"
+  curl -fsSL "$b/platform.pk8?format=TEXT" | base64 -d > "$TOOLS/platform.pk8.part" && pp_verify "$TOOLS/platform.pk8.part" platform.pk8 && mv "$TOOLS/platform.pk8.part" "$TOOLS/platform.pk8" || die "取 platform.pk8 失败"
+  curl -fsSL "$b/platform.x509.pem?format=TEXT" | base64 -d > "$TOOLS/platform.x509.pem.part" && pp_verify "$TOOLS/platform.x509.pem.part" platform.x509.pem && mv "$TOOLS/platform.x509.pem.part" "$TOOLS/platform.x509.pem" || die "取 platform.x509.pem 失败"
 fi
 [ -f "$TOOLS/lpunpack.py" ] || { curl -fsSL -o "$TOOLS/lpunpack.py.part" \
-  https://raw.githubusercontent.com/unix3dgforce/lpunpack/master/lpunpack.py && mv "$TOOLS/lpunpack.py.part" "$TOOLS/lpunpack.py"; }
+  https://raw.githubusercontent.com/unix3dgforce/lpunpack/master/lpunpack.py \
+  && pp_verify "$TOOLS/lpunpack.py.part" lpunpack.py && mv "$TOOLS/lpunpack.py.part" "$TOOLS/lpunpack.py" || die "取 lpunpack.py 失败"; }
 
 ZIPALIGN=""; command -v zipalign >/dev/null && ZIPALIGN=1
 sign() { # sign <in.apk> <out.apk>：testkey 重签（先去掉原签名；有 zipalign 就先对齐）
@@ -88,7 +91,8 @@ mkdir -p "$V" "$P" "$DV" "$W/stage"
 # ---- 抠电话应用 ----
 if [ ! -s "$CACHE/$emu" ]; then
   log "下载模拟器系统镜像 $emu（缓存到 $CACHE）"
-  curl -fsSL --retry 3 -o "$CACHE/$emu.part" "https://dl.google.com/android/repository/sys-img/android/$emu" && mv "$CACHE/$emu.part" "$CACHE/$emu"
+  curl -fsSL --retry 3 -o "$CACHE/$emu.part" "https://dl.google.com/android/repository/sys-img/android/$emu" \
+    && pp_verify "$CACHE/$emu.part" "$emu" && mv "$CACHE/$emu.part" "$CACHE/$emu" || die "下载模拟器镜像 $emu 失败"
 else
   log "用已缓存的模拟器镜像 $CACHE/$emu"
 fi
