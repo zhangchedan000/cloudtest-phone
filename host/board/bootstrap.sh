@@ -98,6 +98,22 @@ if docker images | grep -q 'mytos/dobox' && curl -fsSL --retry 3 -o /tmp/pp-add-
     PP_BUILD=/mmc/pp-build sh /tmp/pp-add-hwcodec.sh "$img" "$v" || say "· $img 没加上硬件编码（实时画面用软件编码，不影响开机）"
   done
 fi
+# 手机里开真 SELinux（踩坑 #135）：安卓 14/15/16 镜像换回原版 SELinux 相关的库、补规则、给每层打标签。
+# 要在硬件编码之后做（标签要打到所有层上）；做过的跳过；要魔云腾 dobox 镜像（取原版库）
+if docker images | grep -q 'mytos/dobox'; then
+  mkdir -p /tmp/pp-sel /mmc/pp-build
+  if curl -fsSL --retry 3 -o /tmp/pp-sel/add-selinux.sh "$RAW/host/image/add-selinux.sh" &&
+     curl -fsSL --retry 3 -o /tmp/pp-sel/sepatch.c "$RAW/host/image/sepatch.c" &&
+     curl -fsSL --retry 3 -o /tmp/pp-sel/selinux-rules.txt "$RAW/host/image/selinux-rules.txt"; then
+    for img in $(cat "$D/android-images.list" 2>/dev/null); do
+      v=$(echo "$img" | sed -n 's/^prism-redroid-mali:\(1[456]\)-.*/\1/p')
+      [ -n "$v" ] || continue
+      case "$img" in *-orig*) continue ;; esac
+      PP_BUILD=/mmc/pp-build sh /tmp/pp-sel/add-selinux.sh "$img" "$v" >> /mmc/pp-build/add-selinux.log 2>&1 ||
+        say "· $img 没做成 SELinux 版（这个版本的手机照旧不开 SELinux，看 /mmc/pp-build/add-selinux.log）"
+    done
+  fi
+fi
 ok "安卓镜像"
 
 # ---------- 4. mihomo / 小屏程序 ----------

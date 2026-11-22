@@ -79,6 +79,13 @@ case "$VER" in 14|15|16)
     sh "$here/image/add-hwcodec.sh" "$APPS" "$VER" || echo "· 硬件编解码没加上（实时画面用软件编码）"
   fi ;;
 esac
+# 手机里开真 SELinux（踩坑 #135）：在硬件编码之后做（标签要打到所有层上）
+case "$VER" in 14|15|16)
+  if docker images | grep -q "mytos/dobox:Q$VER"; then
+    log "加 SELinux → $APPS"
+    sh "$here/image/add-selinux.sh" "$APPS" "$VER" || echo "· SELinux 没做成（这个版本的手机照旧不开 SELinux）"
+  fi ;;
+esac
 printf '\n\033[1m完成！最终镜像：%s\033[0m\n' "$APPS"
 echo "（存 tarball：docker save '$APPS' | gzip -1 > /mmc/pp-dist/android${VER}-full.tar.gz）"
 echo "$APPS"
