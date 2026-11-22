@@ -65,7 +65,9 @@ func Exec(args []string) {
 
 // Run 启动器入口（不返回）：args = <开机时长秒数> <程序> <参数...>。
 // 建命名空间失败也照样启动安卓（只是开机时长还是宿主机的），绝不因为这个开不了机。
-func Run(args []string) {
+// seMode 非空（"enforcing" / "permissive"）时由 pp-timens 在 exec 安卓前加载安卓的 SELinux 规则（踩坑 #135）；
+// 只有单线程小启动器做得了（Go 的老办法不做 SELinux）。
+func Run(args []string, seMode string) {
 	if len(args) < 2 {
 		fmt.Fprintln(os.Stderr, "用法：pp-init <开机时长秒数> <程序> [参数...]")
 		os.Exit(2)
@@ -73,7 +75,11 @@ func Run(args []string) {
 	// 先用单线程小启动器（arm64 板子）：魔云腾 Q1 内核 exec 时不把进程切进新时间命名空间，Go 自己 unshare 后
 	// exec 出来的安卓 init 建不了线程（踩坑 #98）；pp-timens 单线程里 setns 自己进去再 exec，就没这个问题（踩坑 #132）。
 	if len(helper) > 0 {
-		err := execHelper(args) // 成功就不返回
+		hargs := args
+		if seMode != "" {
+			hargs = append([]string{"--selinux=" + seMode}, args...)
+		}
+		err := execHelper(hargs) // 成功就不返回
 		fmt.Fprintf(os.Stderr, "pp-init：单线程启动器起不来（%v），改用老办法\n", err)
 	}
 	// unshare / 写偏移 / exec 必须在同一个系统线程上（命名空间是按线程记的）。

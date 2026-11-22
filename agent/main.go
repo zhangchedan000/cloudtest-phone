@@ -37,19 +37,22 @@ func main() {
 	if len(os.Args) > 2 && os.Args[1] == "pp-init" {
 		args := os.Args[2:]
 		skipTimens := false
+		seMode := ""
 		for len(args) > 0 && strings.HasPrefix(args[0], "--") {
 			switch {
 			case strings.HasPrefix(args[0], "--sensors="):
 				startSensors(strings.TrimPrefix(args[0], "--sensors="))
 			case args[0] == "--no-timens":
 				skipTimens = true
+			case strings.HasPrefix(args[0], "--selinux="):
+				seMode = strings.TrimPrefix(args[0], "--selinux=")
 			}
 			args = args[1:]
 		}
 		if skipTimens {
 			timens.Exec(args) // 不建时间命名空间，直接 exec（板子内核 timens 坏时用）
 		} else {
-			timens.Run(args)
+			timens.Run(args, seMode)
 		}
 	}
 	// 容器里的传感器喂数据进程（pp-init 开机前起的，见 internal/sensors）
@@ -73,6 +76,7 @@ func main() {
 	noHostGuard := flag.Bool("no-host-guard", false, "不守宿主机内核设置（默认守：手机开机会改宿主机的 kernel.* / vm.*，踩坑 #58）")
 	noSensors := flag.Bool("no-sensors", false, "不给手机喂传感器数据（镜像带传感器 HAL 时默认喂，踩坑 #59）")
 	noTimens := flag.Bool("no-timens", false, "不让云手机的开机时长归零（出问题时临时关掉用）")
+	seMode := flag.String("selinux", "", "手机里开 SELinux（踩坑 #135）：enforcing（强制，像真机）/ permissive（只记录不拦截，调试用）/ 空 = 不开。只对打过标签的镜像（prism.selinux=1，host/image/add-selinux.sh）生效")
 	noWifi := flag.Bool("no-wifi", false, "不给手机配虚拟 WiFi（手机照旧用有线 eth0）")
 	memOvercommit := flag.Float64("mem-overcommit", 1, "内存超卖倍数：每台手机的内存上限加起来最多是机器可用内存的几倍（板子上设 2.5 左右多开几台；手机里显示的内存不变）")
 	memFollow := flag.Bool("mem-follow-model", true, "每台手机的内存上限按机型（例如 8GB）；false 时用固定的 -mem-mb")
@@ -140,6 +144,12 @@ func main() {
 	cfg.Lxcfs = phones.LxcfsAvailable()
 	cfg.Sensors = !*noSensors
 	cfg.Timens = !*noTimens && timens.Supported()
+	switch *seMode {
+	case "", "enforcing", "permissive":
+		cfg.SELinux = *seMode
+	default:
+		log.Fatalf("-selinux 只能是 enforcing / permissive / 空，不认识 %q", *seMode)
+	}
 	// pp-init 启动器：喂传感器/RIL + 开机时长归零都靠它，只要其一需要就挂它（Timens 关时 pp-init 仍喂传感器，踩坑 #98）。
 	if cfg.Timens || cfg.Sensors {
 		if exe, err := os.Executable(); err == nil {

@@ -68,6 +68,8 @@ type Config struct {
 	// Timens 是否建时间命名空间让开机时长归零。false 时 pp-init 照常喂传感器/RIL，只是开机时长不归零
 	//（有的板子内核 CLONE_NEWTIME 有问题，exec 后建线程失败，踩坑 #98）。
 	Timens bool
+	// SELinux 手机里开 SELinux 的模式（"enforcing" / "permissive"，空 = 不开，踩坑 #135）；只对标签 prism.selinux=1 的镜像生效
+	SELinux string
 	// HostCPUs 宿主机核数（0 = 自动）；BootTimeout / PollEvery 等开机的超时和间隔（0 = 默认）。
 	HostCPUs    int
 	BootTimeout time.Duration
@@ -1397,6 +1399,9 @@ func (s *Service) initEntrypoint(ctx context.Context, image string) []string {
 	head := []string{initMount, "pp-init"}
 	if !s.cfg.Timens {
 		head = append(head, "--no-timens") // 不归零开机时长，但 pp-init 照常喂传感器/RIL（踩坑 #98）
+	}
+	if s.cfg.SELinux != "" && s.imageLabel(ctx, image, "prism.selinux") == "1" {
+		head = append(head, "--selinux="+s.cfg.SELinux) // 安卓开机前加载它自己的 SELinux 规则（踩坑 #135）
 	}
 	head = append(head, "0")
 	return append(head, ep...)

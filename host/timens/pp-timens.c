@@ -6,11 +6,21 @@
 // setns() 进时间命名空间会把「自己」和「子进程」一起切过去，但要求调用者是单线程；管家是 Go 程序（天生多线程），
 // 所以由它 exec 这个不依赖任何库的小程序：unshare → 写偏移 → setns 自己进去 → exec 安卓 init。
 //
-// 用法：pp-timens <开机时长秒数> <程序> [参数...]
+// 用法：pp-timens [--selinux=permissive|enforcing] <开机时长秒数> <程序> [参数...]
 // 任何一步失败都照样 exec 程序（开机时长保持宿主机的，绝不因此开不了机）。
+//
+// --selinux（踩坑 #135）：先给这台手机加载安卓自己的 SELinux 规则，再启动安卓。
+// 容器版安卓的 init 跳过了加载规则这一步（手机里 getenforce = Disabled）；魔云腾 Q1 内核带 SELinux 命名空间，
+// 容器里挂 selinuxfs 就是这台手机自己的一套，加载规则、开强制模式都不影响宿主机和别的手机。做的事和安卓
+// init 的 selinux_setup 阶段一样：挂 selinuxfs → 把 /vendor/etc/selinux/precompiled_sepolicy 写进 load →
+// 设模式 → 下一次 exec 进 u:r:init:s0。失败就照旧不开 SELinux 启动。
 // 编译（arm64，不链接 libc）：sh host/timens/build.sh
 
+#define SYS_mount 40
 #define SYS_openat 56
+#define SYS_fstat 80
+#define SYS_munmap 215
+#define SYS_mmap 222
 #define SYS_close 57
 #define SYS_write 64
 #define SYS_exit 93
@@ -22,6 +32,8 @@
 #define O_WRONLY 1
 #define O_CLOEXEC 02000000
 #define CLONE_NEWTIME 0x80
+#define PROT_READ 1
+#define MAP_PRIVATE 2
 
 static long sc(long n, long a, long b, long c, long d) {
 	register long x8 __asm__("x8") = n;
@@ -68,10 +80,65 @@ static int append(char *dst, int at, const char *s) {
 
 static void say(const char *m) { sc(SYS_write, 2, (long)m, slen(m), 0); }
 
+static long sc6(long n, long a, long b, long c, long d, long e, long f) {
+	register long x8 __asm__("x8") = n;
+	register long x0 __asm__("x0") = a;
+	register long x1 __asm__("x1") = b;
+	register long x2 __asm__("x2") = c;
+	register long x3 __asm__("x3") = d;
+	register long x4 __asm__("x4") = e;
+	register long x5 __asm__("x5") = f;
+	__asm__ volatile("svc 0" : "+r"(x0) : "r"(x8), "r"(x1), "r"(x2), "r"(x3), "r"(x4), "r"(x5) : "memory");
+	return x0;
+}
+
+static int streq(const char *a, const char *b) {
+	while (*a && *a == *b) a++, b++;
+	return *a == *b;
+}
+
+// 往一个文件里写一串（整串写完返回 0）
+static int put(const char *path, const char *buf, long n) {
+	long fd = sc(SYS_openat, AT_FDCWD, (long)path, O_WRONLY | O_CLOEXEC, 0);
+	if (fd < 0) return -1;
+	long w = sc(SYS_write, fd, (long)buf, n, 0);
+	sc(SYS_close, fd, 0, 0, 0);
+	return w == n ? 0 : -1;
+}
+
+// 加载这台手机自己的 SELinux 规则。返回 0 = 成功（之后 exec 会进 init 域）
+static int selinux_setup(int enforcing) {
+	long r = sc6(SYS_mount, (long)"selinuxfs", (long)"/sys/fs/selinux", (long)"selinuxfs", 0, 0, 0);
+	if (r != 0 && r != -16 /* EBUSY：已经挂了 */) { say("pp-timens: mount selinuxfs failed\n"); return -1; }
+	long fd = sc(SYS_openat, AT_FDCWD, (long)"/vendor/etc/selinux/precompiled_sepolicy", O_CLOEXEC, 0);
+	if (fd < 0) { say("pp-timens: no precompiled_sepolicy\n"); return -1; }
+	long st[16];  // struct stat（arm64 128 字节），st_size 在偏移 48
+	if (sc(SYS_fstat, fd, (long)st, 0, 0) != 0 || st[6] <= 0) { sc(SYS_close, fd, 0, 0, 0); return -1; }
+	long size = st[6];
+	long p = sc6(SYS_mmap, 0, size, PROT_READ, MAP_PRIVATE, fd, 0);
+	sc(SYS_close, fd, 0, 0, 0);
+	if (p < 0 && p > -4096) { say("pp-timens: mmap policy failed\n"); return -1; }
+	r = put("/sys/fs/selinux/load", (const char *)p, size);
+	sc(SYS_munmap, p, size, 0, 0);
+	if (r != 0) { say("pp-timens: load policy failed\n"); return -1; }
+	if (put("/sys/fs/selinux/enforce", enforcing ? "1" : "0", 1) != 0) say("pp-timens: set enforce failed\n");
+	// 下一次 exec（安卓 init）进 init 域，和 selinux_setup 阶段 setexeccon 一样
+	if (put("/proc/self/attr/exec", "u:r:init:s0", 11) != 0) say("pp-timens: setexeccon init failed\n");
+	return 0;
+}
+
 void cmain(long *sp) {
 	long argc = sp[0];
 	char **argv = (char **)(sp + 1);
 	char **envp = argv + argc + 1;
+	int se = -1;  // -1 不动 SELinux，0 只记录不拦截，1 强制
+	if (argc > 1 && streq(argv[1], "--selinux=permissive")) se = 0;
+	if (argc > 1 && streq(argv[1], "--selinux=enforcing")) se = 1;
+	if (se >= 0 || (argc > 1 && argv[1][0] == '-' && argv[1][1] == '-')) {
+		argv[1] = argv[0];  // 去掉这个选项
+		argv++;
+		argc--;
+	}
 	if (argc < 3) {
 		say("usage: pp-timens <uptime-seconds> <program> [args...]\n");
 		sc(SYS_exit, 2, 0, 0, 0);
@@ -102,6 +169,8 @@ void cmain(long *sp) {
 		say("pp-timens: unshare(CLONE_NEWTIME) failed, keeping host uptime\n");
 	}
 	if (old >= 0) sc(SYS_close, old, 0, 0, 0);
+	// SELinux 放在最后（时间命名空间那几步用的 /proc 文件不受规则影响）
+	if (se >= 0 && selinux_setup(se) != 0) say("pp-timens: SELinux not loaded, booting without it\n");
 	sc(SYS_execve, (long)argv[2], (long)(argv + 2), (long)envp, 0);
 	say("pp-timens: execve failed\n");
 	sc(SYS_exit, 1, 0, 0, 0);
