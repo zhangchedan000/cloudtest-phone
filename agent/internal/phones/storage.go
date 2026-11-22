@@ -3,6 +3,7 @@ package phones
 import (
 	"context"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -64,7 +65,17 @@ func (s *Service) prepareData(ctx context.Context, id string, byKey map[string]a
 		return dir, nil
 	}
 	if isMounted(ctx, s.run, dir) {
-		return dir, nil
+		if _, err := os.ReadDir(dir); err == nil {
+			return dir, nil
+		}
+		// 安卓自己关机 / 重启时会对 /data 发 F2FS_IOC_SHUTDOWN（和 EXT4_IOC_SHUTDOWN 是同一个号）：先刷盘、再把文件系统
+		// 停掉。这块盘是宿主机挂的，停掉以后一直 I/O 错误（踩坑 #135），重新挂一遍就好（数据在停之前已经刷进去了）
+		log.Printf("手机 %s：存储读不了（安卓关机时停用了文件系统），重新挂载", id)
+		if _, err := s.run.Run(ctx, "umount", dir); err != nil {
+			if out, err := s.run.Run(ctx, "umount", "-l", dir); err != nil {
+				return "", fmt.Errorf("卸载手机存储失败：%v %s", err, out)
+			}
+		}
 	}
 	if _, err := os.Stat(img); os.IsNotExist(err) {
 		size := storageBytes(byKey)

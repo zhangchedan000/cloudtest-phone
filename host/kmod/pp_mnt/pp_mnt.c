@@ -564,6 +564,34 @@ static int pp_sysrq_pre(struct kprobe *p, struct pt_regs *regs)
 static struct kprobe kp_sysrq = { .symbol_name = "write_sysrq_trigger", .pre_handler = pp_sysrq_pre };
 static bool sysrq_ok;
 
+/*
+ * 安卓关机 / 重启时对 /data 发 F2FS_IOC_SHUTDOWN（踩坑 #135）：号和 EXT4_IOC_SHUTDOWN 一样（_IOR('X', 125, __u32)），
+ * 先刷盘再把整个文件系统停掉、之后一直 I/O 错误。手机的 /data 是宿主机的盘（磁盘镜像或宿主机目录 bind）——
+ * 目录 bind 的话停掉的是宿主机整块盘。容器里发的一律改成无效命令号（返回 -ENOTTY，安卓记一行日志照常关机）。
+ */
+#define PP_IOC_SHUTDOWN 0x8004587dU
+static int pp_fsdown_pre(struct kprobe *p, struct pt_regs *regs)
+{
+	struct pid_namespace *ns = task_active_pid_ns(current);
+
+	if (!ns || ns == &init_pid_ns)
+		return 0;
+#ifdef CONFIG_ARM64
+	if ((unsigned int)regs->regs[1] != PP_IOC_SHUTDOWN) /* ext4_ioctl(file, cmd, arg)：cmd */
+		return 0;
+	regs->regs[1] = 0;
+#elif defined(CONFIG_X86_64)
+	if ((unsigned int)regs->si != PP_IOC_SHUTDOWN)
+		return 0;
+	regs->si = 0;
+#endif
+	pr_notice_ratelimited("pp_mnt: 挡住了容器里停用文件系统（pid %d %s）\n", task_pid_nr(current), current->comm);
+	return 0;
+}
+static struct kprobe kp_ext4down = { .symbol_name = "ext4_ioctl", .pre_handler = pp_fsdown_pre };
+static struct kprobe kp_f2fsdown = { .symbol_name = "f2fs_ioctl", .pre_handler = pp_fsdown_pre };
+static bool ext4down_ok, f2fsdown_ok;
+
 /* ---------- /proc/pp_mnt ---------- */
 
 static struct pid_namespace *pp_ns_of(long nr)
@@ -723,6 +751,10 @@ static int __init pp_mnt_init(void)
 		sysrq_ok = register_kprobe(&kp_sysrq) == 0;
 		if (!sysrq_ok)
 			pr_warn("pp_mnt: 没挂上 write_sysrq_trigger（容器里的安卓还能按宿主机的紧急按钮！）\n");
+		ext4down_ok = register_kprobe(&kp_ext4down) == 0;
+		if (!ext4down_ok)
+			pr_warn("pp_mnt: 没挂上 ext4_ioctl（容器里的安卓关机时还能停用宿主机的盘！）\n");
+		f2fsdown_ok = register_kprobe(&kp_f2fsdown) == 0;
 		indev_ok = register_kprobes(indev_probes, ARRAY_SIZE(indev_probes)) == 0;
 		if (!indev_ok)
 			pr_info("pp_mnt: 没挂上 input_register_device（别的手机的输入设备照样看得到）\n");
@@ -762,6 +794,10 @@ static void __exit pp_mnt_exit(void)
 		unregister_kretprobe(&rp_phy);
 	if (sysrq_ok)
 		unregister_kprobe(&kp_sysrq);
+	if (ext4down_ok)
+		unregister_kprobe(&kp_ext4down);
+	if (f2fsdown_ok)
+		unregister_kprobe(&kp_f2fsdown);
 	if (indev_ok)
 		unregister_kprobes(indev_probes, ARRAY_SIZE(indev_probes));
 	for (i = 0; i < ARRAY_SIZE(statfs_probes); i++)
