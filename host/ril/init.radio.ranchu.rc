@@ -1,4 +1,6 @@
 # 电话（安卓 16，踩坑 #121）：模拟器的原生 AIDL 电话 HAL（radio-service.ranchu）从这个属性读基带设备路径、说 AT 命令。
+# 属性名原来是 vendor.qemu.vport.modem，App 能看到「qemu」：host/image/rename-emu.py 把 HAL 里的字符串等长改成
+# vendor.rild.vport.modem（踩坑 #127），这里跟着用新名字。
 # 指到手机里小助手扮演的基带 /dev/ttyC0（管家 agent/internal/modem，口味 ranchu：镜像标签 prism.radio=ranchu）。
 on early-init
-    setprop vendor.qemu.vport.modem /dev/ttyC0
+    setprop vendor.rild.vport.modem /dev/ttyC0

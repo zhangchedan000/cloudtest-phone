@@ -94,7 +94,7 @@ if [ "$emu_ril" = 1 ] && [ ! -f "$V/bin/hw/libgoldfish-rild" ] && [ -f "$V/bin/h
   # 安卓 16 模拟器（36_r02）不再有 libgoldfish-rild，换成原生 AIDL 电话 HAL radio-service.ranchu（踩坑 #121）。
   # 以前这里找不到 libgoldfish-rild 就静默退回 Redroid 自带的老 rild（HIDL 1.1，安卓 13 起框架不认）→
   # 一个 AIDL radio 服务都没有，App 读 IMEI / SIM / 运营商全是空。
-  # ranchu 从属性 vendor.qemu.vport.modem 读基带设备路径、说 AT：指到小助手扮演的基带 /dev/ttyC0（见下面 init.radio.rc）。
+  # ranchu 从属性 vendor.qemu.vport.modem（rename-emu.py 改名成 vendor.rild.vport.modem，踩坑 #127）读基带设备路径、说 AT：指到小助手扮演的基带 /dev/ttyC0（见下面 init.radio.rc）。
   log "电话：安卓 16 → 原生 AIDL 电话 HAL radio-service.ranchu（连 /dev/ttyC0 的模拟基带）"
   cp -a "$V/bin/hw/android.hardware.radio-service.ranchu" "$B/vendor/bin/hw/"
   cp -a "$V"/lib64/android.hardware.radio*-ndk.so "$B/vendor/lib64/"

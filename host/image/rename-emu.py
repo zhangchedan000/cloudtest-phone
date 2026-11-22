@@ -6,6 +6,7 @@ App 能列 /vendor/bin/hw、/vendor/lib64、/vendor/etc/init、/dev（这台没 
   - 电话：libgoldfish-rild → mtkfusionrild（联发科手机电话程序的真名），rild_goldfish.rc → vendor.ril.rc；
     libcuttlefish*.so → libmtk-fusion*.so：所有 vendor 程序里引用库名的字符串（依赖表、SONAME、dlopen 的名字）
     "libcuttlefish" → "libmtk-fusion"，**等长**替换，文件结构不变。函数名（cuttlefish::…）不动：符号有哈希表，改了就找不到。
+  - 安卓 16 电话 HAL 的属性名 vendor.qemu.vport.modem → vendor.rild.vport.modem（等长，踩坑 #127）。
   - 传感器：android.hardware.sensors@2.1-impl.ranchu.so → …impl.mtk.so（hals.conf 跟着改）；
     驱动里打开的管道 /dev/goldfish_pipe_dprctd → /dev/hwmsensor、/dev/goldfish_pipe → /dev/sensorlist
     （联发科手机真实的传感器设备名；C 字符串，后面补 0，长度不变）。小助手按新名字放伪终端（镜像标签 prism.names=1）。
@@ -20,6 +21,10 @@ LIB_OLD, LIB_NEW = b"libcuttlefish", b"libmtk-fusion"
 assert len(LIB_OLD) == len(LIB_NEW)
 # 先替换长的（短的是长的前缀）
 PIPES = [(b"/dev/goldfish_pipe_dprctd\0", b"/dev/hwmsensor\0"), (b"/dev/goldfish_pipe\0", b"/dev/sensorlist\0")]
+# 安卓 16 电话 HAL 读基带设备路径的属性名（踩坑 #127）：App getprop 能看到「qemu」→ 换成等长的 rild 字样，
+# init.radio.rc（host/ril/init.radio.ranchu.rc）里 setprop 用新名字
+PROPS = [(b"vendor.qemu.vport.modem", b"vendor.rild.vport.modem")]
+assert all(len(o) == len(n) for o, n in PROPS)
 
 
 def pad(new, old):
@@ -59,7 +64,7 @@ for d in ("bin", "bin/hw", "lib64", "lib64/hw"):
     for name in os.listdir(p):
         f = os.path.join(p, name)
         if os.path.isfile(f) and not os.path.islink(f):
-            n = patch_file(f, [(LIB_OLD, LIB_NEW)] + [(o, pad(nw, o)) for o, nw in PIPES])
+            n = patch_file(f, [(LIB_OLD, LIB_NEW)] + [(o, pad(nw, o)) for o, nw in PIPES] + PROPS)
             if n:
                 print(f"  改字符串 {n} 处：{os.path.relpath(f, V)}")
                 changed += n
