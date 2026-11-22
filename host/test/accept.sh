@@ -12,6 +12,12 @@
 # 蓝牙没开的手机会把诊断（bluetooth_manager + 相关日志）存到 /mmc/pp-build/accept-<标签>-bt-<id>.log。拆机先 docker kill 再删（踩坑 #116）。
 # 检查项说明见文件末尾。
 set -u
+# 手机开了 SELinux：命令交给手机里的小助手跑（宿主机 docker exec 进去的命令，安卓的服务管家不认，查电话 / 蓝牙 / 软件包
+# 全会失败，踩坑 #135）；没开的照旧 docker exec
+PP_AGENT=${PP_AGENT:-/opt/prism-phone/prism-phone-agent}
+PP_DATA=${PP_DATA:-/mmc/pp-data}
+pex() { _c=$1; shift; _s=$PP_DATA/phones/${_c#pp-}/ppc/s
+  if [ -S "$_s" ]; then "$PP_AGENT" pp-cmdc "$_s" -- "$@" </dev/null; else docker exec "$_c" "$@" </dev/null; fi; }
 VER=${1:?安卓版本}; TOTAL=${2:?台数}; BATCH=${3:-6}; GAPPS=${4:-0}; PROXY=${5:-direct-dev}
 API=http://127.0.0.1:8099/api
 TOK=${PP_TOKEN:-$(sed -n 's/^PP_TOKEN="\(.*\)"$/\1/p' /etc/conf.d/prism-phone-agent 2>/dev/null)}
@@ -26,7 +32,7 @@ gfield=""; [ "$GAPPS" = 1 ] && gfield=',"gapps":true'
 
 # IMEI：安卓14/15/16 的 iphonesubinfo 第 1 号调用参数一样（callingPackage）；读出 15 位数字才算
 imei_of(){
-  docker exec "pp-$1" sh -c "service call iphonesubinfo 1 s16 com.android.shell 2>/dev/null" |
+  pex "pp-$1" sh -c "service call iphonesubinfo 1 s16 com.android.shell 2>/dev/null" |
     python3 -c 'import sys,re;s=sys.stdin.read();c=re.findall(chr(39)+"([^"+chr(39)+"]*)"+chr(39),s);d=re.sub(r"[^0-9]","","".join(c));print(d if len(d)==15 else "")' 2>/dev/null
 }
 # 回收站里这台的数据也删掉（压测一轮几十台，不清的话回收站很快几十 G）
@@ -58,14 +64,14 @@ while [ "$done_n" -lt "$TOTAL" ]; do
   for id in $ids; do
     for _ in $(seq 1 40); do
       [ "$(docker inspect -f '{{.State.Running}}' "pp-$id" 2>/dev/null)" != true ] && break
-      [ "$(docker exec "pp-$id" getprop sys.boot_completed 2>/dev/null)" = 1 ] && break
+      [ "$(pex "pp-$id" getprop sys.boot_completed 2>/dev/null)" = 1 ] && break
       sleep 5
     done
   done
   sleep 40   # 开机后设置、电话注册、蓝牙起来要一会儿
   for id in $ids; do
     C=pp-$id
-    r=$(docker exec "$C" sh -c '
+    r=$(pex "$C" sh -c '
       bc=$(getprop sys.boot_completed)
       mali=$(dumpsys SurfaceFlinger 2>/dev/null | grep -oE "Mali-G[0-9]+" | head -1)
       sens=$(dumpsys sensorservice 2>/dev/null | grep -icE "android.sensor")
@@ -84,8 +90,8 @@ while [ "$done_n" -lt "$TOTAL" ]; do
       printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s" \
         "$bc" "${mali:-NONE}" "$sens" "${ph:-ERR}" "$dl" GMS "$fa" "$pc" SIM "${sim:-?}" "${op:-}" "${net:-}" "${bt:-?}" "$aid" "$(getprop ro.serialno)" "$(getprop ro.build.fingerprint)" "$btc" "$rcc" "$tl" "$vd" "$wf"' 2>/dev/null)
     gms=NA
-    [ "$GAPPS" = 1 ] && gms=$(docker exec "$C" sh -c 'p=$(pidof com.google.android.gms); v=$(pm list packages com.android.vending | wc -l); echo "gms${p:+Y}${p:-N}/play$v"' 2>/dev/null)
-    imei=$(imei_of "$id"); bootid=$(docker exec "$C" cat /proc/sys/kernel/random/boot_id 2>/dev/null)
+    [ "$GAPPS" = 1 ] && gms=$(pex "$C" sh -c 'p=$(pidof com.google.android.gms); v=$(pm list packages com.android.vending | wc -l); echo "gms${p:+Y}${p:-N}/play$v"' 2>/dev/null)
+    imei=$(imei_of "$id"); bootid=$(pex "$C" cat /proc/sys/kernel/random/boot_id 2>/dev/null)
     # 开机时长要进手机的时间命名空间读（docker exec 不进，读到的是宿主机的，踩坑 #85 / #132）
     pid=$(docker inspect -f '{{.State.Pid}}' "$C" 2>/dev/null)
     up=$(nsenter -t "$pid" -T -- cat /proc/uptime 2>/dev/null </dev/null | cut -d' ' -f1 | cut -d. -f1)
@@ -95,7 +101,7 @@ while [ "$done_n" -lt "$TOTAL" ]; do
     bt=$(echo "$r" | cut -f13); fa=$(echo "$r" | cut -f7)
     [ "$VER" = 13 ] && bt=ON   # 安卓 13 没有蓝牙模拟，关着是正常的
     if [ "$bt" != ON ]; then
-      { echo "== $id 蓝牙=$bt $(date '+%F %T')"; docker exec "$C" sh -c 'dumpsys bluetooth_manager 2>/dev/null | head -60; echo ==; logcat -d 2>/dev/null | grep -iE "BluetoothManagerService|bluetooth.*(hal|hci)|AdapterState|btif|Bluetooth.*(crash|died|timeout)" | tail -150; echo ==crash; logcat -d -b crash 2>/dev/null | tail -60'
+      { echo "== $id 蓝牙=$bt $(date '+%F %T')"; pex "$C" sh -c 'dumpsys bluetooth_manager 2>/dev/null | head -60; echo ==; logcat -d 2>/dev/null | grep -iE "BluetoothManagerService|bluetooth.*(hal|hci)|AdapterState|btif|Bluetooth.*(crash|died|timeout)" | tail -150; echo ==crash; logcat -d -b crash 2>/dev/null | tail -60'
         echo "== 宿主："; pgrep -af "rootcanal.*$id" ; ls -la /run/ppbt-*"$id"* 2>/dev/null; } > "$DIR/accept-$tag-bt-$id.log" 2>&1
       log "  $id 蓝牙=$bt，诊断存到 $DIR/accept-$tag-bt-$id.log"
     fi

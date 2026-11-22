@@ -10,6 +10,12 @@
 #   14:JP 14g:HK 15:SG 15g:US 16:TW 16g:KR 16:JP 15:direct
 # 结果：/mmc/pp-build/multi-<时间>/（每台一个 .kv 原始值 + report.txt 汇总）
 set -u
+# 手机开了 SELinux：命令交给手机里的小助手跑（宿主机 docker exec 进去的命令，安卓的服务管家不认，查电话 / 蓝牙 / 软件包
+# 全会失败，踩坑 #135）；没开的照旧 docker exec
+PP_AGENT=${PP_AGENT:-/opt/prism-phone/prism-phone-agent}
+PP_DATA=${PP_DATA:-/mmc/pp-data}
+pex() { _c=$1; shift; _s=$PP_DATA/phones/${_c#pp-}/ppc/s
+  if [ -S "$_s" ]; then "$PP_AGENT" pp-cmdc "$_s" -- "$@" </dev/null; else docker exec "$_c" "$@" </dev/null; fi; }
 API=http://127.0.0.1:8099/api
 TOK=${PP_TOKEN:-$(sed -n 's/^PP_TOKEN="\(.*\)"$/\1/p' /etc/conf.d/prism-phone-agent 2>/dev/null)}
 [ -n "$TOK" ] || { echo "拿不到口令"; exit 1; }
@@ -63,7 +69,7 @@ for _ in $(seq 1 90); do
   while read -r id _; do
     grep -q "^$id " "$DIR/boot.txt" && continue
     [ "$(docker inspect -f '{{.State.Running}}' "pp-$id" 2>/dev/null)" = true ] || continue   # 没开起来的（比如内存把关拒了）不等
-    if [ "$(docker exec "pp-$id" getprop sys.boot_completed 2>/dev/null)" = 1 ]; then echo "$id $(( $(date +%s) - t0 ))" >> "$DIR/boot.txt"; else left=$((left+1)); fi
+    if [ "$(pex "pp-$id" getprop sys.boot_completed 2>/dev/null)" = 1 ]; then echo "$id $(( $(date +%s) - t0 ))" >> "$DIR/boot.txt"; else left=$((left+1)); fi
   done < "$DIR/phones.txt"
   [ "$left" = 0 ] && break
   sleep 5
@@ -144,7 +150,7 @@ while read -r id _; do
   [ "$(docker inspect -f '{{.State.Running}}' "pp-$id" 2>/dev/null)" = true ] || continue
   ( b=$(curl -s -m30 -H "$H" "$API/phones/$id/stream?w=720&h=1600" -o /dev/null -w '%{size_download}'); echo "$id $b" >> "$DIR/stream.txt" ) &
   # 画面要动起来才像真在用（静止画面编码几乎不耗 CPU）：每 2 秒左右滑一下桌面
-  docker exec "pp-$id" sh -c 'for i in $(seq 1 14); do input swipe 900 1300 150 1300 250; sleep 1; input swipe 150 1300 900 1300 250; sleep 1; done' </dev/null >/dev/null 2>&1 &
+  pex "pp-$id" sh -c 'for i in $(seq 1 14); do input swipe 900 1300 150 1300 250; sleep 1; input swipe 150 1300 900 1300 250; sleep 1; done' </dev/null >/dev/null 2>&1 &
 done < "$DIR/phones.txt"
 sleep 15
 {
@@ -155,7 +161,7 @@ sleep 15
 wait
 # 每台实时画面用的编码器：c2.rk.* = 硬件（#133），c2.android.* = 软件
 while read -r id _; do
-  enc=$(docker exec "pp-$id" sh -c 'logcat -d | grep -o "allocate(c2[.a-z0-9]*encoder)" | tail -1' </dev/null 2>/dev/null)
+  enc=$(pex "pp-$id" sh -c 'logcat -d | grep -o "allocate(c2[.a-z0-9]*encoder)" | tail -1' </dev/null 2>/dev/null)
   echo "$id ${enc:-?}"
 done < "$DIR/phones.txt" > "$DIR/encoder.txt"
 log "画面测试完成"
