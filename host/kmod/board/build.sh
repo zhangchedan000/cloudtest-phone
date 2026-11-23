@@ -45,4 +45,7 @@ docker run --rm --platform linux/arm64 -v "$K:/k" -w /k/src debian:12-slim bash 
 grep -q '"module_layout"\|__versions' "$K/src/drivers/net/wireless/mac80211_hwsim.mod.c" || { log "✗ 模块里没有符号版本表（vmlinux 没编好），不能用"; exit 1; }
 cp "$K/src/drivers/net/wireless/mac80211_hwsim.ko" "$K/"
 log "编好：$K/mac80211_hwsim.ko；核对 CRC："
-python3 "$K/compare-crcs.py" "$K/src/drivers/net/wireless/mac80211_hwsim.mod.c" "$K/Module.symvers.board"
+# 这一步用的是公开头文件，CRC 对不上一大半是预料之中（魔云腾改了内核结构，踩坑 #129）：只看看，不算失败；
+# 下一步 build-kheaders.sh 换成板子内核自带的头文件再严格核对
+python3 "$K/compare-crcs.py" "$K/src/drivers/net/wireless/mac80211_hwsim.mod.c" "$K/Module.symvers.board" ||
+  log "（公开头文件编的，对不上是正常的；下一步换板子自带的头文件）"
