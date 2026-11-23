@@ -17,6 +17,8 @@ PP_AGENT=${PP_AGENT:-/opt/prism-phone/prism-phone-agent}
 PP_DATA=${PP_DATA:-/mmc/pp-data}
 pex() { _c=$1; shift; _s=$PP_DATA/phones/${_c#pp-}/ppc/s
   if [ -S "$_s" ]; then "$PP_AGENT" pp-cmdc "$_s" -- "$@" </dev/null; else docker exec "$_c" "$@" </dev/null; fi; }
+# 手机里的崩溃记录：崩溃缓冲区 + 每个 tombstone 的进程名、信号、调用栈开头（手机删了就没了）
+crashdump() { pex "pp-$1" sh -c 'echo "== logcat -b crash"; logcat -d -b crash | tail -150; for t in $(ls -t /data/tombstones/tombstone_* 2>/dev/null | grep -v pb | head -6); do echo "== $t"; grep -m1 "^Cmdline" $t; grep -m1 "^signal" $t; grep -m1 "^Abort message" $t; sed -n "/^backtrace:/,/^$/p" $t | head -25; done'; }
 API=http://127.0.0.1:8099/api
 TOK=${PP_TOKEN:-$(sed -n 's/^PP_TOKEN="\(.*\)"$/\1/p' /etc/conf.d/prism-phone-agent 2>/dev/null)}
 [ -n "$TOK" ] || { echo "拿不到口令"; exit 1; }
@@ -154,6 +156,7 @@ for p in json.load(sys.stdin):
     { echo "== 宿主机"; ip neigh show "$ip"; ip route get "$ip"; ping -c2 -W2 "$ip" 2>&1 | tail -2
       echo "== docker"; docker inspect -f '{{range $k, $v := .NetworkSettings.Networks}}{{$k}} ip={{$v.IPAddress}} mac={{$v.MacAddress}}{{end}} pid={{.State.Pid}}' "pp-$id"
       pid=$(docker inspect -f '{{.State.Pid}}' "pp-$id"); [ -n "$pid" ] && nsenter -t "$pid" -n sh -c 'ip -br link; ip -br addr; ip route; ip neigh'
+      echo "== 崩溃"; crashdump "$id"
       echo "== 手机里"; pex "pp-$id" sh -c 'getprop init.svc.adbd; getprop service.adb.tcp.port; getprop persist.adb.tcp.port; ip -br addr; ip rule | head -20; ip route show table all | grep -v "^local\|^broadcast" | head -20; ss -ltn 2>/dev/null | head' 2>&1
     } > "$DIR/$id.net-debug.txt" 2>&1
   fi
@@ -187,7 +190,7 @@ while read -r id _; do
   enc=$(pex "pp-$id" sh -c 'logcat -d | grep -o "allocate(c2[.a-z0-9]*encoder)" | tail -1' </dev/null 2>/dev/null)
   echo "$id ${enc:-?}"
   # 落到软件编码时把硬件编码器为什么没用上留下来（mpp / c2 报错、SELinux 拒绝）
-  case "$enc" in *c2.android*) pex "pp-$id" sh -c 'logcat -d | grep -iE "mpp|c2.rk|codec2|avc: denied" | tail -80' > "$DIR/$id.encoder-fallback.txt" 2>&1 ;; esac
+  case "$enc" in *c2.android*) { pex "pp-$id" sh -c 'logcat -d | grep -iE "mpp|c2.rk|codec2|avc: denied" | tail -80'; crashdump "$id"; } > "$DIR/$id.encoder-fallback.txt" 2>&1 ;; esac
 done < "$DIR/phones.txt" > "$DIR/encoder.txt"
 sleep 10
 {
