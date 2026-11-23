@@ -141,11 +141,12 @@ if [ ! -f "$CONF" ]; then
   fi
 fi
 chmod 600 "$CONF"
-# 内存超卖 3 → 3.5（2026-11-23）：12GB 的机型（小米 13T 一台记 11.2G）混着开时 3 倍只够 6~7 台；实测 7 台全开实际只用 8~10G、
-# 还剩 13G+，开机前「实际剩 ≥3G」的保险不变。只改还是老默认值 3 的，自己改过的不动
+# 内存超卖 3 → 3.6（2026-11-23）：12GB 的机型（小米 13T 一台记 11.2G）混着开时 3 倍只够 6~7 台（3.5 倍差 0.2G 装不下 3 台 13T）；
+# 实测 7 台（3 台 13T）把所有 App 各开 3 遍 + 同时看画面，实际每台约 2G，板子最少还剩 7.2G、没杀进程。
+# 开机前「实际剩 ≥3G」的保险不变。只改老默认值（3、3.5），自己改过的不动
 conf_changed=0
-if grep -q -- '-mem-overcommit 3 ' "$CONF"; then
-  sed -i 's/-mem-overcommit 3 /-mem-overcommit 3.5 /' "$CONF"; conf_changed=1; say "内存超卖倍数 3 → 3.5"
+if grep -qE -- '-mem-overcommit (3|3\.5) ' "$CONF"; then
+  sed -i -E 's/-mem-overcommit (3|3\.5) /-mem-overcommit 3.6 /' "$CONF"; conf_changed=1; say "内存超卖倍数改成 3.6"
 fi
 
 # ---------- 5. 替换有变化的文件 ----------
