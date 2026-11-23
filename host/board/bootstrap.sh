@@ -99,8 +99,9 @@ if docker images | grep -q 'mytos/dobox' && curl -fsSL --retry 3 -o /tmp/pp-add-
   done
 fi
 # 手机里开真 SELinux（踩坑 #135）：安卓 14/15/16 镜像换回原版 SELinux 相关的库、补规则、给每层打标签。
-# 要在硬件编码之后做（标签要打到所有层上）；做过的跳过；要魔云腾 dobox 镜像（取原版库）
-if docker images | grep -q 'mytos/dobox'; then
+# 要在硬件编码之后做（标签要打到所有层上）；做过的跳过。导出包里的镜像是做好的，但 docker save / load 会丢文件标签，
+# 这里会自动按镜像自己的规则重打（不用 dobox）；没做过的镜像才要魔云腾 dobox 镜像（取原版库）
+if true; then
   mkdir -p /tmp/pp-sel /mmc/pp-build
   if curl -fsSL --retry 3 -o /tmp/pp-sel/add-selinux.sh "$RAW/host/image/add-selinux.sh" &&
      curl -fsSL --retry 3 -o /tmp/pp-sel/sepatch.c "$RAW/host/image/sepatch.c" &&

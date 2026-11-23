@@ -20,8 +20,56 @@ B=${PP_BUILD:-/mmc/pp-build}
 log(){ echo "$(date +%T) [selinux] $*"; }
 die(){ echo "[selinux] 错误：$*" >&2; exit 1; }
 SEL_VER=20
+# 给镜像每一层打标签：在加载了规则（$1/policy）的临时容器里，setfiles 按 $1/file_contexts 打 $2 这个镜像的所有层
+label_layers() {
+  lw=$1; li=$2
+  docker image inspect -f '{{.GraphDriver.Data.LowerDir}}:{{.GraphDriver.Data.UpperDir}}' "$li" | tr ':' '\n' | grep -v '^$' > "$lw/layers"
+  DR=$(docker info -f '{{.DockerRootDir}}')
+  docker run --rm --privileged --platform linux/arm64 -v "$lw:/w" -v "$DR:$DR" -v "$B/kmod/aptcache:/aptc" debian:12-slim bash -ec '
+    apt-get update -qq >/dev/null 2>&1; apt-get install -y -qq --no-install-recommends -o Dir::Cache::Archives=/aptc policycoreutils python3 >/dev/null 2>&1
+    mount -t selinuxfs selinuxfs /sys/fs/selinux
+    python3 -c "
+import os
+d=open(\"/w/policy\",\"rb\").read(); fd=os.open(\"/sys/fs/selinux/load\",os.O_WRONLY); assert os.write(fd,d)==len(d); os.close(fd)"
+    n=0
+    while read -r L; do
+      [ -d "$L" ] || continue
+      setfiles -F -r "$L" /w/file_contexts "$L" 2>&1 | grep -v "^setfiles: Could not set context\|No such file" | tail -3 || true
+      n=$((n + 1))
+    done < /w/layers
+    echo "打了 $n 层的标签"
+  '
+}
+# 镜像里 /system/bin/init 有没有 SELinux 标签（读最上面那层的文件属性）
+has_labels() {
+  for L in $(docker image inspect -f '{{.GraphDriver.Data.UpperDir}}:{{.GraphDriver.Data.LowerDir}}' "$1" | tr ':' ' '); do
+    [ -e "$L/system/bin/init" ] || continue
+    python3 -c "import os,sys; os.getxattr(sys.argv[1], 'security.selinux')" "$L/system/bin/init" 2>/dev/null
+    return $?
+  done
+  return 1
+}
 cur=$(docker image inspect -f '{{index .Config.Labels "prism.selinux"}}' "$img" 2>/dev/null || true)
-[ "$cur" = "$SEL_VER" ] && { log "$img 已经做好（第 $SEL_VER 版），跳过"; exit 0; }
+if [ "$cur" = "$SEL_VER" ]; then
+  if has_labels "$img"; then log "$img 已经做好（第 $SEL_VER 版），跳过"; exit 0; fi
+  # docker save / load（导出包换新板）只带 security.capability，不带 security.selinux：镜像改过的内容都在，标签全丢了，
+  # 手机开强制模式会全被拦。按镜像自己的规则和 file_contexts 把每一层重打一遍（2026-11-23 查实）
+  log "$img 是做好的（第 $SEL_VER 版），但导入时丢了文件标签：重打"
+  RW=$(mktemp -d "$B/selrel.XXXX")
+  rcid=$(docker create "$img")
+  docker cp "$rcid:/vendor/etc/selinux/precompiled_sepolicy" "$RW/policy" >/dev/null || { docker rm "$rcid" >/dev/null; die "镜像里没有 precompiled_sepolicy"; }
+  : > "$RW/file_contexts"
+  for f in /system/etc/selinux/plat_file_contexts /system_ext/etc/selinux/system_ext_file_contexts \
+           /product/etc/selinux/product_file_contexts /vendor/etc/selinux/vendor_file_contexts /odm/etc/selinux/odm_file_contexts; do
+    docker cp "$rcid:$f" "$RW/fc.part" >/dev/null 2>&1 && cat "$RW/fc.part" >> "$RW/file_contexts" || true
+  done
+  docker rm "$rcid" >/dev/null
+  label_layers "$RW" "$img"
+  rm -rf "$RW"
+  has_labels "$img" || die "重打以后还是没有标签"
+  log "✓ $img：标签重打好了"
+  exit 0
+fi
 base=$img
 if [ -n "$cur" ] && [ "$cur" != "<no value>" ]; then
   docker image inspect "$img-orig-sel" >/dev/null 2>&1 || die "$img 是旧版（$cur），但找不到原镜像 $img-orig-sel"
@@ -297,23 +345,7 @@ printf 'FROM %s\nCOPY overlay/ /\n' "$base" > "$W/Dockerfile"
 docker build -q -t "$img-sel-wip" "$W" >/dev/null
 
 # ---- 6) 给镜像每一层打标签（在加载了规则的临时容器里，setfiles 按镜像自己的 file_contexts） ----
-layers=$(docker image inspect -f '{{.GraphDriver.Data.LowerDir}}:{{.GraphDriver.Data.UpperDir}}' "$img-sel-wip" | tr ':' '\n' | grep -v '^$')
-echo "$layers" > "$W/layers"
-DR=$(docker info -f '{{.DockerRootDir}}')
-docker run --rm --privileged --platform linux/arm64 -v "$W:/w" -v "$DR:$DR" -v "$B/kmod/aptcache:/aptc" debian:12-slim bash -ec '
-  apt-get update -qq >/dev/null 2>&1; apt-get install -y -qq --no-install-recommends -o Dir::Cache::Archives=/aptc policycoreutils python3 >/dev/null 2>&1
-  mount -t selinuxfs selinuxfs /sys/fs/selinux
-  python3 -c "
-import os
-d=open(\"/w/x/policy\",\"rb\").read(); fd=os.open(\"/sys/fs/selinux/load\",os.O_WRONLY); assert os.write(fd,d)==len(d); os.close(fd)"
-  n=0
-  while read -r L; do
-    [ -d "$L" ] || continue
-    setfiles -F -r "$L" /w/x/file_contexts "$L" 2>&1 | grep -v "^setfiles: Could not set context\|No such file" | tail -3 || true
-    n=$((n + 1))
-  done < /w/layers
-  echo "打了 $n 层的标签"
-'
+label_layers "$W/x" "$img-sel-wip"
 printf 'FROM %s\nLABEL prism.selinux=%s\n' "$img-sel-wip" "$SEL_VER" | docker build -q -t "$img" - >/dev/null
 docker rmi "$img-sel-wip" >/dev/null 2>&1 || true
 log "✓ $img：已能开 SELinux（原镜像留在 $img-orig-sel）"
