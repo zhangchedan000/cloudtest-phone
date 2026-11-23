@@ -39,7 +39,7 @@ log "3/3 编模块"
 sh host/kmod/board/build-modules.sh > $B/kmod-auto-3.log 2>&1 || { tail -20 $B/kmod-auto-3.log; die "编模块失败（$B/kmod-auto-3.log）"; }
 for m in wlan pp_uts pp_mnt; do
   [ -s "$PP_KMOD/out/$m.ko" ] || die "没编出 $m.ko"
-  vm=$(modinfo -F vermagic "$PP_KMOD/out/$m.ko" 2>/dev/null | cut -d' ' -f1)
+  vm=$(tr '\0' '\n' < "$PP_KMOD/out/$m.ko" | sed -n 's/^vermagic=//p' | head -1 | cut -d' ' -f1)   # busybox 的 modinfo 读不出
   [ "$vm" = "$ver" ] || die "$m.ko 的内核版本 $vm 和正在跑的 $ver 对不上"
 done
 log "编好了（$(( $(date +%s) - t0 )) 秒）：$(cd $PP_KMOD/out && sha256sum *.ko | cut -c1-16 | tr '\n' ' ')"

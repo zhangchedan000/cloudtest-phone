@@ -35,7 +35,10 @@ docker run --rm --platform linux/arm64 -v "$K:/k" -w /k/src debian:12-slim bash 
   make -s olddefconfig
   echo "vermagic: $(make -s kernelrelease)"
   make -s -j"$(nproc)" vmlinux modules_prepare > /k/make-vmlinux.log 2>&1 || { tail -20 /k/make-vmlinux.log; exit 1; }
-  test -s Module.symvers || { echo "没有 Module.symvers（vmlinux 没编完）"; exit 1; }
+  # 6.1 只编 vmlinux 时出的是 vmlinux.symvers，Module.symvers 要编模块时 modpost 才生成；后面编外部模块（核对 CRC 的
+  # crctest、我们的模块）要用它，先照 vmlinux.symvers 放一份（以前目录里一直有上次留下的，从空目录编才暴露，2026-11-23）
+  test -s vmlinux.symvers || { echo "没有 vmlinux.symvers（vmlinux 没编完）"; exit 1; }
+  test -s Module.symvers || cp vmlinux.symvers Module.symvers
   make -s -j"$(nproc)" drivers/net/wireless/mac80211_hwsim.ko 2>&1 | tail -5
   modinfo -F vermagic drivers/net/wireless/mac80211_hwsim.ko
 '
