@@ -3,7 +3,7 @@
 #   1) 用 ADB（和用户电脑连手机同一条路：adb connect <手机IP>:5555，shell 身份）把各项值读出来；
 #   2) 查唯一性、跟代理国家是否对得上（时区 / 语言 / SIM / 运营商）、容器痕迹；
 #   3) 同时开 N 路实时画面 30 秒，看 CPU / 温度 / 每路码流；
-#   4) 删净（KEEP=1 留着）。在板子上 root 跑。
+#   4) 删净（KEEP=1 全留着；KEEP_BAD=1 只留有问题的，方便查）。在板子上 root 跑。
 #
 # 用法：sh host/test/multi.sh [规格 ...]
 #   规格 = <版本>[g]:<国家代码 或 direct>[@机型]，g = 谷歌版。不写机型就在官方系统有这个版本的机型里轮流挑
@@ -278,6 +278,9 @@ try:
 except OSError: pass
 for i, e in sorted(enc.items()):
     if "c2.rk." not in e: bad.append(f"{i} 实时画面没用上硬件编码（{e}）" + ("，原因看 %s.encoder-fallback.txt" % i if "c2.android" in e else ""))
+# 有问题的手机 ID（KEEP_BAD=1 时收拾阶段不删，留着查）
+with open(os.path.join(d, "bad-ids.txt"), "w") as fh:
+    fh.write("\n".join(sorted(set(b.split()[0] for b in bad if re.match(r"^[0-9a-f]{12}", b)))) + "\n")
 print()
 print("问题：" if bad else "问题：无")
 for b in bad: print("  - " + b)
@@ -296,10 +299,11 @@ EOF
 # ---- 收拾 ----
 if [ "${KEEP:-0}" = 1 ]; then log "KEEP=1：手机留着"; exit 0; fi
 while read -r id _; do
+  if [ "${KEEP_BAD:-0}" = 1 ] && grep -qx "$id" "$DIR/bad-ids.txt" 2>/dev/null; then log "KEEP_BAD=1：$id 有问题，留着"; continue; fi
   ip=$(grep "^$id " "$DIR/adb.txt" | sed -n 's/.* ip=\([0-9.]*\) .*/\1/p'); [ -n "$ip" ] && adb disconnect "$ip:5555" >/dev/null 2>&1
   docker kill "pp-$id" >/dev/null 2>&1; curl -s -m60 -X DELETE -H "$H" "$API/phones/$id" -o /dev/null
 done < "$DIR/phones.txt"
-ids=$(cut -d' ' -f1 "$DIR/phones.txt" | tr '\n' ' ')
+ids=$(cut -d' ' -f1 "$DIR/phones.txt" | { [ "${KEEP_BAD:-0}" = 1 ] && grep -vxFf "$DIR/bad-ids.txt" || cat; } | tr '\n' ' ')
 curl -s -m20 -H "$H" "$API/trash" | python3 -c 'import sys,json
 ids=set(sys.argv[1:])
 for t in json.load(sys.stdin) or []:
