@@ -92,6 +92,10 @@ EOF
 cp "$DV/bin/hw/android.hardware.media.c2@1.1-service" "$O/bin/hw/"
 cp "$DV/etc/init/android.hardware.media.c2@1.1-service.rc" "$O/etc/init/"
 for f in "$DV"/etc/seccomp_policy/android.hardware.media.c2@1.1*; do [ -f "$f" ] && cp "$f" "$O/etc/seccomp_policy/"; done
+# dobox 原样的白名单没有 sysinfo，编码库会调 → SIGSYS（踩坑 #144）
+for f in "$O"/etc/seccomp_policy/android.hardware.media.c2@1.1*; do
+  [ -f "$f" ] && ! grep -q '^sysinfo:' "$f" && printf '\n# 瑞芯微编码库会调（被拦就 SIGSYS，踩坑 #144）\nsysinfo: 1\n' >> "$f"  || true
+done
 for f in "$DV"/etc/media_codecs*.xml "$DV"/etc/media_profiles*.xml; do [ -f "$f" ] && cp "$f" "$O/etc/"; done
 cat > "$O/etc/vintf/manifest/android.hardware.media.c2-hw.xml" <<'EOF'
 <manifest version="1.0" type="device">

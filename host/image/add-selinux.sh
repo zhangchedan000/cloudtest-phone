@@ -49,25 +49,54 @@ has_labels() {
   done
   return 1
 }
+# 从镜像里取打标签要的规则和 file_contexts，放到 $2/policy、$2/file_contexts
+label_inputs() {
+  rcid=$(docker create "$1" /system/bin/sh)   # 不启动，只为拷文件；带个命令，没有启动命令的镜像也能建
+  docker cp "$rcid:/vendor/etc/selinux/precompiled_sepolicy" "$2/policy" >/dev/null || { docker rm "$rcid" >/dev/null; die "镜像里没有 precompiled_sepolicy"; }
+  : > "$2/file_contexts"
+  for f in /system/etc/selinux/plat_file_contexts /system_ext/etc/selinux/system_ext_file_contexts \
+           /product/etc/selinux/product_file_contexts /vendor/etc/selinux/vendor_file_contexts /odm/etc/selinux/odm_file_contexts; do
+    docker cp "$rcid:$f" "$2/fc.part" >/dev/null 2>&1 && cat "$2/fc.part" >> "$2/file_contexts" || true
+  done
+  rm -f "$2/fc.part"; docker rm "$rcid" >/dev/null
+}
+# 增量补丁：做好的镜像上叠一层、只给这层打标签，不用原镜像、不用整套重做（导出包导进来的镜像也能补）。
+# 瑞芯微硬件编解码服务的 seccomp 白名单（dobox 原样拿来的）没有 sysinfo：开机 / 几台一起看画面时编码库会调它 →
+# 被 SIGSYS 杀（不留 tombstone）→ 系统服务拿不到编解码器整个框架崩（安卓 15/16 软重启还可能卡进崩溃循环、WiFi / ADB 全断）
+# → 实时画面落到软件编码。调试模块挂 force_sig_seccomp 抓到全是 179 = sysinfo（2026-11-23，踩坑 #144）
+C2P=/vendor/etc/seccomp_policy/android.hardware.media.c2@1.1-seccomp_policy
+c2_seccomp_fix() {
+  PW=$(mktemp -d "$B/c2fix.XXXX")
+  pcid=$(docker create "$1" /system/bin/sh)
+  if docker cp "$pcid:$C2P" "$PW/p" >/dev/null 2>&1 && ! grep -q '^sysinfo:' "$PW/p"; then
+    docker rm "$pcid" >/dev/null
+    mkdir -p "$PW/ctx$(dirname "$C2P")"
+    { cat "$PW/p"; printf '\n# 瑞芯微编码库会调（被拦就 SIGSYS，踩坑 #144）\nsysinfo: 1\n'; } > "$PW/ctx$C2P"; chmod 644 "$PW/ctx$C2P"
+    printf 'FROM %s\nCOPY ctx/ /\n' "$1" > "$PW/Dockerfile"
+    docker build -q -t "$1" "$PW" >/dev/null
+    label_inputs "$1" "$PW"
+    label_layers "$PW" "$1"
+    up=$(docker image inspect -f '{{.GraphDriver.Data.UpperDir}}' "$1")
+    python3 -c "import os,sys; print(os.getxattr(sys.argv[1], 'security.selinux').decode().strip(chr(0)))" "$up$C2P" >/dev/null 2>&1 || die "白名单补丁那层没打上标签"
+    log "✓ $1：硬件编解码的 seccomp 白名单补了 sysinfo"
+  else
+    docker rm "$pcid" >/dev/null 2>&1 || true
+  fi
+  rm -rf "$PW"
+}
 cur=$(docker image inspect -f '{{index .Config.Labels "prism.selinux"}}' "$img" 2>/dev/null || true)
 if [ "$cur" = "$SEL_VER" ]; then
-  if has_labels "$img"; then log "$img 已经做好（第 $SEL_VER 版），跳过"; exit 0; fi
+  if has_labels "$img"; then c2_seccomp_fix "$img"; log "$img 已经做好（第 $SEL_VER 版），跳过"; exit 0; fi
   # docker save / load（导出包换新板）只带 security.capability，不带 security.selinux：镜像改过的内容都在，标签全丢了，
   # 手机开强制模式会全被拦。按镜像自己的规则和 file_contexts 把每一层重打一遍（2026-11-23 查实）
   log "$img 是做好的（第 $SEL_VER 版），但导入时丢了文件标签：重打"
   RW=$(mktemp -d "$B/selrel.XXXX")
-  rcid=$(docker create "$img" /system/bin/sh)   # 不启动，只为拷文件；带个命令，没有启动命令的镜像也能建
-  docker cp "$rcid:/vendor/etc/selinux/precompiled_sepolicy" "$RW/policy" >/dev/null || { docker rm "$rcid" >/dev/null; die "镜像里没有 precompiled_sepolicy"; }
-  : > "$RW/file_contexts"
-  for f in /system/etc/selinux/plat_file_contexts /system_ext/etc/selinux/system_ext_file_contexts \
-           /product/etc/selinux/product_file_contexts /vendor/etc/selinux/vendor_file_contexts /odm/etc/selinux/odm_file_contexts; do
-    docker cp "$rcid:$f" "$RW/fc.part" >/dev/null 2>&1 && cat "$RW/fc.part" >> "$RW/file_contexts" || true
-  done
-  docker rm "$rcid" >/dev/null
+  label_inputs "$img" "$RW"
   label_layers "$RW" "$img"
   rm -rf "$RW"
   has_labels "$img" || die "重打以后还是没有标签"
   log "✓ $img：标签重打好了"
+  c2_seccomp_fix "$img"
   exit 0
 fi
 base=$img
@@ -349,3 +378,4 @@ label_layers "$W/x" "$img-sel-wip"
 printf 'FROM %s\nLABEL prism.selinux=%s\n' "$img-sel-wip" "$SEL_VER" | docker build -q -t "$img" - >/dev/null
 docker rmi "$img-sel-wip" >/dev/null 2>&1 || true
 log "✓ $img：已能开 SELinux（原镜像留在 $img-orig-sel）"
+c2_seccomp_fix "$img"
