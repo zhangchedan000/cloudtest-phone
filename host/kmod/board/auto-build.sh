@@ -26,6 +26,8 @@ case "$ver" in 6.1.*) ;; *) die "只会编 6.1 系列的内核（这块板子是
 command -v git >/dev/null && command -v docker >/dev/null || die "要 git 和 docker"
 mkdir -p $B
 log "正在跑的内核：$(cat /proc/version)"
+# 每次从干净的源码树开始（上次的源码树已经换成板子头文件了，再编内核会出错）；只留软件包下载缓存
+[ -d "$PP_KMOD" ] && find "$PP_KMOD" -mindepth 1 -maxdepth 1 ! -name aptcache -exec rm -rf {} +
 rm -rf "$SRC"
 git clone -q --depth 1 --branch "$REF" "https://github.com/$REPO" "$SRC" 2>/dev/null ||
   { git clone -q "https://github.com/$REPO" "$SRC" && (cd "$SRC" && git checkout -q "$REF"); } || die "拉仓库失败"
