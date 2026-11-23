@@ -64,8 +64,7 @@ docker run --rm --platform linux/arm64 -v "$K:/k" -w /k/src debian:12-slim bash 
   grep -q "CONFIG_MYT_FS 1" include/generated/autoconf.h
   # crctest 故意「再导出」板子内核已有的函数（只为让 genksyms 算 CRC，不加载）：modpost 默认把「exported twice」当错误、
   # 不写 Module.symvers，让它只警告（以前目录里有上次留下的才没暴露，2026-11-23 从空目录编发现）
-  make -s M=/k/crctest KBUILD_MODPOST_WARN=1 modules 2>&1 | grep -v "exported twice" | tail -3 || true
-  test -s /k/crctest/Module.symvers || { echo "crctest 没出 Module.symvers"; exit 1; }
+  make -s M=/k/crctest modules 2>&1 | grep -v "exported twice" | tail -3 || true
   make -s M=/k/hwsim modules 2>&1 | tail -5
   grep -q "CONFIG_MYT_FS 1" include/generated/autoconf.h || { echo "autoconf.h 被改回公开配置了"; exit 1; }
   modinfo -F vermagic /k/hwsim/mac80211_hwsim.ko
@@ -80,7 +79,12 @@ def load(p):
         f = l.rstrip("\n").split("\t")
         d[f[1]] = f[0]
     return d
-mine = load(f"{k}/crctest/Module.symvers")
+# 6.1 起 CRC 记在 .o.cmd 的 #SYMVER 行里（modpost 因为「exported twice」不写 Module.symvers）
+mine = {}
+for l in open(f"{k}/crctest/.crctest.o.cmd"):
+    if l.startswith("#SYMVER "):
+        _, s, c = l.split()
+        mine[s] = c
 board = load(f"{k}/Module.symvers.board")
 ok = 0
 for s, c in sorted(mine.items()):
@@ -88,7 +92,9 @@ for s, c in sorted(mine.items()):
     ok += same
     print(f"  {'✓' if same else '✗'} {s}: 板子头文件算出 {c}，板子内核 {board.get(s)}")
 print(f"{ok}/{len(mine)} 一致")
-sys.exit(0 if ok == len(mine) and mine else 1)
+# 只作参考，不算失败（2026-11-23 查实）：板子内核是 clang 编的，这里用 gcc 预处理，genksyms 展开的类型不一样，
+# 头文件换对了 CRC 也对不上。头文件对不对靠装上以后的功能自检（auto-build.sh：模块加载、/proc/pp_mnt、保护钩子挂上）
+sys.exit(0 if mine else 1)
 EOF
 python3 "$K/compare-crcs.py" "$K/hwsim/mac80211_hwsim.mod.c" "$K/Module.symvers.board"
 cp "$K/hwsim/mac80211_hwsim.ko" "$K/mac80211_hwsim.ko"

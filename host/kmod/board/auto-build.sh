@@ -53,4 +53,10 @@ if [ "$(docker ps -q | wc -l)" = 0 ]; then
   for m in pp_mnt pp_uts wlan; do [ -d /sys/module/$m ] && rmmod $m 2>/dev/null || true; done
 fi
 rc-service prism-phone-agent kmods >/dev/null 2>&1 || true
-for m in wlan pp_uts pp_mnt; do [ -d /sys/module/$m ] && log "✓ $m 已加载" || log "✗ $m 没加载上（看 dmesg）"; done
+# 功能自检：三个模块都加载上、两个 /proc 接口在、两道保护（容器写 sysrq、停用宿主机的盘）的钩子挂上了
+bad=0
+for m in wlan pp_uts pp_mnt; do [ -d /sys/module/$m ] && log "✓ $m 已加载" || { log "✗ $m 没加载上（看 dmesg）"; bad=1; }; done
+[ -e /proc/pp_mnt ] && [ -e /proc/pp_uts ] && log "✓ /proc/pp_mnt、/proc/pp_uts 在" || { log "✗ /proc/pp_mnt 或 /proc/pp_uts 不在"; bad=1; }
+if dmesg | grep -qE 'pp_mnt: 没挂上 (write_sysrq_trigger|ext4_ioctl)'; then log "✗ 保护钩子没挂上：$(dmesg | grep -oE 'pp_mnt: 没挂上 [a-z0-9_]+' | sort -u | tr '\n' ' ')"; bad=1; else log "✓ 两道保护（sysrq、停用盘）钩子已挂上"; fi
+[ $bad = 0 ] || die "功能自检没过：先别开手机，把 /mmc/pp-build/kmod-auto*.log 和 dmesg 发给开发看"
+log "✓ 全部好了"
