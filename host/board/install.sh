@@ -74,7 +74,7 @@ check() {
   pgrep -f '^/bin/sh /usr/local/bin/fan-control.sh' >/dev/null && say "✓ 风扇脚本在跑" || { say "✗ 风扇脚本没在跑（满载会过热）"; bad=1; }
   [ -x /opt/pp-rootcanal/pp-rootcanal ] && [ -x /usr/local/bin/pp-rootcanal ] && say "✓ 蓝牙芯片模拟器" || say "· 没装蓝牙芯片模拟器（手机蓝牙关着；包放 /mmc/pp-dist/pp-rootcanal-arm64-bundle.tgz 再跑一次）"
   if [ -d /sys/module/wlan ] || [ -d /sys/module/mac80211_hwsim ]; then say "✓ 虚拟 WiFi 驱动已加载"; else say "· 虚拟 WiFi 驱动没加载（手机走有线网 eth0；只有魔云腾 Q1 这版内核有现成驱动，踩坑 #129）"; fi
-  if [ -e /proc/pp_mnt ]; then say "✓ 去痕迹模块 pp_mnt 已加载"; else say "· 去痕迹模块 pp_mnt 没加载（手机里能看到别的手机的触摸屏、宿主机 CPU 时间等，踩坑 #134）"; fi
+  if [ -e /proc/pp_mnt ]; then say "✓ 去痕迹 / 保护模块 pp_mnt 已加载"; else say "✗ 去痕迹 / 保护模块 pp_mnt 没加载：手机里的安卓重启时能把宿主机的盘改只读 / 停掉（#136 / #137），还能看到别的手机的痕迹（#134）。内核换过的话看 /mmc/pp-build/kmod-auto.log"; bad=1; fi
   if [ -e /proc/pp_uts ]; then say "✓ 内核版本号模块 pp_uts 已加载"; else say "· 内核版本号模块 pp_uts 没加载"; fi
   case " $(sed -n 's/^PP_ARGS="\(.*\)"$/\1/p' /etc/conf.d/prism-phone-agent 2>/dev/null) " in *" -no-wifi "*) say "· 管家带着 -no-wifi（手机走有线网）";; esac
   netstat -tln 2>/dev/null | grep -q ':2375 ' && { say "✗ docker 2375 端口开着"; bad=1; } || say "✓ docker 2375 已关"
@@ -206,6 +206,18 @@ if [ "$(cat /proc/version 2>/dev/null)" = "$KMOD_KERNEL" ]; then
   rm -f /opt/prism-phone/kmod/mac80211_hwsim.ko
   rc-service prism-phone-agent kmods >/dev/null 2>&1 || true
   apk info -e hostapd >/dev/null 2>&1 && apk info -e iw >/dev/null 2>&1 && apk info -e dnsmasq >/dev/null 2>&1 && apk info -e iproute2 >/dev/null 2>&1 || { apk add -q iw hostapd dnsmasq iproute2 && say "装 WiFi 用的 iw / hostapd / dnsmasq / iproute2"; }
+elif [ "$(cat /opt/prism-phone/kmod/kernel.txt 2>/dev/null)" = "$(cat /proc/version)" ] && [ -f /opt/prism-phone/kmod/pp_mnt.ko ]; then
+  # 内核换过、之前已经在这块板子上现编好了（auto-build.sh 写的 kernel.txt）
+  rc-service prism-phone-agent kmods >/dev/null 2>&1 || true
+  say "内核模块：用这块板子上现编的（内核和仓库里预编译的不一样）"
+elif [ "$CHECK_ONLY" = 0 ]; then
+  # 内核和预编译的对不上（魔云腾升级了固件）：后台照正在跑的内核现编、核对、装上（几十分钟，要联网）。
+  # 编好之前手机照样能开，但没有 pp_mnt 的保护（容器写 sysrq、停用宿主机的盘挡不住）和去痕迹、虚拟 WiFi
+  if ! pgrep -f 'kmod-auto-build' >/dev/null; then
+    fetch host/kmod/board/auto-build.sh kmod-auto-build.sh
+    nohup sh "$DL/kmod-auto-build.sh" "$REF" > /mmc/pp-build/kmod-auto.log 2>&1 &
+  fi
+  say "⚠ 内核和仓库里预编译的内核模块不一样：已在后台现编（几十分钟），进度看 /mmc/pp-build/kmod-auto.log；编好之前先别开手机"
 fi
 
 # ---------- 6. 生效 ----------

@@ -29,6 +29,9 @@ type System struct {
 	DiskFree float64 `json:"diskFreeGb"`
 }
 
+// kmodDir 板子上自己编的内核模块放这里（install.sh）。
+var kmodDir = "/opt/prism-phone/kmod"
+
 type Report struct {
 	OK     bool   `json:"ok"`
 	Items  []Item `json:"items"`
@@ -62,6 +65,21 @@ func Run(dataDir string, ping func(context.Context) error) Report {
 	add("binder", hasBinderfs || hasBinderDev, binderInfo, "有 binderfs 的内核执行 modprobe binder_linux（host/setup-host.sh）；没 binderfs 的板子（如 RK3588/Q1）用静态 binder 设备 + mknod /dev/binder（host/setup-board.sh 的 binder-nodes）")
 	_, psiErr := os.Stat("/proc/pressure/memory")
 	add("PSI", psiErr == nil, "", "内核参数加 psi=1，否则安卓 lmkd 会反复重启")
+	// 板子上自己编的内核模块（install.sh 装到 /opt/prism-phone/kmod，踩坑 #129 / #134 / #136 / #137 / #140）：
+	// pp_mnt 管着两道保护（容器里的安卓写 sysrq、停用宿主机的盘），没加载时手机一重启可能把板子搞瘫。没装过的机器不查。
+	if _, err := os.Stat(kmodDir); err == nil {
+		var missing []string
+		for _, m := range []string{"pp_mnt", "pp_uts", "wlan"} {
+			if _, err := os.Stat("/sys/module/" + m); err != nil {
+				missing = append(missing, m)
+			}
+		}
+		info := "pp_mnt / pp_uts / wlan"
+		if len(missing) > 0 {
+			info = "没加载：" + strings.Join(missing, " ")
+		}
+		add("内核模块", len(missing) == 0, info, "内核换过的话 install.sh 会在后台现编（看 /mmc/pp-build/kmod-auto.log）；编好前别开手机")
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	dockerErr := ping(ctx)
