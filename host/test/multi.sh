@@ -149,10 +149,18 @@ for p in json.load(sys.stdin):
     sleep 2
   done
   echo "$id ip=$ip connect=[$c] state=$st" >> "$DIR/adb.txt"
+  # 连不上时把网络现场留下来（手机删了就查不到了）：宿主机邻居表 / 路由 / ping，手机里的网卡、地址、路由、adbd
+  if [ "$st" != device ]; then
+    { echo "== 宿主机"; ip neigh show "$ip"; ip route get "$ip"; ping -c2 -W2 "$ip" 2>&1 | tail -2
+      echo "== docker"; docker inspect -f '{{range $k, $v := .NetworkSettings.Networks}}{{$k}} ip={{$v.IPAddress}} mac={{$v.MacAddress}}{{end}} pid={{.State.Pid}}' "pp-$id"
+      pid=$(docker inspect -f '{{.State.Pid}}' "pp-$id"); [ -n "$pid" ] && nsenter -t "$pid" -n sh -c 'ip -br link; ip -br addr; ip route; ip neigh'
+      echo "== 手机里"; pex "pp-$id" sh -c 'getprop init.svc.adbd; getprop service.adb.tcp.port; getprop persist.adb.tcp.port; ip -br addr; ip rule | head -20; ip route show table all | grep -v "^local\|^broadcast" | head -20; ss -ltn 2>/dev/null | head' 2>&1
+    } > "$DIR/$id.net-debug.txt" 2>&1
+  fi
   {
     echo "id=$id"; echo "spec_ver=$ver"; echo "spec_gapps=$g"; echo "spec_cc=$cc"; echo "spec_proxy=$px"; echo "spec_model=${mdl:-}"
     echo "boot_secs=$(grep "^$id " "$DIR/boot.txt" | cut -d' ' -f2)"
-    echo "adb_state=$st"
+    echo "adb_state=$st"; echo "adb_connect=$c"
     echo "exit_ip=$(python3 -c 'import sys,json
 d=json.load(open(sys.argv[1])); d=d.get("proxies",d) if isinstance(d,dict) else d
 for p in d:
@@ -235,7 +243,9 @@ for r in rows:
             if mv.get(k) and r.get(pk) and mv[k].lower() != r[pk].lower(): bad.append(f"{r.get('id')} 机型 {m['id']} 的 {k} 应是 {mv[k]}，手机里是 {r[pk]}")
         if r.get("ro.build.version.release") and int(r.get("spec_ver", "0")) != int(re.sub(r"\D.*", "", r["ro.build.version.release"]) or 0): bad.append(f"{r.get('id')} 要安卓 {r.get('spec_ver')}，手机里是 {r.get('ro.build.version.release')}")
     cc, i = r.get("spec_cc", ""), r.get("id", "")
-    if r.get("adb_state") != "device": bad.append(f"{i} ADB 没连上（{r.get('adb_state','')}）")
+    if r.get("adb_state") != "device":
+        bad.append(f"{i} ADB 没连上（{r.get('adb_state','')}；连接：{r.get('adb_connect','')[:80]}），网络现场在 {i}.net-debug.txt")
+        continue  # 值都没拉到，后面的检查没意义
     if cc in cc_tz and not r.get("persist.sys.timezone", "").startswith(cc_tz[cc]): bad.append(f"{i} 代理 {cc} 但时区 {r.get('persist.sys.timezone')}")
     if cc not in ("direct", "") and r.get("gsm.sim.operator.iso-country", "").upper() != cc: bad.append(f"{i} 代理 {cc} 但 SIM 国家 {r.get('gsm.sim.operator.iso-country')}")
     if cc not in ("direct", "") and not r.get("gsm.operator.alpha"): bad.append(f"{i} 没运营商")
@@ -250,7 +260,7 @@ for r in rows:
     if re.search(r"eng\.|test-keys|userdebug|redroid|frank", fpv): bad.append(f"{i} 指纹里有工程版字样：{r.get('ro.build.fingerprint','')[:110]}")
     if r.get("ro.debuggable") != "0" or r.get("ro.build.type") != "user": bad.append(f"{i} 构建类型 {r.get('ro.build.type')} debuggable={r.get('ro.debuggable')}")
     if "cannot run as root" not in r.get("adb_root", "") : bad.append(f"{i} adb root 结果：{r.get('adb_root','')[:80]}")
-    if r.get("spec_gapps") == "true" and not (r.get("gms", "0").isdigit() and int(r.get("gms")) >= 1): bad.append(f"{i} 谷歌版没有 GMS")
+    if r.get("spec_gapps") == "true" and not (r.get("gms", "0").isdigit() and int(r.get("gms", "0")) >= 1): bad.append(f"{i} 谷歌版没有 GMS")
 # 没开起来的（开机请求被拒、开机超时）：原因从 run.log 里找
 booted = set(l.split()[0] for l in open(os.path.join(d, "boot.txt")) if l.strip()) if os.path.exists(os.path.join(d, "boot.txt")) else None
 runlog = open(os.path.join(d, "run.log"), errors="replace").read() if os.path.exists(os.path.join(d, "run.log")) else ""
