@@ -100,7 +100,7 @@ fi
 # ---- ADB 拉值（shell 身份，和用户电脑上 adb shell 看到的一样） ----
 PULL='
 for k in ro.product.model ro.product.brand ro.product.manufacturer ro.product.device ro.product.name \
-  ro.build.version.release ro.build.version.sdk ro.build.fingerprint ro.build.type ro.build.tags ro.serialno \
+  ro.build.version.release ro.build.version.sdk ro.build.fingerprint ro.build.version.incremental ro.vendor.build.fingerprint ro.build.type ro.build.tags ro.serialno \
   ro.hardware ro.board.platform ro.kernel.qemu ro.boot.qemu ro.debuggable ro.secure ro.adb.secure \
   persist.sys.timezone persist.sys.locale ro.product.locale gsm.sim.state gsm.operator.alpha gsm.sim.operator.alpha \
   gsm.operator.iso-country gsm.sim.operator.iso-country gsm.network.type net.dns1; do echo "$k=$(getprop $k)"; done
@@ -245,6 +245,9 @@ for r in rows:
     if r.get("tellprops", "0") not in ("0", ""): bad.append(f"{i} getprop 里有 {r.get('tellprops')} 条模拟器/容器字样：{r.get('tellprops_list','')[:120]}")
     if r.get("mount_tells", "0") not in ("0", ""): bad.append(f"{i} /proc/mounts 有 {r.get('mount_tells')} 条容器字样")
     if r.get("dev_tells", "0") not in ("0", ""): bad.append(f"{i} /dev 有 {r.get('dev_tells')} 个模拟器设备名")
+    # 指纹 / 版本号里的工程编译字样（机型档案没这个安卓版本的真指纹时，兜底拼出来的会带 eng.*，2026-11-23）
+    fpv = " ".join(r.get(k, "") for k in ("ro.build.fingerprint", "ro.vendor.build.fingerprint", "ro.build.version.incremental"))
+    if re.search(r"eng\.|test-keys|userdebug|redroid|frank", fpv): bad.append(f"{i} 指纹里有工程版字样：{r.get('ro.build.fingerprint','')[:110]}")
     if r.get("ro.debuggable") != "0" or r.get("ro.build.type") != "user": bad.append(f"{i} 构建类型 {r.get('ro.build.type')} debuggable={r.get('ro.debuggable')}")
     if "cannot run as root" not in r.get("adb_root", "") : bad.append(f"{i} adb root 结果：{r.get('adb_root','')[:80]}")
     if r.get("spec_gapps") == "true" and not (r.get("gms", "0").isdigit() and int(r.get("gms")) >= 1): bad.append(f"{i} 谷歌版没有 GMS")
