@@ -6,7 +6,8 @@
 #   4) 删净（KEEP=1 留着）。在板子上 root 跑。
 #
 # 用法：sh host/test/multi.sh [规格 ...]
-#   规格 = <版本>[g]:<国家代码 或 direct>，g = 谷歌版。不给就用默认 8 台：
+#   规格 = <版本>[g]:<国家代码 或 direct>[@机型]，g = 谷歌版。不写机型就在官方系统有这个版本的机型里轮流挑
+#   （POCO X4 GT 官方只到安卓 14，配 15/16 面板会提示「没有这个版本」，测试也别这么配）。不给就用默认 8 台：
 #   14:JP 14g:HK 15:SG 15g:US 16:TW 16g:KR 16:JP 15:direct
 # 结果：/mmc/pp-build/multi-<时间>/（每台一个 .kv 原始值 + report.txt 汇总）
 set -u
@@ -41,17 +42,27 @@ for p in d:
     if c.get("ok") and (c.get("country") or c.get("countryCode"))==sys.argv[2]: print(p["id"]); break' "$DIR/proxies.json" "$1"
 }
 
+curl -s -H "$H" "$API/models" > "$DIR/models.json"
+# 第 n 台、安卓 ver → 官方系统有这个版本的机型（轮流挑，多测几款）
+model_of(){ python3 -c 'import sys,json
+d=json.load(open(sys.argv[1])); d=d.get("models",d) if isinstance(d,dict) else d
+ok=[m["id"] for m in d if int(sys.argv[2]) in (m.get("androidVersions") or [])]
+print(ok[int(sys.argv[3]) % len(ok)] if ok else "")' "$DIR/models.json" "$1" "$2"; }
+
 if [ -z "${REUSE:-}" ]; then
 # ---- 建 ----
 : > "$DIR/phones.txt"
 n=0
 for s in $SPECS; do
-  n=$((n+1)); ver=${s%%:*}; cc=${s#*:}; g=false
+  n=$((n+1)); ver=${s%%:*}; cc=${s#*:}; g=false; mdl=
+  case $cc in *@*) mdl=${cc#*@}; cc=${cc%%@*} ;; esac
   case $ver in *g) g=true; ver=${ver%g} ;; esac
+  [ -n "$mdl" ] || mdl=$(model_of "$ver" "$(( n + ${MODEL_OFFSET:-$(date +%M)} ))")
+  [ -n "$mdl" ] || { log "没有官方系统是安卓 $ver 的机型，跳过 $s"; continue; }
   px=$(proxy_of "$cc"); [ -n "$px" ] || { log "没有 $cc 的可用代理，跳过 $s"; continue; }
-  body="{\"name\":\"multi-$n-$ver$( [ $g = true ] && echo g)-$cc\",\"modelId\":\"poco-x4-gt\",\"androidVersion\":$ver,\"proxyId\":\"$px\",\"gapps\":$g}"
+  body="{\"name\":\"multi-$n-$ver$( [ $g = true ] && echo g)-$cc\",\"modelId\":\"$mdl\",\"androidVersion\":$ver,\"proxyId\":\"$px\",\"gapps\":$g}"
   id=$(curl -s -m20 -X POST -H "$H" -H 'Content-Type: application/json' -d "$body" "$API/phones" | python3 -c 'import sys,json;print(json.load(sys.stdin).get("id",""))' 2>/dev/null)
-  [ -n "$id" ] && echo "$id $ver $g $cc $px" >> "$DIR/phones.txt" || log "建失败：$s"
+  [ -n "$id" ] && echo "$id $ver $g $cc $px $mdl" >> "$DIR/phones.txt" || log "建失败：$s"
 done
 log "建了 $(wc -l < "$DIR/phones.txt") 台：$SPECS"
 
@@ -117,7 +128,7 @@ echo "tz_now=$(date +%Z%z)"
 echo "ping=$(ping -c1 -W3 1.1.1.1 >/dev/null 2>&1 && echo ok || echo fail)"
 '
 : > "$DIR/adb.txt"; rm -f "$DIR"/*.kv "$DIR/stream.txt"
-while read -r id ver g cc px; do
+while read -r id ver g cc px mdl; do
   [ "$(docker inspect -f '{{.State.Running}}' "pp-$id" 2>/dev/null)" = true ] || { echo "$id 没开起来" >> "$DIR/adb.txt"; continue; }
   ip=$(curl -s -H "$H" "$API/phones" | python3 -c 'import sys,json
 for p in json.load(sys.stdin):
@@ -139,7 +150,7 @@ for p in json.load(sys.stdin):
   done
   echo "$id ip=$ip connect=[$c] state=$st" >> "$DIR/adb.txt"
   {
-    echo "id=$id"; echo "spec_ver=$ver"; echo "spec_gapps=$g"; echo "spec_cc=$cc"; echo "spec_proxy=$px"
+    echo "id=$id"; echo "spec_ver=$ver"; echo "spec_gapps=$g"; echo "spec_cc=$cc"; echo "spec_proxy=$px"; echo "spec_model=${mdl:-}"
     echo "boot_secs=$(grep "^$id " "$DIR/boot.txt" | cut -d' ' -f2)"
     echo "adb_state=$st"
     echo "exit_ip=$(python3 -c 'import sys,json
@@ -196,11 +207,11 @@ for f in sorted(glob.glob(os.path.join(d, "*.kv"))):
 n = len(rows)
 cc_tz = {"JP": "Asia/Tokyo", "HK": "Asia/Hong_Kong", "SG": "Asia/Singapore", "TW": "Asia/Taipei", "KR": "Asia/Seoul", "US": "America/"}
 print(f"===== 多开 {n} 台 · ADB 拉值 =====")
-fmt = "{:<13} {:>3} {:<4} {:<3} {:>4}s {:<7} {:<20} {:<12} {:<6} {:<15} {:<4} {:<3}"
-print(fmt.format("id", "ver", "谷歌", "国", "开机", "adb", "时区", "运营商", "网络", "IMEI", "蓝牙", "痕迹"))
+fmt = "{:<13} {:>3} {:<4} {:<3} {:<11} {:>4}s {:<7} {:<20} {:<12} {:<6} {:<15} {:<4} {:<3}"
+print(fmt.format("id", "ver", "谷歌", "国", "机型", "开机", "adb", "时区", "运营商", "网络", "IMEI", "蓝牙", "痕迹"))
 for r in rows:
     print(fmt.format(r.get("id", ""), r.get("ro.build.version.release", "?"), "是" if r.get("spec_gapps") == "true" else "", r.get("spec_cc", ""),
-                     r.get("boot_secs", "?"), r.get("adb_state", "")[:7], r.get("persist.sys.timezone", "")[:20], r.get("gsm.operator.alpha", "")[:12],
+                     r.get("ro.product.model", "")[:11], r.get("boot_secs", "?"), r.get("adb_state", "")[:7], r.get("persist.sys.timezone", "")[:20], r.get("gsm.operator.alpha", "")[:12],
                      r.get("gsm.network.type", "")[:6], r.get("imei", "")[:15], r.get("bt_state", ""), r.get("tellprops", "?")))
 print()
 def uniq(k):
@@ -208,8 +219,20 @@ def uniq(k):
     return f"{len(set(v))}/{len(v)}" + ("" if len(v) == n else f"（{n-len(v)} 台读不到）")
 print("唯一性：android_id " + uniq("android_id") + "  序列号 " + uniq("ro.serialno") + "  IMEI " + uniq("imei") +
       "  蓝牙MAC " + uniq("bt_addr") + "  WiFi MAC " + uniq("wifi_mac") + "  boot_id " + uniq("boot_id") + "  开机时长 " + uniq("uptime"))
+import json
+models = {}
+try:
+    md = json.load(open(os.path.join(d, "models.json"))); md = md.get("models", md) if isinstance(md, dict) else md
+    models = {m["id"]: m for m in md}
+except Exception: pass
 bad = []
 for r in rows:
+    m = models.get(r.get("spec_model", ""))
+    if m:
+        mv = m.get("values") or {}
+        for k, pk in (("brand", "ro.product.brand"), ("model", "ro.product.model"), ("device", "ro.product.device")):
+            if mv.get(k) and r.get(pk) and mv[k].lower() != r[pk].lower(): bad.append(f"{r.get('id')} 机型 {m['id']} 的 {k} 应是 {mv[k]}，手机里是 {r[pk]}")
+        if r.get("ro.build.version.release") and int(r.get("spec_ver", "0")) != int(re.sub(r"\D.*", "", r["ro.build.version.release"]) or 0): bad.append(f"{r.get('id')} 要安卓 {r.get('spec_ver')}，手机里是 {r.get('ro.build.version.release')}")
     cc, i = r.get("spec_cc", ""), r.get("id", "")
     if r.get("adb_state") != "device": bad.append(f"{i} ADB 没连上（{r.get('adb_state','')}）")
     if cc in cc_tz and not r.get("persist.sys.timezone", "").startswith(cc_tz[cc]): bad.append(f"{i} 代理 {cc} 但时区 {r.get('persist.sys.timezone')}")
