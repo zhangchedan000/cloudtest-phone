@@ -41,6 +41,9 @@ type Model struct {
 	Market          string         `json:"market"`
 	Values          map[string]any `json:"values"`
 	AndroidVersions []int          `json:"androidVersions"`
+	// ImeiTacs 这款机型真实的 IMEI 前 8 位（型号核准码 TAC），每台手机固定挑一个。没有就随机 35xxxxxx——
+	// 对不上任何真机型，查 IMEI 归属就露馅（2026-11-23；数据取自魔云腾的 TAC 库，按型号代码精确匹配）。
+	ImeiTacs []string `json:"imeiTacs"`
 	// Fingerprints 按安卓版本（"14"/"15"）存的真实 stock 指纹（从设备树/固件抠）。
 	// 必须和手机实际跑的安卓版本一致，否则指纹里的 release 和 ro.build.version.release 对不上。
 	Fingerprints map[string]string `json:"fingerprints"`

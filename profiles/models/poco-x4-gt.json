@@ -51,6 +51,10 @@
     13,
     14
   ],
+  "imeiTacs": [
+    "86143206",
+    "86150806"
+  ],
   "fingerprints": {
     "14": "POCO/xaga_global/xaga:14/UP1A.231005.007/OS2.0.3.0.ULOMIXM:user/release-keys"
   },

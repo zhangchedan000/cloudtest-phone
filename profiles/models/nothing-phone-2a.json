@@ -29,6 +29,10 @@
     15,
     16
   ],
+  "imeiTacs": [
+    "35070641",
+    "35448470"
+  ],
   "fingerprints": {
     "16": "Nothing/Pacman/Pacman:16/BP2A.250605.031.A3/2511282240:user/release-keys",
     "15": "Nothing/Pacman/Pacman:15/AP3A.240905.015.A2/2410312105:user/release-keys",

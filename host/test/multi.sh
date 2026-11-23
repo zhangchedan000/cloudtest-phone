@@ -244,6 +244,8 @@ for r in rows:
         mv = m.get("values") or {}
         for k, pk in (("brand", "ro.product.brand"), ("model", "ro.product.model"), ("device", "ro.product.device")):
             if mv.get(k) and r.get(pk) and mv[k].lower() != r[pk].lower(): bad.append(f"{r.get('id')} 机型 {m['id']} 的 {k} 应是 {mv[k]}，手机里是 {r[pk]}")
+        tacs = m.get("imeiTacs") or []
+        if tacs and r.get("imei", "").isdigit() and r["imei"][:8] not in tacs: bad.append(f"{r.get('id')} IMEI 前 8 位 {r['imei'][:8]} 不是机型 {m['id']} 的真实 TAC（{'/'.join(tacs)}）")
         if r.get("ro.build.version.release") and int(r.get("spec_ver", "0")) != int(re.sub(r"\D.*", "", r["ro.build.version.release"]) or 0): bad.append(f"{r.get('id')} 要安卓 {r.get('spec_ver')}，手机里是 {r.get('ro.build.version.release')}")
     cc, i = r.get("spec_cc", ""), r.get("id", "")
     if r.get("adb_state") != "device":

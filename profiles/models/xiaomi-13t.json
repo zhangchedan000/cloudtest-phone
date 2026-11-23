@@ -52,6 +52,13 @@
     15,
     16
   ],
+  "imeiTacs": [
+    "86213306",
+    "86366006",
+    "86482506",
+    "86494806",
+    "86822307"
+  ],
   "fingerprints": {
     "15": "Xiaomi/aristotle_global/aristotle:15/AP3A.240905.015.A2/OS2.0.214.0.VMFMIXM:user/release-keys",
     "14": "Xiaomi/aristotle_global/aristotle:14/UP1A.230905.011/V816.0.2.0.UMFMIXM:user/release-keys"

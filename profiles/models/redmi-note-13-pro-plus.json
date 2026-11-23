@@ -30,6 +30,16 @@
     15,
     16
   ],
+  "imeiTacs": [
+    "86152007",
+    "86208607",
+    "86440507",
+    "86441107",
+    "86459506",
+    "86730207",
+    "86845106",
+    "86874107"
+  ],
   "fingerprints": {
     "16": "Redmi/zircon_global/zircon:16/BP2A.250605.031.A3/OS3.0.303.0.WNOMIXM:user/release-keys",
     "15": "Redmi/zircon_global/zircon:15/AP3A.240905.015.A2/OS2.0.206.0.VNOMIXM:user/release-keys",

@@ -48,7 +48,7 @@ func (s *Service) simSpec(p store.Phone, st store.State, byKey map[string]any) *
 	assign := func(ph store.Phone, keys map[string]any) modem.Spec {
 		var sp modem.Spec
 		for try := 0; try < 20; try++ {
-			sp = simPick(ph, st, keys, try)
+			sp = simPick(ph, st, keys, try, s.modelTacs(ph.ModelID))
 			if !taken[sp.IMEI] && (sp.Absent || (!taken[sp.IMSI] && !taken[sp.ICCID])) {
 				break
 			}
@@ -70,8 +70,17 @@ func (s *Service) simSpec(p store.Phone, st store.State, byKey map[string]any) *
 	return &spec
 }
 
-// simPick 第 try 次生成（try=0 就是原来的号，老手机号码不变）。
-func simPick(p store.Phone, st store.State, byKey map[string]any, try int) modem.Spec {
+// modelTacs 机型档案里的真实 TAC（没有机型 / 没填返回 nil）。
+func (s *Service) modelTacs(modelID string) []string {
+	if m := s.model(modelID); m != nil {
+		return m.ImeiTacs
+	}
+	return nil
+}
+
+// simPick 第 try 次生成（try=0 就是原来的号，老手机号码不变）。tacs 是机型的真实 TAC：按 androidId 固定挑一个
+// （不随 try 变：换种子避撞号时机型码不动，只换后 6 位）。
+func simPick(p store.Phone, st store.State, byKey map[string]any, try int, tacs []string) modem.Spec {
 	country, _ := byKey["simCountry"].(string)
 	if country == "" {
 		if px := st.Proxy(p.ProxyID); px != nil && px.Check != nil {
@@ -88,6 +97,11 @@ func simPick(p store.Phone, st store.State, byKey map[string]any, try int) modem
 		fmt.Fprintf(h, "#%d", try)
 	}
 	tac, _ := byKey["imeiTac"].(string)
+	if len(tac) != 8 && len(tacs) > 0 {
+		th := fnv.New64a()
+		th.Write([]byte("tac:" + seedSrc))
+		tac = tacs[th.Sum64()%uint64(len(tacs))]
+	}
 	return modem.Pick(country, tac, int64(h.Sum64()>>1))
 }
 
