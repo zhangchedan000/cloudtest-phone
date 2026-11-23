@@ -128,10 +128,13 @@ for p in json.load(sys.stdin):
   sleep 2
   # adb 会读标准输入：不重定向的话会把 while 循环要读的列表吃掉，只测到第一台
   # 刚打开 USB 调试时 adbd 要重启，开机慢的那台（几台一起开、负载高）2 秒内可能还没起来：最多试 20 秒
+  # 上一轮的手机可能用过同一个 IP：adb 还留着那条（已离线的）旧连接，connect 只回「already connected」
+  adb disconnect "$ip:5555" </dev/null >/dev/null 2>&1
   for _try in 1 2 3 4 5 6 7 8 9 10; do
     c=$(adb connect "$ip:5555" </dev/null 2>&1 | tr '\n' ' ')
     st=$(adb -s "$ip:5555" get-state </dev/null 2>&1)
     [ "$st" = device ] && break
+    adb disconnect "$ip:5555" </dev/null >/dev/null 2>&1
     sleep 2
   done
   echo "$id ip=$ip connect=[$c] state=$st" >> "$DIR/adb.txt"
@@ -157,18 +160,20 @@ while read -r id _; do
   # 画面要动起来才像真在用（静止画面编码几乎不耗 CPU）：每 2 秒左右滑一下桌面
   pex "pp-$id" sh -c 'for i in $(seq 1 14); do input swipe 900 1300 150 1300 250; sleep 1; input swipe 150 1300 900 1300 250; sleep 1; done' </dev/null >/dev/null 2>&1 &
 done < "$DIR/phones.txt"
-sleep 15
+# 每台实时画面用的编码器：c2.rk.* = 硬件（#133），c2.android.* = 软件。开画面后马上查：
+# 谷歌版日志多，logcat 缓冲只有 256KB，等 30 秒画面放完再查，分配编码器那行早被冲掉了（2026-11-23）
+sleep 5
+while read -r id _; do
+  enc=$(pex "pp-$id" sh -c 'logcat -d | grep -o "allocate(c2[.a-z0-9]*encoder)" | tail -1' </dev/null 2>/dev/null)
+  echo "$id ${enc:-?}"
+done < "$DIR/phones.txt" > "$DIR/encoder.txt"
+sleep 10
 {
   echo "== 同时看画面时（第 15 秒）"
   echo "load: $(cut -d' ' -f1-3 /proc/loadavg)  温度: $(( $(cat /sys/class/thermal/thermal_zone0/temp)/1000 ))℃"
   top -bn1 | head -5
 } > "$DIR/host-stream.txt"
 wait
-# 每台实时画面用的编码器：c2.rk.* = 硬件（#133），c2.android.* = 软件
-while read -r id _; do
-  enc=$(pex "pp-$id" sh -c 'logcat -d | grep -o "allocate(c2[.a-z0-9]*encoder)" | tail -1' </dev/null 2>/dev/null)
-  echo "$id ${enc:-?}"
-done < "$DIR/phones.txt" > "$DIR/encoder.txt"
 log "画面测试完成"
 
 # ---- 汇总 ----
