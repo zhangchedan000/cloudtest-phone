@@ -130,3 +130,7 @@ allow netd kernel tcp_socket read,write,getattr,getopt,setopt
 allow netd kernel udp_socket read,write,getattr,getopt,setopt
 # 传感器 HAL 和 system_server 之间的事件队列（memfd，system_server_tmpfs）：被拒时传感器服务反复崩溃，App 偶尔看到 0 个传感器
 allow hal_sensors_default system_server_tmpfs file read,write,map,getattr
+# 管家在手机里建的伪终端（蓝牙串口 /dev/ttyS1、传感器 /dev/hwmsensor）：小助手开机补标签时它们可能还没建好，
+# 就留着 devpts 标签 → 蓝牙 HAL 打不开串口、初始化失败崩两次后蓝牙一直关着（2026-11-23 验收实测，偶发）
+allow hal_bluetooth_default devpts chr_file read,write,open,ioctl,getattr
+allow hal_sensors_default devpts chr_file read,write,open,ioctl,getattr
