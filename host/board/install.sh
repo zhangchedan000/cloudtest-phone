@@ -141,6 +141,12 @@ if [ ! -f "$CONF" ]; then
   fi
 fi
 chmod 600 "$CONF"
+# 内存超卖 3 → 3.5（2026-11-23）：12GB 的机型（小米 13T 一台记 11.2G）混着开时 3 倍只够 6~7 台；实测 7 台全开实际只用 8~10G、
+# 还剩 13G+，开机前「实际剩 ≥3G」的保险不变。只改还是老默认值 3 的，自己改过的不动
+conf_changed=0
+if grep -q -- '-mem-overcommit 3 ' "$CONF"; then
+  sed -i 's/-mem-overcommit 3 /-mem-overcommit 3.5 /' "$CONF"; conf_changed=1; say "内存超卖倍数 3 → 3.5"
+fi
 
 # ---------- 5. 替换有变化的文件 ----------
 changed=""
@@ -239,7 +245,7 @@ if has /etc/conf.d/docker; then
   else say "⚠ docker 配置改了，但有 $running 台手机在跑，没重启 docker；手机都关了以后执行 rc-service docker restart"; fi
 fi
 has /etc/init.d/prism-phone-mihomo && rc-service prism-phone-mihomo restart
-if [ "$agent_changed" = 1 ] || has /etc/init.d/prism-phone-agent; then
+if [ "$agent_changed" = 1 ] || [ "$conf_changed" = 1 ] || has /etc/init.d/prism-phone-agent; then
   rc-service prism-phone-agent restart >/dev/null 2>&1 || rc-service prism-phone-agent start
 fi
 rc-service prism-phone-agent status >/dev/null 2>&1 || rc-service prism-phone-agent start
