@@ -20,10 +20,12 @@ B=${PP_BUILD:-/mmc/pp-build}
 log(){ echo "$(date +%T) [selinux] $*"; }
 die(){ echo "[selinux] 错误：$*" >&2; exit 1; }
 SEL_VER=20
-# 给镜像每一层打标签：在加载了规则（$1/policy）的临时容器里，setfiles 按 $1/file_contexts 打 $2 这个镜像的所有层
+# 给镜像每一层打标签：在加载了规则（$1/policy）的临时容器里，setfiles 按 $1/file_contexts 打 $2 这个镜像的所有层；
+# $3 = top 只打最上面那层（增量补丁用：下面的层和别的镜像共用，不碰）
 label_layers() {
   lw=$1; li=$2
-  docker image inspect -f '{{.GraphDriver.Data.LowerDir}}:{{.GraphDriver.Data.UpperDir}}' "$li" | tr ':' '\n' | grep -v '^$' > "$lw/layers"
+  if [ "${3:-}" = top ]; then docker image inspect -f '{{.GraphDriver.Data.UpperDir}}' "$li" > "$lw/layers"
+  else docker image inspect -f '{{.GraphDriver.Data.LowerDir}}:{{.GraphDriver.Data.UpperDir}}' "$li" | tr ':' '\n' | grep -v '^$' > "$lw/layers"; fi
   DR=$(docker info -f '{{.DockerRootDir}}')
   docker run --rm --privileged --platform linux/arm64 -v "$lw:/w" -v "$DR:$DR" -v "$B/kmod/aptcache:/aptc" debian:12-slim bash -ec '
     apt-get update -qq >/dev/null 2>&1; apt-get install -y -qq --no-install-recommends -o Dir::Cache::Archives=/aptc policycoreutils python3 >/dev/null 2>&1
@@ -75,7 +77,7 @@ c2_seccomp_fix() {
     printf 'FROM %s\nCOPY ctx/ /\n' "$1" > "$PW/Dockerfile"
     docker build -q -t "$1" "$PW" >/dev/null
     label_inputs "$1" "$PW"
-    label_layers "$PW" "$1"
+    label_layers "$PW" "$1" top
     up=$(docker image inspect -f '{{.GraphDriver.Data.UpperDir}}' "$1")
     python3 -c "import os,sys; print(os.getxattr(sys.argv[1], 'security.selinux').decode().strip(chr(0)))" "$up$C2P" >/dev/null 2>&1 || die "白名单补丁那层没打上标签"
     log "✓ $1：硬件编解码的 seccomp 白名单补了 sysinfo"
@@ -168,8 +170,10 @@ for kv in "/dev/mali0 u:object_r:gpu_device:s0" "/dev/mpp_service u:object_r:vid
   # 库落到 system_file，vendor 程序（boringssl 自检等）读不了 → 开机自检失败重启
   t=${kv##*:object_r:}; t=${t%%:*}
   grep -qa "$t" "$W/x/policy" || continue
-  # 硬件编解码服务（host/image/add-hwcodec.sh 从 dobox 移植的）不在就不加
-  case $p in /vendor/bin/hw/*) [ -f "$W/x/has_c2" ] || continue ;; esac
+  # 硬件编解码服务（host/image/add-hwcodec.sh 从 dobox 移植的）不在就不加。只管这一条：以前写成 /vendor/bin/hw/* 全算，
+  # 没加硬件编码的镜像连温度 / 锁屏密码两条也跳过了；它和正式镜像共用底层，打标签时把共用层改回 vendor_file，
+  # 正式镜像的这两个 HAL 起不来、安卓开不了机（2026-11-23 实测，踩坑 #144）
+  case $p in *media\\.c2*) [ -f "$W/x/has_c2" ] || continue ;; esac
   grep -q "^$p[[:space:]]" "$W/x/file_contexts" || { echo "$kv" >> "$O/vendor/etc/selinux/vendor_file_contexts"; echo "$kv" >> "$W/x/file_contexts"; log "设备标签：$kv"; }
 done
 # 重新签过名的镜像（resign）：网络组件、蓝牙、媒体存储这几个原来各有专用签名（seinfo network_stack / bluetooth / media），
