@@ -42,6 +42,8 @@ export interface DeviceModel {
   market: string
   values: Record<string, unknown>
   androidVersions: number[]
+  /** 按安卓版本（"14"/"15"/"16"）存的真机系统指纹；没有的版本开机时只能用镜像的编译号拼，带 eng.* 字样。 */
+  fingerprints?: Record<string, string>
 }
 
 export type PhoneStatus = 'running' | 'stopped' | 'starting' | 'error'

@@ -27,6 +27,15 @@ describe('一致性检查', () => {
     expect(issues.find((i) => i.code === 'gpu-mismatch')?.level).toBe('error')
   })
 
+  it('机型库没有这个安卓版本的真机指纹要提醒，有的不提醒', () => {
+    const base = { ...phones[0], modelId: 'xiaomi-13t' }
+    const run = (androidVersion: number, fields = base.fields) =>
+      checkPhone({ phone: { ...base, androidVersion, fields }, model: model('xiaomi-13t'), proxy: proxy('p-us-1'), host: host('rk3588-01') }).map((i) => i.code)
+    expect(run(16)).toContain('no-real-fingerprint')
+    expect(run(15)).not.toContain('no-real-fingerprint')
+    expect(run(16, { ...base.fields, fingerprint: { mode: 'manual', value: 'Xiaomi/aristotle_global/aristotle:16/X/Y:user/release-keys' } })).not.toContain('no-real-fingerprint')
+  })
+
   it('Mali-G610 机型放在 RK3588 上不报显卡问题', () => {
     expect(codes(phones[0], { host: host('rk3588-01') })).not.toContain('gpu-mismatch')
   })

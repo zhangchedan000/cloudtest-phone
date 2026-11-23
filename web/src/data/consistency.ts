@@ -57,6 +57,13 @@ export function checkPhone({ phone, model, proxy, host, others = [] }: CheckInpu
     if (!model.androidVersions.includes(phone.androidVersion)) {
       issues.push({ level: 'warning', code: 'android-version', fields: ['androidVersion'], message: `这款机型官方系统是 Android ${model.androidVersions.join('/')}，没有 Android ${phone.androidVersion}。` })
     }
+    // 机型库里没有这个安卓版本的真机指纹（也没手动填 / 导入指纹）：系统指纹只能用镜像的编译号拼，带 eng.* 工程版字样（2026-11-23）
+    const manualFp = phone.fields.fingerprint
+    const hasManualFp = manualFp?.mode === 'manual' && String(manualFp.value ?? '').trim() !== ''
+    if (model.androidVersions.includes(phone.androidVersion) && model.fingerprints && !model.fingerprints[String(phone.androidVersion)] && !hasManualFp) {
+      const have = Object.keys(model.fingerprints).sort().join('/')
+      issues.push({ level: 'warning', code: 'no-real-fingerprint', fields: ['androidVersion'], message: `机型库里还没有这款机型 Android ${phone.androidVersion} 的真机指纹，系统指纹会带工程版字样（eng.*）。建议用 Android ${have}，或在指纹一栏导入真机的。` })
+    }
     if (!model.verified) {
       issues.push({ level: 'info', code: 'model-unverified', message: '这个机型档案还没用真机/固件核实，部分数值可能不准。' })
     }
