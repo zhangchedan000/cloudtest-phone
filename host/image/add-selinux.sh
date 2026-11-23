@@ -56,7 +56,7 @@ if [ "$cur" = "$SEL_VER" ]; then
   # 手机开强制模式会全被拦。按镜像自己的规则和 file_contexts 把每一层重打一遍（2026-11-23 查实）
   log "$img 是做好的（第 $SEL_VER 版），但导入时丢了文件标签：重打"
   RW=$(mktemp -d "$B/selrel.XXXX")
-  rcid=$(docker create "$img")
+  rcid=$(docker create "$img" /system/bin/sh)   # 不启动，只为拷文件；带个命令，没有启动命令的镜像也能建
   docker cp "$rcid:/vendor/etc/selinux/precompiled_sepolicy" "$RW/policy" >/dev/null || { docker rm "$rcid" >/dev/null; die "镜像里没有 precompiled_sepolicy"; }
   : > "$RW/file_contexts"
   for f in /system/etc/selinux/plat_file_contexts /system_ext/etc/selinux/system_ext_file_contexts \
