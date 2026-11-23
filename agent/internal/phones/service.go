@@ -223,7 +223,7 @@ func (s *Service) reserveStart(ctx context.Context, st store.State, id string, m
 	slot, binds := s.assignBinderSlot(ctx, st, id, pendingSlots...)
 	// 正在开机的（容器可能已经在跑了）按 pendingMem 算一次，checkMemoryBudget 里不能再按「运行中」算第二次：
 	// 以前几台一起开机时重复计算，8 台刚好装得下却把最后一台拦下（2026-11-23 多开实测）
-	if err := s.checkMemoryBudget(ctx, id, memLimit+pendingMem, pendingIDs); err != nil {
+	if err := s.checkMemoryBudget(ctx, id, memLimit, pendingMem, pendingIDs); err != nil {
 		return 0, nil, nil, err
 	}
 	s.starting[id] = startReservation{slot: slot, memMB: memLimit}

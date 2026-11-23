@@ -63,7 +63,8 @@ func hostMemMB() int64 {
 
 // checkMemoryBudget 开机前把关：正在运行的手机内存上限之和 + 这台，不能超过宿主机内存 - 预留。
 // skip：正在开机、已经算进 mine 里的手机（不再按运行中重复算）。
-func (s *Service) checkMemoryBudget(ctx context.Context, id string, mine int64, skip map[string]bool) error {
+// pending = 同时正在开机的其他手机（skip 里那些）的上限之和，单独列出来，报错时不和「这台」混在一起。
+func (s *Service) checkMemoryBudget(ctx context.Context, id string, mine, pending int64, skip map[string]bool) error {
 	host := s.hostMB()
 	if host <= 0 || !s.cfg.MemFollowModel {
 		return nil
@@ -85,13 +86,17 @@ func (s *Service) checkMemoryBudget(ctx context.Context, id string, mine int64, 
 		factor = 1
 	}
 	budget := int64(float64(host-hostReserveMB) * factor)
-	if used+mine > budget {
+	if used+pending+mine > budget {
 		extra := ""
 		if factor > 1 {
 			extra = fmt.Sprintf("（已按 %.1f 倍超卖算）", factor)
 		}
-		return fmt.Errorf("%w：内存不够——正在运行的手机上限加起来 %.1f GB，这台要 %.1f GB，这台机器能给手机用的一共 %.1f GB%s（总 %.1f GB，留 %.1f GB 给系统）。先关掉一台再开",
-			ErrBlocked, float64(used)/1024, float64(mine)/1024, float64(budget)/1024, extra, float64(host)/1024, float64(hostReserveMB)/1024)
+		starting := ""
+		if pending > 0 {
+			starting = fmt.Sprintf("，同时正在开机的 %d 台 %.1f GB", len(skip), float64(pending)/1024)
+		}
+		return fmt.Errorf("%w：内存不够——正在运行的手机上限加起来 %.1f GB%s，这台要 %.1f GB，这台机器能给手机用的一共 %.1f GB%s（总 %.1f GB，留 %.1f GB 给系统）。先关掉一台再开",
+			ErrBlocked, float64(used)/1024, starting, float64(mine)/1024, float64(budget)/1024, extra, float64(host)/1024, float64(hostReserveMB)/1024)
 	}
 	// 超卖时上限加起来可以超过物理内存（手机平时只用 1~2GB），所以还要看机器实际还剩多少：
 	// 新开一台至少要留出 minFreeForStartMB，不够就不开，免得大家一起被内核杀进程。

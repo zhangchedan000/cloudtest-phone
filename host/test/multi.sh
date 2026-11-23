@@ -175,6 +175,7 @@ done < "$DIR/phones.txt"
 # 谷歌版日志多，logcat 缓冲只有 256KB，等 30 秒画面放完再查，分配编码器那行早被冲掉了（2026-11-23）
 sleep 5
 while read -r id _; do
+  [ "$(docker inspect -f '{{.State.Running}}' "pp-$id" 2>/dev/null)" = true ] || continue   # 没开起来的在汇总里单独报
   enc=$(pex "pp-$id" sh -c 'logcat -d | grep -o "allocate(c2[.a-z0-9]*encoder)" | tail -1' </dev/null 2>/dev/null)
   echo "$id ${enc:-?}"
   # 落到软件编码时把硬件编码器为什么没用上留下来（mpp / c2 报错、SELinux 拒绝）
@@ -247,6 +248,15 @@ for r in rows:
     if r.get("ro.debuggable") != "0" or r.get("ro.build.type") != "user": bad.append(f"{i} 构建类型 {r.get('ro.build.type')} debuggable={r.get('ro.debuggable')}")
     if "cannot run as root" not in r.get("adb_root", "") : bad.append(f"{i} adb root 结果：{r.get('adb_root','')[:80]}")
     if r.get("spec_gapps") == "true" and not (r.get("gms", "0").isdigit() and int(r.get("gms")) >= 1): bad.append(f"{i} 谷歌版没有 GMS")
+# 没开起来的（开机请求被拒、开机超时）：原因从 run.log 里找
+booted = set(l.split()[0] for l in open(os.path.join(d, "boot.txt")) if l.strip()) if os.path.exists(os.path.join(d, "boot.txt")) else None
+runlog = open(os.path.join(d, "run.log"), errors="replace").read() if os.path.exists(os.path.join(d, "run.log")) else ""
+if booted is not None and os.path.exists(os.path.join(d, "phones.txt")):
+    for line in open(os.path.join(d, "phones.txt")):
+        a = line.split()
+        if not a or a[0] in booted: continue
+        why = re.search(re.escape(a[0]) + r" 开机请求失败：(.*)", runlog)
+        bad.append(f"{a[0]}（安卓 {a[1]}{'谷歌' if a[2] == 'true' else ''} {a[5] if len(a) > 5 else ''}）没开起来：" + (why.group(1)[:160] if why else "开机超时"))
 enc = {}
 try:
     for line in open(os.path.join(d, "encoder.txt")):
