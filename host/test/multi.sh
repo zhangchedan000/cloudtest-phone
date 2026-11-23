@@ -166,6 +166,8 @@ sleep 5
 while read -r id _; do
   enc=$(pex "pp-$id" sh -c 'logcat -d | grep -o "allocate(c2[.a-z0-9]*encoder)" | tail -1' </dev/null 2>/dev/null)
   echo "$id ${enc:-?}"
+  # 落到软件编码时把硬件编码器为什么没用上留下来（mpp / c2 报错、SELinux 拒绝）
+  case "$enc" in *c2.android*) pex "pp-$id" sh -c 'logcat -d | grep -iE "mpp|c2.rk|codec2|avc: denied" | tail -80' > "$DIR/$id.encoder-fallback.txt" 2>&1 ;; esac
 done < "$DIR/phones.txt" > "$DIR/encoder.txt"
 sleep 10
 {
@@ -222,6 +224,14 @@ for r in rows:
     if r.get("ro.debuggable") != "0" or r.get("ro.build.type") != "user": bad.append(f"{i} 构建类型 {r.get('ro.build.type')} debuggable={r.get('ro.debuggable')}")
     if "cannot run as root" not in r.get("adb_root", "") : bad.append(f"{i} adb root 结果：{r.get('adb_root','')[:80]}")
     if r.get("spec_gapps") == "true" and not (r.get("gms", "0").isdigit() and int(r.get("gms")) >= 1): bad.append(f"{i} 谷歌版没有 GMS")
+enc = {}
+try:
+    for line in open(os.path.join(d, "encoder.txt")):
+        a = line.split()
+        if len(a) >= 2: enc[a[0]] = a[1]
+except OSError: pass
+for i, e in sorted(enc.items()):
+    if "c2.rk." not in e: bad.append(f"{i} 实时画面没用上硬件编码（{e}）" + ("，原因看 %s.encoder-fallback.txt" % i if "c2.android" in e else ""))
 print()
 print("问题：" if bad else "问题：无")
 for b in bad: print("  - " + b)
