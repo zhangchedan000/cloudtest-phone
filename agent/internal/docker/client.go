@@ -152,11 +152,12 @@ func (c *Client) RemoveContainer(ctx context.Context, name string) error {
 }
 
 type ContainerState struct {
-	Running   bool   `json:"Running"`
-	Status    string `json:"Status"`
-	StartedAt string `json:"StartedAt"`
-	ExitCode  int    `json:"ExitCode"`
-	Pid       int    `json:"Pid"`
+	Running    bool   `json:"Running"`
+	Status     string `json:"Status"`
+	StartedAt  string `json:"StartedAt"`
+	ExitCode   int    `json:"ExitCode"`
+	FinishedAt string `json:"FinishedAt"`
+	Pid        int    `json:"Pid"`
 }
 
 type ContainerInfo struct {
