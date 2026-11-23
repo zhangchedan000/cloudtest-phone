@@ -62,7 +62,8 @@ func hostMemMB() int64 {
 }
 
 // checkMemoryBudget 开机前把关：正在运行的手机内存上限之和 + 这台，不能超过宿主机内存 - 预留。
-func (s *Service) checkMemoryBudget(ctx context.Context, id string, mine int64) error {
+// skip：正在开机、已经算进 mine 里的手机（不再按运行中重复算）。
+func (s *Service) checkMemoryBudget(ctx context.Context, id string, mine int64, skip map[string]bool) error {
 	host := s.hostMB()
 	if host <= 0 || !s.cfg.MemFollowModel {
 		return nil
@@ -70,7 +71,7 @@ func (s *Service) checkMemoryBudget(ctx context.Context, id string, mine int64) 
 	st := s.store.Snapshot()
 	used := int64(0)
 	for _, other := range st.Phones {
-		if other.ID == id || !s.isRunning(ctx, other.ID) {
+		if other.ID == id || skip[other.ID] || !s.isRunning(ctx, other.ID) {
 			continue
 		}
 		byKey := map[string]any{}

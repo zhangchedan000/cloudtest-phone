@@ -131,6 +131,7 @@ func main() {
 		MaxRunning: *maxRunning, DevHost: *devHost,
 	}
 	cfg.DataImages = !*noDataImages && phones.DataImagesSupported()
+	cfg.PreallocLoops = os.Geteuid() == 0
 	cfg.MemFollowModel = *memFollow
 	cfg.MemOvercommit = *memOvercommit
 	// 宿主机内核设置：手机开机会改宿主机的 kernel.* / vm.*（踩坑 #58）。先改回来（kernel.modprobe 被清空时下面加载 WiFi 模块也要靠它）
@@ -167,6 +168,9 @@ func main() {
 		}
 	}
 	svc := phones.NewService(cfg, dc, st, cat, models)
+	if cfg.PreallocLoops {
+		go phones.PreallocLoopDevices()
+	}
 	if n, err := svc.CleanStaging(); err != nil {
 		log.Printf("清理上传临时文件：%v", err)
 	} else if n > 0 {

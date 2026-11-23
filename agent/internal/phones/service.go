@@ -63,6 +63,8 @@ type Config struct {
 	WifiDNS   string
 	// DataImages 新手机的 /data 用按机型容量建的 ext4 磁盘镜像（手机里看到的总容量对得上机型，storage.go）。
 	DataImages bool
+	// PreallocLoops 开机前在宿主机预建空闲 loop 设备（loopdev.go；测试里关掉）
+	PreallocLoops bool
 	// InitHelper pp-init 启动器（管家程序自己的路径）：喂传感器/RIL + 开机时长归零都靠它；空 = 不用。
 	InitHelper string
 	// Timens 是否建时间命名空间让开机时长归零。false 时 pp-init 照常喂传感器/RIL，只是开机时长不归零
@@ -210,14 +212,18 @@ func (s *Service) reserveStart(ctx context.Context, st store.State, id string, m
 	}
 	var pendingSlots []int
 	var pendingMem int64
+	pendingIDs := map[string]bool{}
 	for other, r := range s.starting {
 		if other != id {
 			pendingSlots = append(pendingSlots, r.slot)
 			pendingMem += r.memMB
+			pendingIDs[other] = true
 		}
 	}
 	slot, binds := s.assignBinderSlot(ctx, st, id, pendingSlots...)
-	if err := s.checkMemoryBudget(ctx, id, memLimit+pendingMem); err != nil {
+	// 正在开机的（容器可能已经在跑了）按 pendingMem 算一次，checkMemoryBudget 里不能再按「运行中」算第二次：
+	// 以前几台一起开机时重复计算，8 台刚好装得下却把最后一台拦下（2026-11-23 多开实测）
+	if err := s.checkMemoryBudget(ctx, id, memLimit+pendingMem, pendingIDs); err != nil {
 		return 0, nil, nil, err
 	}
 	s.starting[id] = startReservation{slot: slot, memMB: memLimit}
@@ -923,6 +929,9 @@ func (s *Service) Start(ctx context.Context, id string) error {
 	}
 	if err := blocks(s.Check(*p, st)); err != nil {
 		return err
+	}
+	if s.cfg.PreallocLoops {
+		ensureLoopDevices()
 	}
 	if s.netGuard != nil {
 		if err := s.netGuard(id); err != nil {
