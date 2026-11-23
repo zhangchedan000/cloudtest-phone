@@ -127,8 +127,13 @@ for p in json.load(sys.stdin):
   curl -s -m20 -X POST -H "$H" -H 'Content-Type: application/json' -d "{\"key\":\"$KEY\"}" "$API/phones/$id/adb-key" -o /dev/null
   sleep 2
   # adb 会读标准输入：不重定向的话会把 while 循环要读的列表吃掉，只测到第一台
-  c=$(adb connect "$ip:5555" </dev/null 2>&1 | tr '\n' ' ')
-  st=$(adb -s "$ip:5555" get-state </dev/null 2>&1)
+  # 刚打开 USB 调试时 adbd 要重启，开机慢的那台（几台一起开、负载高）2 秒内可能还没起来：最多试 20 秒
+  for _try in 1 2 3 4 5 6 7 8 9 10; do
+    c=$(adb connect "$ip:5555" </dev/null 2>&1 | tr '\n' ' ')
+    st=$(adb -s "$ip:5555" get-state </dev/null 2>&1)
+    [ "$st" = device ] && break
+    sleep 2
+  done
   echo "$id ip=$ip connect=[$c] state=$st" >> "$DIR/adb.txt"
   {
     echo "id=$id"; echo "spec_ver=$ver"; echo "spec_gapps=$g"; echo "spec_cc=$cc"; echo "spec_proxy=$px"

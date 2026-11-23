@@ -156,6 +156,9 @@ func (s *Service) relabelDataOnce(ctx context.Context, id string) {
 	if sock == "" {
 		return
 	}
+	if _, err := os.Stat(s.seFreshMark(id)); err == nil {
+		return
+	}
 	const mark = "/data/system/.pp_se_relabeled2"
 	if _, err := s.run.Run(ctx, s.cfg.InitHelper, "pp-cmdc", sock, "--", "test", "-f", mark); err == nil {
 		return
@@ -180,7 +183,17 @@ func (s *Service) selinuxBind(ctx context.Context, id, image string, entrypoint 
 	if err := os.MkdirAll(d, 0o700); err != nil {
 		return ""
 	}
+	// 新手机（/data 里还没有安卓建的 system 目录）：数据从第一次开机起就是在 SELinux 下建的，标签本来就对，
+	// 不用开机后再整个 restorecon 一遍（几台一起开机时白白加负载）
+	if _, err := os.Stat(filepath.Join(s.dataDir(id), "system")); os.IsNotExist(err) {
+		_ = os.WriteFile(s.seFreshMark(id), nil, 0o600)
+	}
 	return d + ":" + cmdMount
+}
+
+// seFreshMark 宿主机上的记号：这台手机的 /data 从一开始就是开着 SELinux 建的（relabelDataOnce 跳过）。
+func (s *Service) seFreshMark(id string) string {
+	return filepath.Join(s.phoneDir(id), "se-fresh-data")
 }
 
 // writeBindPaths 开机前：把这台手机所有 bind 挂载在手机里的路径写给小助手（它开机前照这个补标签）。
