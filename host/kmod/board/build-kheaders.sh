@@ -62,7 +62,10 @@ docker run --rm --platform linux/arm64 -v "$K:/k" -w /k/src debian:12-slim bash 
   cp -a include.public/config include/config          # Makefile 层面的 auto.conf 用我们的；C 代码用板子的 autoconf.h
   cp /k/Module.symvers.board Module.symvers             # 模块里引用内核符号的 CRC 用板子内核真实的
   grep -q "CONFIG_MYT_FS 1" include/generated/autoconf.h
-  make -s M=/k/crctest modules 2>&1 | grep -v "^WARNING: modpost.*exported twice" | tail -3 || true
+  # crctest 故意「再导出」板子内核已有的函数（只为让 genksyms 算 CRC，不加载）：modpost 默认把「exported twice」当错误、
+  # 不写 Module.symvers，让它只警告（以前目录里有上次留下的才没暴露，2026-11-23 从空目录编发现）
+  make -s M=/k/crctest KBUILD_MODPOST_WARN=1 modules 2>&1 | grep -v "exported twice" | tail -3 || true
+  test -s /k/crctest/Module.symvers || { echo "crctest 没出 Module.symvers"; exit 1; }
   make -s M=/k/hwsim modules 2>&1 | tail -5
   grep -q "CONFIG_MYT_FS 1" include/generated/autoconf.h || { echo "autoconf.h 被改回公开配置了"; exit 1; }
   modinfo -F vermagic /k/hwsim/mac80211_hwsim.ko
