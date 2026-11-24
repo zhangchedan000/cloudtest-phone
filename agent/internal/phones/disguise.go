@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 )
 
 // 伪装档（2026-11-24）：真机显卡不是板子的 Mali-G610 的机型（高通 Adreno、别的 Mali、三星 Xclipse……）。
@@ -157,7 +158,13 @@ func shimVulkanName(m *Model) string {
 }
 
 // hwModules 从镜像里取几个文件（files：缓存名 → 镜像里的路径），缓存在数据目录里。返回 缓存名 → 宿主机文件（镜像里没有的不返回）。
+// hwModulesMu 几台手机同时开机会一起取同一个缓存文件（2026-11-24 实测：一台取到、另一台写坏后记成「镜像里没有」，
+// 那台就没挂上 Vulkan 入口模块），一次只让一个取
+var hwModulesMu sync.Mutex
+
 func (s *Service) hwModules(ctx context.Context, image string, files map[string]string) (map[string]string, error) {
+	hwModulesMu.Lock()
+	defer hwModulesMu.Unlock()
 	idOut, err := s.run.Run(ctx, "docker", "image", "inspect", "-f", "{{.Id}}", image)
 	if err != nil {
 		return nil, err
