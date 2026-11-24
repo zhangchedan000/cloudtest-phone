@@ -286,7 +286,8 @@ for r in rows:
         bad.append(f"{i} cpuinfo 的核心型号 {' '.join(parts)} 和 midr 文件 {' '.join(midrs)} 对不上")
     # Vulkan（踩坑 #148）：要能枚举到 Mali 显卡；驱动目录里只能有 Mali 的入口模块（redroid 的开源驱动是痕迹）
     if not r.get("vk_device", "").startswith("Mali"): bad.append(f"{i} Vulkan 枚举不到显卡（{r.get('vk_device') or '0 个设备'}）")
-    if r.get("vk_drivers", "").split() not in ([], ["vulkan.mali.so"]): bad.append(f"{i} /vendor/lib64/hw 里还有别的 Vulkan 驱动：{r.get('vk_drivers')}")
+    # 只能有一个入口模块：一致档 vulkan.mali.so；伪装档是真机的名字（vulkan.adreno.so），镜像自带的 mali 那个开机时删掉
+    if len(r.get("vk_drivers", "").split()) > 1: bad.append(f"{i} /vendor/lib64/hw 里有不止一个 Vulkan 驱动：{r.get('vk_drivers')}")
     mm = models.get(r.get("spec_model", "")) or {}
     if mm.get("cpuTree"):
         denied = [k for k in ("cpu_online_type", "cpu_policies", "cpu_driver", "cpu_maxfreq") if "Permission denied" in r.get(k, "")]

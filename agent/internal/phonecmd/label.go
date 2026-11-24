@@ -396,6 +396,11 @@ func label(boot bool) (int, error) {
 				_ = os.Remove("/vendor/" + lib + "/hw/vulkan." + d + ".so")
 			}
 		}
+		// 伪装档挂了真机名字的 Vulkan 入口模块（vulkan.adreno.so，是镜像 vulkan.mali.so 的一份拷贝）：镜像自带的 vulkan.mali.so
+		// 也删掉——高通真机的目录里只有 vulkan.adreno.so，两个都在一看就不对
+		if ms, _ := filepath.Glob("/vendor/lib64/hw/vulkan.*.so"); len(ms) > 1 {
+			_ = os.Remove("/vendor/lib64/hw/vulkan.mali.so")
+		}
 		// Docker 的 /dev/ptmx 是指向 /dev/pts/ptmx 的链接（标签是 devpts，ioctl 按扩展权限只放行 ptmx_device）：
 		// 安卓 logwrapper 开伪终端被拦 → linkerconfig 起不来 → 系统程序找不到 APEX 里的库。换成真机那样的字符设备 5:2
 		if fi, err := os.Lstat("/dev/ptmx"); err == nil && fi.Mode()&os.ModeSymlink != 0 {
