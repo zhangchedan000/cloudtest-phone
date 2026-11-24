@@ -276,11 +276,19 @@ func label(boot bool) (int, error) {
 					ctx = c
 				}
 			}
-			for q := ref; len(q) > len(tmp) && ctx == ""; q = filepath.Dir(q) {
-				ctx = lgetxattr(q)
+			if ctx != "" {
+				if setLabel(p, ctx) == nil {
+					n++
+				}
+				return nil
 			}
-			if ctx != "" && setLabel(p, ctx) == nil {
-				n++
+			// 照新挂的 sysfs / proc 里同一路径的标签；打不上（魔云腾内核 /sys/devices/system/cpu 下的属性文件是怪的，
+			// 读出来的标签手机策略不认，踩坑 #147）就退到上一级目录的标签再试
+			for q := ref; len(q) > len(tmp); q = filepath.Dir(q) {
+				if c := lgetxattr(q); c != "" && setLabel(p, c) == nil {
+					n++
+					break
+				}
 			}
 			return nil
 		})
