@@ -97,6 +97,16 @@ for f in "$O"/etc/seccomp_policy/android.hardware.media.c2@1.1*; do
   [ -f "$f" ] && ! grep -q '^sysinfo:' "$f" && printf '\n# 瑞芯微编码库会调（被拦就 SIGSYS，踩坑 #144）\nsysinfo: 1\n' >> "$f"  || true
 done
 for f in "$DV"/etc/media_codecs*.xml "$DV"/etc/media_profiles*.xml; do [ -f "$f" ] && cp "$f" "$O/etc/"; done
+# 瑞芯微编解码器组件名 c2.rk.* 同长度改成 c2.mt.*（踩坑 #156）：App 列编解码器时不露「瑞芯微」，
+# 真·天玑机本来就是 c2.mtk.*。改 store/component 两个库 + media_codecs 两个 XML（精确字节、带点，不碰文件名里的 codec2_rk）。
+python3 - "$O" <<'RKPY'
+import sys, glob
+root = sys.argv[1]; n = 0
+for p in glob.glob(root + "/lib64/libcodec2_rk*.so") + glob.glob(root + "/etc/media_codecs*.xml"):
+    b = open(p, "rb").read(); c = b.replace(b"c2.rk", b"c2.mt")
+    if c != b: open(p, "wb").write(c); n += b.count(b"c2.rk")
+print(f"c2.rk -> c2.mt：改了 {n} 处")
+RKPY
 cat > "$O/etc/vintf/manifest/android.hardware.media.c2-hw.xml" <<'EOF'
 <manifest version="1.0" type="device">
     <hal format="hidl">
@@ -109,7 +119,7 @@ EOF
 # 输出缓冲改用 dma_heap（会做缓存同步），不用 /dev/ion（见文件头）
 printf 'on early-init\n    setprop debug.c2.use_dmabufheaps 1\n' > "$O/etc/init/media-c2-dmabuf.rc"
 chmod 755 "$O/bin/hw/android.hardware.media.c2@1.1-service"
-printf 'FROM %s\nCOPY overlay/ /vendor/\nLABEL prism.hwcodec=%s\n' "$base" "$HWC_VER" > "$W/Dockerfile"
+printf 'FROM %s\nCOPY overlay/ /vendor/\nLABEL prism.hwcodec=%s\nLABEL prism.rkcodec_hidden=1\n' "$base" "$HWC_VER" > "$W/Dockerfile"
 docker image inspect "$img-orig-hwc" >/dev/null 2>&1 || docker tag "$img" "$img-orig-hwc"
 docker build -q -t "$img" "$W" >/dev/null
 log "✓ $img：已加硬件编解码（原镜像留在 $img-orig-hwc）"
