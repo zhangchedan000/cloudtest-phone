@@ -29,11 +29,11 @@ func TestCameraConfig(t *testing.T) {
 		t.Fatalf("尺寸 / 焦距不对")
 	}
 	sc := strings.Join(front["android.scaler.availableStreamConfigurations"], ",")
-	if sc != "35,1600,1200,INPUT,33,1600,1200,OUTPUT,33,1280,720,OUTPUT,32,1600,1200,OUTPUT" {
+	if sc != "33,1280,720,OUTPUT,32,1600,1200,OUTPUT,33,1600,1200,OUTPUT,35,1600,1200,OUTPUT,34,1600,1200,OUTPUT" {
 		t.Fatalf("尺寸列表不对：%s", sc)
 	}
 	back := cameraConfig(base, CameraInfo{Facing: "back", Width: 4096, Height: 3072})
-	if st := back["android.scaler.availableStallDurations"]; st[1] != "4096" || st[3] != "81788928" {
+	if st := strings.Join(back["android.scaler.availableStallDurations"], ","); st != "33,1856,1392,33331760,33,4096,3072,81788928" {
 		t.Fatalf("拍照停顿时间要按像素算：%v", st)
 	}
 	if base["android.sensor.info.pixelArraySize"][0] != "1856" {

@@ -79,7 +79,7 @@ type Model struct {
 	Codecs []CodecInfo `json:"codecs,omitempty"`
 	// Cameras 真机的摄像头（见 camera.go）
 	Cameras []CameraInfo `json:"cameras,omitempty"`
-	Raw      json.RawMessage
+	Raw     json.RawMessage
 }
 
 func (c *Catalog) Field(key string) (Field, bool) {

@@ -99,25 +99,38 @@ func cameraConfig(base map[string][]string, c CameraInfo) map[string][]string {
 	}
 	out["android.sensor.info.physicalSize"] = []string{fmt.Sprintf("%.4f", phys[0]), fmt.Sprintf("%.4f", phys[1])}
 	out["android.jpeg.maxSize"] = []string{strconv.Itoa(w*h*3/2 + 65536)}
-	// 尺寸列表：原来的最大尺寸（模拟器传感器尺寸）换成真机的；超过真机传感器的去掉；RAW（格式 32）只能是整个传感器
-	ow, _ := strconv.Atoi(base["android.sensor.info.pixelArraySize"][0])
-	oh, _ := strconv.Atoi(base["android.sensor.info.pixelArraySize"][1])
+	// 尺寸列表：模拟器原有的分辨率都留着（别的参数引用它们，比如特效模式的最大尺寸，去掉了摄像头建不起来），
+	// 加上真机的最大分辨率（JPEG / YUV / 预览三种输出）；超过真机传感器的去掉；RAW（格式 32）只能是整个传感器
 	for _, key := range sizeLists {
 		v := out[key]
 		var nv []string
+		have := map[string]bool{}
 		for i := 0; i+3 < len(v); i += 4 {
 			fw, _ := strconv.Atoi(v[i+1])
 			fh, _ := strconv.Atoi(v[i+2])
 			rec := []string{v[i], v[i+1], v[i+2], v[i+3]}
-			if (fw == ow && fh == oh) || v[i] == "32" {
+			if v[i] == "32" {
 				rec[1], rec[2] = ws, hs
-				if key == "android.scaler.availableStallDurations" && v[i] == "33" {
-					rec[3] = strconv.Itoa(int(math.Round(float64(w*h) * 6.5))) // 真机约 6.5 纳秒 / 像素
-				}
 			} else if fw > w || fh > h {
 				continue
 			}
+			have[rec[0]+" "+rec[1]+" "+rec[2]] = true
 			nv = append(nv, rec...)
+		}
+		for _, f := range []string{"33", "35", "34"} {
+			if have[f+" "+ws+" "+hs] {
+				continue
+			}
+			switch key {
+			case "android.scaler.availableStreamConfigurations":
+				nv = append(nv, f, ws, hs, "OUTPUT")
+			case "android.scaler.availableMinFrameDurations":
+				nv = append(nv, f, ws, hs, "33333333")
+			default: // 拍照停顿时间只有 JPEG 有：真机约 6.5 纳秒 / 像素
+				if f == "33" {
+					nv = append(nv, f, ws, hs, strconv.Itoa(int(math.Round(float64(w*h)*6.5))))
+				}
+			}
 		}
 		out[key] = nv
 	}
