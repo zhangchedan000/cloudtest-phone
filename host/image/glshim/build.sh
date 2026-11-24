@@ -36,5 +36,30 @@ for lib in libEGL libGLESv2 libc; do
 done
 clang --target=aarch64-linux-android29 -O2 -fno-builtin -fPIE -pie -nostdlib -fuse-ld=lld -Wl,--dynamic-linker=/system/bin/linker64 -Wl,-z,noexecstack \
 	-o out/arm64/pp-glinfo glinfo.c out/stub/gl-libEGL.so out/stub/gl-libGLESv2.so out/stub/gl-libc.so -Wl,-e,_start
+# 测试工具 pp-camshot（64 位）：手机里列摄像头、每个拍一张 JPEG（踩坑 #152）
+cat > out/stub/cam.c <<'EOF3'
+void *ACameraManager_create(void) { return 0; } int ACameraManager_getCameraIdList(void *m, void **l) { return 0; }
+int ACameraManager_getCameraCharacteristics(void *m, const char *id, void **x) { return 0; } int ACameraMetadata_getConstEntry(const void *m, unsigned t, void *e) { return 0; }
+int ACameraManager_openCamera(void *m, const char *id, void *cb, void **d) { return 0; } int ACameraDevice_close(void *d) { return 0; }
+int ACaptureSessionOutputContainer_create(void **c) { return 0; } int ACaptureSessionOutput_create(void *w, void **o) { return 0; }
+int ACaptureSessionOutputContainer_add(void *c, const void *o) { return 0; } int ACameraDevice_createCaptureSession(void *d, const void *c, const void *cb, void **s) { return 0; }
+int ACameraDevice_createCaptureRequest(const void *d, int t, void **r) { return 0; } int ACameraOutputTarget_create(void *w, void **t) { return 0; }
+int ACaptureRequest_addTarget(void *r, const void *t) { return 0; } int ACameraCaptureSession_capture(void *s, void *c, int n, void **r, int *q) { return 0; }
+void ACameraCaptureSession_close(void *s) {}
+EOF3
+cat > out/stub/media.c <<'EOF3'
+int AImageReader_new(int w, int h, int f, int m, void **r) { return 0; } int AImageReader_getWindow(void *r, void **w) { return 0; }
+int AImageReader_acquireNextImage(void *r, void **i) { return 0; } int AImage_getPlaneData(const void *i, int p, void **d, int *l) { return 0; } void AImage_delete(void *i) {}
+EOF3
+cat > out/stub/camlibc.c <<'EOF3'
+int printf(const char *f, ...) { return 0; } void exit(int c) {} int usleep(unsigned u) { return 0; } int open(const char *p, int f, ...) { return 0; }
+long write(int fd, const void *b, unsigned long n) { return 0; } int close(int fd) { return 0; } int atoi(const char *s) { return 0; }
+int snprintf(char *b, unsigned long n, const char *f, ...) { return 0; }
+EOF3
+clang --target=aarch64-linux-android29 -fPIC -shared -nostdlib -fuse-ld=lld -Wl,-soname,libcamera2ndk.so -o out/stub/libcamera2ndk.so out/stub/cam.c
+clang --target=aarch64-linux-android29 -fPIC -shared -nostdlib -fuse-ld=lld -Wl,-soname,libmediandk.so -o out/stub/libmediandk.so out/stub/media.c
+clang --target=aarch64-linux-android29 -fPIC -shared -nostdlib -fuse-ld=lld -Wl,-soname,libc.so -o out/stub/cam-libc.so out/stub/camlibc.c
+clang --target=aarch64-linux-android29 -O2 -fno-builtin -fPIE -pie -nostdlib -fuse-ld=lld -Wl,--dynamic-linker=/system/bin/linker64 -Wl,-z,noexecstack \
+	-o out/arm64/pp-camshot camshot.c out/stub/libcamera2ndk.so out/stub/libmediandk.so out/stub/cam-libc.so -Wl,-e,_start
 rm -rf out/stub
-ls -la out/*/libGLES_pp.so out/arm64/pp-glinfo
+ls -la out/*/libGLES_pp.so out/arm64/pp-glinfo out/arm64/pp-camshot

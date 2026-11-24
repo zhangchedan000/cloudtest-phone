@@ -53,6 +53,9 @@ dump(){ debugfs -R "dump $1 $2" "$V" >/dev/null 2>&1; [ -s "$2" ]; }
 rm -rf "$out"; C=$out/ctx; mkdir -p "$C/vendor/bin/hw" "$C/vendor/lib64" "$C/vendor/etc/init" "$C/vendor/etc/vintf/manifest" "$C/vendor/etc/config"
 dump /bin/hw/android.hardware.camera.provider@2.7-service-google "$C$CAMB" || die "模拟器 $emu 里没有 camera.provider@2.7-service-google"
 chmod 755 "$C$CAMB"
+# 真正出画面的库是运行时 dlopen 的（不在 NEEDED 里），单独拷，依赖下面一起找
+dump /lib64/libgooglecamerahwl_impl.so "$C/vendor/lib64/libgooglecamerahwl_impl.so" || die "模拟器里没有 libgooglecamerahwl_impl.so"
+chmod 644 "$C/vendor/lib64/libgooglecamerahwl_impl.so"
 for f in emu_camera_back.json emu_camera_front.json; do dump /etc/config/$f "$C/vendor/etc/config/$f" || die "模拟器里没有 $f"; done
 dump /etc/vintf/manifest/android.hardware.camera.provider@2.7-service-google.xml "$C/vendor/etc/vintf/manifest/android.hardware.camera.provider@2.7-service.xml" \
   || die "模拟器里没有摄像头服务的清单"
@@ -83,7 +86,7 @@ def in_image(lib):
             os.remove(probe)
             return True
     return False
-todo = [os.path.join(C, "vendor/bin/hw/android.hardware.camera.provider@2.7-service")]
+todo = [os.path.join(C, "vendor/bin/hw/android.hardware.camera.provider@2.7-service"), os.path.join(C, "vendor/lib64/libgooglecamerahwl_impl.so")]
 seen, copied, missing = set(), [], []
 while todo:
     p = todo.pop()
