@@ -79,7 +79,11 @@ type Model struct {
 	Codecs []CodecInfo `json:"codecs,omitempty"`
 	// Cameras 真机的摄像头（见 camera.go）
 	Cameras []CameraInfo `json:"cameras,omitempty"`
-	Raw     json.RawMessage
+	// RadioProps 真机的基带版本、电话模块名（gsm.version.baseband / ril-impl，开机后设，见 settings.go）
+	RadioProps map[string]string `json:"radioProps,omitempty"`
+	// BoardProps 真机的 ro.product.board / ro.bootloader / ro.baseband……（开机参数，见 service.go）
+	BoardProps map[string]string `json:"boardProps,omitempty"`
+	Raw        json.RawMessage
 }
 
 func (c *Catalog) Field(key string) (Field, bool) {

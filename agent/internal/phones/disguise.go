@@ -227,4 +227,31 @@ func boardPlatform(byKey map[string]any) string {
 	return p
 }
 
+var boardPropKeys = map[string]bool{"ro.product.board": true, "ro.bootloader": true, "ro.baseband": true, "ro.boot.baseband": true, "ro.boot.bootloader": true}
+var boardPropVal = regexp.MustCompile(`^[\w.\-]{1,64}$`)
+
+// boardProps 开机参数里的 ro.product.board 等：机型录了真机的就用真机的；没录的 ro.product.board 用平台名（高通真机两个一样）。
+func boardProps(m *Model, byKey map[string]any) []string {
+	got := map[string]string{}
+	if m != nil {
+		for k, v := range m.BoardProps {
+			if boardPropKeys[k] && boardPropVal.MatchString(v) {
+				got[k] = v
+			}
+		}
+	}
+	if got["ro.product.board"] == "" {
+		if pl := boardPlatform(byKey); pl != "" {
+			got["ro.product.board"] = pl
+		}
+	}
+	var out []string
+	for _, k := range []string{"ro.product.board", "ro.bootloader", "ro.boot.bootloader", "ro.baseband", "ro.boot.baseband"} {
+		if got[k] != "" {
+			out = append(out, k+"="+got[k])
+		}
+	}
+	return out
+}
+
 func fileExists(p string) bool { _, err := os.Stat(p); return err == nil }

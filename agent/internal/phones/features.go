@@ -203,7 +203,7 @@ func (s *Service) imageFeatures(ctx context.Context, image string) (map[string]i
 
 // featureBinds 机型录了真机特性列表时，开机前挂进去的特性文件。
 func (s *Service) featureBinds(ctx context.Context, id, image string, m *Model) []string {
-	if m == nil || len(m.Features) == 0 {
+	if m == nil {
 		return nil
 	}
 	img, orig, err := s.imageFeatures(ctx, image)
@@ -211,7 +211,14 @@ func (s *Service) featureBinds(ctx context.Context, id, image string, m *Model) 
 		log.Printf("手机 %s：读镜像的系统特性失败，特性照镜像：%v", id, err)
 		return nil
 	}
-	add, remove := planFeatures(img, parseFeatureList(m.Features), sensorFeatures(sensorMask(m)))
+	var add map[string]int
+	var remove []string
+	if len(m.Features) > 0 {
+		add, remove = planFeatures(img, parseFeatureList(m.Features), sensorFeatures(sensorMask(m)))
+	} else if _, ok := img["android.hardware.ethernet"]; ok {
+		// 没录真机特性的（内置机型）：至少去掉「有线网口」，手机没有（检测器 #154）
+		remove = []string{"android.hardware.ethernet"}
+	}
 	if len(add) == 0 && len(remove) == 0 {
 		return nil
 	}

@@ -531,6 +531,14 @@ def convert(path, tac_db, host_gpu, host_cpus):
     sens = sensors_of(pkg)
     if sens:
         prof["sensors"] = sens
+    # 基带版本、电话模块名（gsm.*，开机后由管家设）；板子名、bootloader、基带平台（ro.*，开机参数）
+    rp = {k: props[k] for k in ("gsm.version.baseband", "gsm.version.ril-impl") if props.get(k)}
+    if rp:
+        prof["radioProps"] = rp
+    bpr = {k: props[k] for k in ("ro.product.board", "ro.bootloader", "ro.baseband", "ro.boot.baseband", "ro.boot.bootloader")
+           if props.get(k) and re.match(r"^[\w.\-]{1,64}$", props[k])}
+    if bpr:
+        prof["boardProps"] = bpr
     cams = cameras_of(pkg)
     if cams:
         prof["cameras"] = cams

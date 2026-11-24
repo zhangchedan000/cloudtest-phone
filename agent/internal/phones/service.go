@@ -1038,6 +1038,8 @@ func (s *Service) Start(ctx context.Context, id string) error {
 	if pl := boardPlatform(s.resolvedValues(*p, st)); pl != "" {
 		bootArgs = append(bootArgs, "ro.board.platform="+pl)
 	}
+	// 板子名（Build.BOARD）、bootloader、基带平台：照真机（以前 Build.BOARD 是 unknown，检测器 #154）
+	bootArgs = append(bootArgs, boardProps(s.model(p.ModelID), s.resolvedValues(*p, st))...)
 	propArgs := append([]string{}, bootArgs...)
 	if hw != "" {
 		propArgs = append(propArgs, "ro.hardware="+hw)

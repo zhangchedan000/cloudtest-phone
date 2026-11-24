@@ -68,6 +68,12 @@ func (s *Service) simSpec(p store.Phone, st store.State, byKey map[string]any) *
 		assign(o, keys)
 	}
 	spec := assign(p, byKey)
+	// 基带版本照真机（检测器 #154：以前高通机型也报联发科的 MOLY…）
+	if m := s.model(p.ModelID); m != nil {
+		if v := strings.SplitN(m.RadioProps["gsm.version.baseband"], ",", 2)[0]; v != "" && len(v) <= 90 {
+			spec.Version = v
+		}
+	}
 	return &spec
 }
 

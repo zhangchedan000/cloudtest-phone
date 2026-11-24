@@ -114,6 +114,7 @@ public class Main extends Activity {
             try { put("drm.widevine_system_id", d.getPropertyString("systemId")); } catch (Exception e) { }
             d.close();
         } });
+        if (facts.has("err.widevine")) tell("drm", "没有 Widevine（数字版权组件）：真机都有，风控常拿它的设备 ID 当指纹");
         probe("emmc", new P() { public void run() {
             JSONObject o = new JSONObject();
             String[] blk = ls("/sys/block");
@@ -135,6 +136,7 @@ public class Main extends Activity {
             WifiInfo i = w.getConnectionInfo();
             put("id.wifi_mac", i.getMacAddress()); put("net.wifi_bssid", i.getBSSID()); put("net.wifi_ssid", i.getSSID());
             put("net.wifi_rssi", i.getRssi()); put("net.wifi_scan_count", w.getScanResults() == null ? -1 : w.getScanResults().size());
+            if (w.getScanResults() != null && w.getScanResults().size() <= 1) tell("wifi", "WiFi 只扫到 " + w.getScanResults().size() + " 个热点（真机周围一般有好几个）");
         } });
         probe("bt", new P() { public void run() {
             BluetoothAdapter a = BluetoothAdapter.getDefaultAdapter();
@@ -168,6 +170,11 @@ public class Main extends Activity {
             put("props.debuggable", getprop("ro.debuggable")); put("props.secure", getprop("ro.secure"));
             put("props.verifiedbootstate", getprop("ro.boot.verifiedbootstate")); put("props.flash_locked", getprop("ro.boot.flash.locked"));
             put("props.selinux", getprop("ro.boot.selinux"));
+            put("props.ril_impl", getprop("gsm.version.ril-impl")); put("props.baseband", getprop("gsm.version.baseband"));
+            if ("unknown".equals(Build.BOARD) || Build.BOARD.isEmpty()) tell("build", "Build.BOARD 是 unknown");
+            if ("1.0.0.0".equals(Build.getRadioVersion())) tell("build", "基带版本是 1.0.0.0（模拟器默认值）");
+            String ril = getprop("gsm.version.ril-impl"), hw = getprop("ro.hardware");
+            if ("qcom".equals(hw) && ril != null && !ril.contains("Qualcomm")) tell("build", "高通机型的电话模块却是「" + ril + "」");
             if ("1".equals(Settings.Global.getString(getContentResolver(), Settings.Global.ADB_ENABLED))) tell("adb", "USB 调试（ADB）开着");
         } });
         probe("kernel", new P() { public void run() {
@@ -185,7 +192,7 @@ public class Main extends Activity {
                 if (v instanceof String && EMU.matcher((String) v).find()) tell("kernel", k + " 有模拟器 / 容器 / 瑞芯微字样：" + clip((String) v, 200));
             }
             String pv = facts.optString("k.proc_version");
-            if (!pv.contains(String.valueOf(System.getProperty("os.version")))) tell("kernel", "/proc/version 和 uname 对不上：" + clip(pv, 120) + " / " + System.getProperty("os.version"));
+            if (pv.length() > 0 && !pv.contains(String.valueOf(System.getProperty("os.version")))) tell("kernel", "/proc/version 和 uname 对不上：" + clip(pv, 120) + " / " + System.getProperty("os.version"));
         } });
         probe("time", new P() { public void run() {
             String stat = read("/proc/stat", 100000);
@@ -209,7 +216,7 @@ public class Main extends Activity {
             put("fs.mount_hits", n);
             if (n > 0) tell("mounts", n + " 条挂载带容器痕迹：" + h);
             String maps = read("/proc/self/maps", 400000);
-            if (maps != null && EMU.matcher(maps).find()) tell("maps", "本进程内存映射里有可疑库");
+            if (maps != null) for (String l : maps.split("\n")) if (!l.contains(getPackageName()) && EMU.matcher(l).find()) { tell("maps", "本进程内存映射里有可疑库：" + clip(l.replaceAll("^\\S+\\s+\\S+\\s+\\S+\\s+\\S+\\s+\\S+\\s+", ""), 160)); break; }
             for (String f : new String[]{"/system/bin/su", "/system/xbin/su", "/sbin/su", "/data/local/tmp/su", "/system/app/Superuser.apk", "/data/adb/magisk", "/init.goldfish.rc", "/pp-init", "/data/.ppf", "/system/bin/pp-cmdc", "/dev/goldfish_pipe", "/dev/qemu_pipe", "/dev/socket/qemud", "/system/lib/libc_malloc_debug_qemu.so", "/sys/qemu_trace", "/system/bin/qemu-props", "/dev/mpp_service", "/dev/rga", "/dev/rkvenc", "/dev/vpu_service", "/dev/rknpu"})
                 if (new File(f).exists()) tell("file", "存在 " + f);
             // 高通真机是 Adreno（/dev/kgsl-3d0），有 Mali 的设备节点就对不上
@@ -270,7 +277,7 @@ public class Main extends Activity {
             List<PackageInfo> ps = pm.getInstalledPackages(0);
             put("sys.package_count", ps.size());
             StringBuilder sus = new StringBuilder();
-            for (PackageInfo p : ps) if (EMU.matcher(p.packageName).find() || p.packageName.matches(".*(supersu|magisk|xposed|lsposed|substrate|frida|virtualapp|parallel|dualspace).*")) sus.append(p.packageName).append(' ');
+            for (PackageInfo p : ps) if (!p.packageName.equals(getPackageName()) && EMU.matcher(p.packageName).find() || p.packageName.matches(".*(supersu|magisk|xposed|lsposed|substrate|frida|virtualapp|parallel|dualspace).*")) sus.append(p.packageName).append(' ');
             if (sus.length() > 0) tell("packages", "可疑应用：" + sus);
             StringBuilder all = new StringBuilder();
             for (PackageInfo p : ps) all.append(p.packageName).append(' ');

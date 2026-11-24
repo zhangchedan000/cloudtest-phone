@@ -188,6 +188,19 @@ func (s *Service) applySettings(ctx context.Context, id string) {
 	if cur, _ := s.run.Run(ctx, "docker", "exec", name, "settings", "get", "secure", "clipboard_show_access_notifications"); strings.TrimSpace(cur) != "0" {
 		_, _ = s.run.Run(ctx, "docker", "exec", name, "settings", "put", "secure", "clipboard_show_access_notifications", "0")
 	}
+	// 基带版本、电话模块名照真机（gsm.*：电话服务开机时写自己的，开机后改；检测器 #154 查到的是模拟器的
+	// 「android reference-ril 1.0」和基带「1.0.0.0」）。带空格的值只能这样设（开机参数会被截断）。
+	if m := s.model(p.ModelID); m != nil {
+		for _, k := range []string{"gsm.version.baseband", "gsm.version.ril-impl"} {
+			v := m.RadioProps[k]
+			if v == "" || len(v) > 90 || strings.ContainsAny(v, "\n\"'`$") {
+				continue
+			}
+			if cur, _ := s.run.Run(ctx, "docker", "exec", name, "getprop", k); strings.TrimSpace(cur) != v {
+				_, _ = s.run.Run(ctx, "docker", "exec", name, "setprop", k, v)
+			}
+		}
+	}
 	for _, prop := range cpuVariantProps {
 		if cur, _ := s.run.Run(ctx, "docker", "exec", name, "getprop", prop); cur != "" && cur != cpuVariant {
 			_, _ = s.run.Run(ctx, "docker", "exec", name, "setprop", prop, cpuVariant)
