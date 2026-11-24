@@ -55,6 +55,10 @@ export interface DeviceModel {
   /** 导入来源：ours（我们采集的真机包）/ mytos（魔云腾机型包）/ dir */
   source?: string
   imeiTacs?: string[]
+  /** 真机显卡字符串（伪装档用）。 */
+  gpu?: { vendor: string; renderer: string; version: string; extensions?: string; egl?: string }
+  /** 真机 ro.hardware（qcom、mt6989……） */
+  hardware?: string
 }
 
 export type PhoneStatus = 'running' | 'stopped' | 'starting' | 'error'

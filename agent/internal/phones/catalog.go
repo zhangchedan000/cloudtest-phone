@@ -66,7 +66,10 @@ type Model struct {
 	Tier string `json:"tier,omitempty"`
 	// Local 来自本地机型库（导入的，<数据目录>/models），不是程序里内置的
 	Local bool `json:"local,omitempty"`
-	Raw   json.RawMessage
+	// GPU 真机显卡字符串（伪装档用，见 disguise.go）；Hardware 真机 ro.hardware（qcom、mt6989……）
+	GPU      *GPUInfo `json:"gpu,omitempty"`
+	Hardware string   `json:"hardware,omitempty"`
+	Raw      json.RawMessage
 }
 
 func (c *Catalog) Field(key string) (Field, bool) {

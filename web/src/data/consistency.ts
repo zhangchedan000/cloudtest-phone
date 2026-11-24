@@ -51,6 +51,9 @@ export function checkPhone({ phone, model, proxy, host, others = [] }: CheckInpu
   } else {
     if (host?.gpuFamily === 'software') {
       issues.push({ level: 'info', code: 'dev-host', message: '这台机器没有显卡（软件渲染），只用于开发测试，不要登录真实账号。' })
+    } else if (host && model.gpuFamily !== host.gpuFamily && model.tier === 'disguised' && model.gpu?.renderer) {
+      // 伪装档：显卡名由转接库照真机回答，Vulkan / OpenCL / 渲染结果还是板子的（2026-11-24）
+      issues.push({ level: 'warning', code: 'gpu-disguised', fields: ['model', 'gpuRenderer'], message: `伪装档：显卡名对外报 ${model.gpu.renderer}（实际是 ${host.gpuFamily}）。Vulkan、OpenCL、渲染结果、跑分还是板子的，深度检测会露馅。` })
     } else if (host && model.gpuFamily !== host.gpuFamily) {
       issues.push({ level: 'error', code: 'gpu-mismatch', fields: ['model', 'gpuRenderer'], message: `机型「${String(model.values.marketName ?? model.id)}」的显卡是 ${model.gpuFamily}，这台机器是 ${host.gpuFamily}。显卡名来自真实驱动改不了，会直接露馅。` })
     }

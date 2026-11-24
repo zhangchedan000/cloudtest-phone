@@ -83,3 +83,19 @@ describe('一致性检查', () => {
     expect(blocksStart(issues)).toBe(false)
   })
 })
+
+describe('伪装档', () => {
+  it('有真机显卡数据：只提示不拦', async () => {
+    const { checkPhone } = await import('./consistency')
+    const { models } = await import('./catalog')
+    const base = models[0]
+    const model = { ...base, gpuFamily: 'Adreno 740', tier: 'disguised' as const, gpu: { vendor: 'Qualcomm', renderer: 'Adreno (TM) 740', version: 'OpenGL ES 3.2' } }
+    const host = { id: 'h', gpuFamily: 'Mali-G610' } as never
+    const phone = { id: 'p', name: 'p', hostId: 'h', status: 'stopped', androidVersion: 14, modelId: model.id, proxyId: '', groupId: '', createdAt: '', fields: {} } as never
+    const issues = checkPhone({ phone, model, host, others: [] })
+    expect(issues.find((i) => i.code === 'gpu-disguised')?.level).toBe('warning')
+    expect(issues.some((i) => i.code === 'gpu-mismatch')).toBe(false)
+    const noData = checkPhone({ phone, model: { ...model, gpu: undefined }, host, others: [] })
+    expect(noData.some((i) => i.code === 'gpu-mismatch' && i.level === 'error')).toBe(true)
+  })
+})

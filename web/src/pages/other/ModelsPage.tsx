@@ -112,7 +112,7 @@ export function ModelsPage() {
             title: '档位', key: 'tier', filters: undefined,
             render: (_, m) => tierOf(m) === 'consistent'
               ? <Tooltip title="真机显卡就是板子的，显卡测试、跑分都对得上"><Tag color="green">一致档</Tag></Tooltip>
-              : <Tooltip title={`真机显卡是 ${m.gpuFamily}，板子不是：只改了名字，深度检测（渲染结果、Vulkan、跑分）会露馅`}><Tag color="orange">伪装档</Tag></Tooltip>
+              : <Tooltip title={`真机显卡是 ${m.gpu?.renderer ?? m.gpuFamily}，板子不是：App 问到的显卡名 / 版本 / 扩展列表照真机回答，Vulkan、OpenCL、渲染结果、跑分还是板子的，深度检测会露馅`}><Tag color="orange">伪装档</Tag></Tooltip>
           },
           {
             title: 'CPU', key: 'cpu',

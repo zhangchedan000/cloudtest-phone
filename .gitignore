@@ -5,3 +5,4 @@ agent/bin/
 *.log
 *.tsbuildinfo
 __pycache__/
+host/image/glshim/out/

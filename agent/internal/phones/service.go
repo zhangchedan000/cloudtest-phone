@@ -912,7 +912,11 @@ func (s *Service) Check(p store.Phone, st store.State) []Issue {
 	if m == nil {
 		issues = append(issues, Issue{"error", "model-missing", "机型不存在。"})
 	} else if s.cfg.GPUFamily != "software" && m.GPUFamily != s.cfg.GPUFamily {
-		issues = append(issues, Issue{"error", "gpu-mismatch", fmt.Sprintf("机型显卡 %s 和机器显卡 %s 对不上。", m.GPUFamily, s.cfg.GPUFamily)})
+		if m.Disguised() && m.GPU != nil && m.GPU.Renderer != "" {
+			issues = append(issues, Issue{"warning", "gpu-disguised", fmt.Sprintf("伪装档：显卡名对外报 %s（实际是 %s）。Vulkan、OpenCL、渲染结果、跑分还是板子的，深度检测会露馅。", m.GPU.Renderer, s.cfg.GPUFamily)})
+		} else {
+			issues = append(issues, Issue{"error", "gpu-mismatch", fmt.Sprintf("机型显卡 %s 和机器显卡 %s 对不上。", m.GPUFamily, s.cfg.GPUFamily)})
+		}
 	}
 	for _, key := range []string{"androidId", "serial", "wifiMac", "bluetoothMac", "gaid"} {
 		v := p.Fields[key].Value
@@ -1014,10 +1018,17 @@ func (s *Service) Start(ctx context.Context, id string) error {
 	// 硬件名（ro.hardware）：镜像里按芯片名放好了显卡驱动（标签 prism.hw）就用机型的芯片名，不再是 redroid（踩坑 #63）。
 	// 启动参数在入口里改（withHardware）；这里只给改 build.prop 用。
 	hw := s.hardwareName(ctx, image, s.resolvedValues(*p, st))
-	propArgs := bootArgs
-	if hw != "" {
-		propArgs = append(append([]string{}, bootArgs...), "ro.hardware="+hw)
+	// 伪装档：真机硬件名的显示模块、显卡字符串转接库，开机前挂进去（disguise.go）
+	dBinds, dProps, dhw := s.disguiseBinds(ctx, p.ID, image, s.model(p.ModelID), strings.Fields(s.imageLabel(ctx, image, "prism.hw")))
+	if dhw != "" {
+		hw = dhw
 	}
+	binds = append(binds, dBinds...)
+	propArgs := append([]string{}, bootArgs...)
+	if hw != "" {
+		propArgs = append(propArgs, "ro.hardware="+hw)
+	}
+	propArgs = append(propArgs, dProps...)
 	if bpBinds, err := s.prepareBuildProps(ctx, p.ID, image, propArgs, spaced); err != nil {
 		log.Printf("手机 %s：build.prop 没改写（照镜像原样开机）：%v", p.ID, err)
 	} else {

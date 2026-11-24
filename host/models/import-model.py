@@ -173,6 +173,35 @@ def gpu_of(pkg, props):
     return m.group(1).strip() if m else ""
 
 
+def gpu_info(pkg, props):
+    """真机的显卡字符串（伪装档用：转接库照这个回答 glGetString）。没录的返回 None。"""
+    info = {}
+    di = pkg.text("device_info.json")
+    if di:
+        try:
+            g = json.loads(di).get("gpu") or {}
+        except ValueError:
+            g = {}
+        info = {"vendor": g.get("gles20.vendor", ""), "renderer": g.get("gles20.renderer", ""),
+                "version": g.get("gles20.version", ""), "extensions": g.get("gles20.extensions", "")}
+    if not info.get("renderer"):
+        # 我们采集的：dumpsys SurfaceFlinger 的「GLES: 厂商, 显卡名, 版本」，下一行是扩展列表
+        sf = pkg.text("gpu/surfaceflinger.txt").splitlines()
+        for i, l in enumerate(sf):
+            m = re.match(r"\s*GLES: ([^,]+), ([^,]+), (.+)$", l)
+            if m:
+                info = {"vendor": m.group(1).strip(), "renderer": m.group(2).strip(), "version": m.group(3).strip(),
+                        "extensions": sf[i + 1].strip() if i + 1 < len(sf) and sf[i + 1].strip().startswith("GL_") else ""}
+                break
+    if not info.get("renderer"):
+        return None
+    m = re.match(r"OpenGL ES (\d)\.(\d)", info.get("version", ""))
+    info["glsl"] = f"OpenGL ES GLSL ES {m.group(1)}.{m.group(2)}0" if m and m.group(1) >= "3" else ("OpenGL ES GLSL ES 1.00" if m else "")
+    info["egl"] = props.get("ro.hardware.egl", "")
+    info["vulkan"] = props.get("ro.hardware.vulkan", "")
+    return {k: v for k, v in info.items() if v}
+
+
 def display_of(pkg):
     d = pkg.text("display.json")
     if d:
@@ -264,6 +293,13 @@ def convert(path, tac_db, host_gpu, host_cpus):
         "local": True, "source": pkg.kind,
         "values": values, "androidVersions": [int(rel)] if rel.isdigit() else [],
     }
+    gi = gpu_info(pkg, props)
+    if prof["tier"] == "disguised" and not gi:
+        raise SystemExit(f"{path}：伪装档要真机的显卡字符串（显卡名 / 版本 / 扩展列表），这个包没录（魔云腾旧格式包），不导入")
+    if gi:
+        prof["gpu"] = gi
+    if props.get("ro.hardware"):
+        prof["hardware"] = props["ro.hardware"]
     if tac_key:
         prof["imeiTacs"] = tac_db[tac_key][:8]
     if v9:
