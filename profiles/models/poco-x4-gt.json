@@ -21,7 +21,7 @@
       },
       {
         "part": "Cortex-A78",
-        "midr": "0x411fd410",
+        "midr": "0x411fd411",
         "count": 4
       }
     ],
@@ -46,6 +46,7 @@
     "touchPoints": 10,
     "boardPlatform": "mt6895"
   },
+  "cpuTree": "mt6895",
   "androidVersions": [
     12,
     13,

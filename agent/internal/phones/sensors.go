@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"hash/fnv"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -194,24 +195,35 @@ func (s *Service) hideBootProps(ctx context.Context, id string) {
 	}
 }
 
-// hardwareName 这台手机该用的硬件名：镜像标签 prism.hw 里有机型芯片名（小写，如 mt6895）就用它；
-// 镜像没处理过 redroid 名字（老镜像）返回空，照旧用 redroid（不然找不到显卡驱动开不了机）。
+// hardwareName 这台手机该用的硬件名：镜像标签 prism.hw 里列着镜像带了驱动的芯片名（小写，如 mt6895）。
+// 镜像没处理过 redroid 名字（老镜像，没有标签）返回空，照旧用 redroid。
 func (s *Service) hardwareName(ctx context.Context, image string, byKey map[string]any) string {
-	soc, _ := byKey["socModel"].(string)
-	soc = strings.ToLower(strings.TrimSpace(soc))
-	if soc == "" {
-		return ""
-	}
 	out, err := s.run.Run(ctx, "docker", "image", "inspect", "-f", `{{index .Config.Labels "prism.hw"}}`, image)
 	if err != nil {
 		return ""
 	}
-	for _, h := range strings.Fields(out) {
-		if h == soc {
-			return soc
+	return pickHardware(strings.Fields(out), byKey)
+}
+
+var socPrefix = regexp.MustCompile(`^[a-z]+[0-9]+`)
+
+// pickHardware 从镜像带的硬件名里挑一个：芯片型号（MT6895）→ 去掉后缀的芯片型号（真机 ro.soc.model 常带后缀，
+// 如 vivo 的 MT6895Z/TCZA）→ 硬件平台名（boardPlatform）。都对不上就用镜像里的第一个：
+// 处理过的镜像里已经没有 redroid 的显示合成模块，退回 redroid 会开不了机（2026-11-24 导入魔云腾机型时踩到）。
+func pickHardware(have []string, byKey map[string]any) string {
+	if len(have) == 0 {
+		return ""
+	}
+	low := func(k string) string { v, _ := byKey[k].(string); return strings.ToLower(strings.TrimSpace(v)) }
+	soc := low("socModel")
+	for _, c := range []string{soc, socPrefix.FindString(soc), low("boardPlatform")} {
+		for _, h := range have {
+			if c != "" && h == c {
+				return h
+			}
 		}
 	}
-	return ""
+	return have[0]
 }
 
 // imageEntrypoint 镜像原来的入口（没有返回 nil）。

@@ -24,6 +24,7 @@
     "touchPoints": 10,
     "boardPlatform": "mt6895"
   },
+  "cpuTree": "mt6895",
   "androidVersions": [
     12,
     13,
