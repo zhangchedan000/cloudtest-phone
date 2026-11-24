@@ -327,6 +327,14 @@ func label(boot bool) (int, error) {
 			}
 			n += l.Relabel(d, true, nil)
 		}
+		// redroid 带的开源 Vulkan 驱动（PC 显卡 radeon / nouveau、高通 freedreno、树莓派 broadcom……）：App 能列 /vendor/lib64/hw，
+		// 一看就不是天玑手机；镜像里删不掉（构建时跑不了安卓程序），每次开机在这里删（容器每次开机是新的一层，等于没有）。
+		// Vulkan 用镜像补上的 Mali 入口模块 vulkan.mali.so（ro.hardware.vulkan=mali，踩坑 #148）
+		for _, lib := range []string{"lib64", "lib"} {
+			for _, d := range []string{"broadcom", "freedreno", "lvp", "nouveau", "panfrost", "pastel", "radeon", "virtio", "intel", "v3d", "asahi"} {
+				_ = os.Remove("/vendor/" + lib + "/hw/vulkan." + d + ".so")
+			}
+		}
 		// Docker 的 /dev/ptmx 是指向 /dev/pts/ptmx 的链接（标签是 devpts，ioctl 按扩展权限只放行 ptmx_device）：
 		// 安卓 logwrapper 开伪终端被拦 → linkerconfig 起不来 → 系统程序找不到 APEX 里的库。换成真机那样的字符设备 5:2
 		if fi, err := os.Lstat("/dev/ptmx"); err == nil && fi.Mode()&os.ModeSymlink != 0 {
