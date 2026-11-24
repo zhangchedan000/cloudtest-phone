@@ -11,6 +11,25 @@ import (
 )
 
 // 开机后设置：时区、语言。
+// radioProps 机型的基带版本、电话模块名；真机包没录电话模块名的按芯片厂商补（高通 Qualcomm RIL、三星 Samsung RIL；
+// 联发科真机就是 android reference-ril 1.0，和我们一样，不用改）。
+func radioProps(m *Model, byKey map[string]any) map[string]string {
+	out := map[string]string{}
+	for k, v := range m.RadioProps {
+		out[k] = v
+	}
+	if out["gsm.version.ril-impl"] == "" {
+		soc := strings.ToLower(str(byKey["socManufacturer"]) + " " + m.Hardware + " " + str(byKey["brand"]))
+		switch {
+		case strings.Contains(soc, "qti") || strings.Contains(soc, "qualcomm") || strings.Contains(soc, "qcom"):
+			out["gsm.version.ril-impl"] = "Qualcomm RIL 1.0"
+		case strings.Contains(soc, "samsung") && !strings.Contains(soc, "mediatek") && !strings.Contains(soc, "qti"):
+			out["gsm.version.ril-impl"] = "Samsung RIL v5.0"
+		}
+	}
+	return out
+}
+
 // 实测（踩坑 #6）：persist.* 属性用 Redroid 启动参数设不进去，只能等安卓开机完成后在容器里 setprop。
 // 语言要重启安卓框架（zygote）才生效，所以只在和当前值不同时设置，避免每次开机都多重启一次。
 
@@ -191,8 +210,16 @@ func (s *Service) applySettings(ctx context.Context, id string) {
 	// 基带版本、电话模块名照真机（gsm.*：电话服务开机时写自己的，开机后改；检测器 #154 查到的是模拟器的
 	// 「android reference-ril 1.0」和基带「1.0.0.0」）。带空格的值只能这样设（开机参数会被截断）。
 	if m := s.model(p.ModelID); m != nil {
+		byKey := s.resolvedValues(*p, st)
+		radio := radioProps(m, byKey)
+		if radio["gsm.version.baseband"] == "" {
+			// 没录真机基带版本的（内置机型）：用基带模拟器报的那个（按机型芯片生成，每台不同）
+			if sp := s.simSpec(*p, st, byKey); sp != nil && sp.Version != "" {
+				radio["gsm.version.baseband"] = sp.Version
+			}
+		}
 		for _, k := range []string{"gsm.version.baseband", "gsm.version.ril-impl"} {
-			v := m.RadioProps[k]
+			v := radio[k]
 			if v == "" || len(v) > 90 || strings.ContainsAny(v, "\n\"'`$") {
 				continue
 			}

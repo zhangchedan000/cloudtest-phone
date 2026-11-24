@@ -191,7 +191,7 @@ public class Main extends Activity {
                 Object v = facts.opt(k);
                 if (v instanceof String && EMU.matcher((String) v).find()) tell("kernel", k + " 有模拟器 / 容器 / 瑞芯微字样：" + clip((String) v, 200));
             }
-            String pv = facts.optString("k.proc_version");
+            String pv = facts.isNull("k.proc_version") ? "" : facts.optString("k.proc_version");
             if (pv.length() > 0 && !pv.contains(String.valueOf(System.getProperty("os.version")))) tell("kernel", "/proc/version 和 uname 对不上：" + clip(pv, 120) + " / " + System.getProperty("os.version"));
         } });
         probe("time", new P() { public void run() {
