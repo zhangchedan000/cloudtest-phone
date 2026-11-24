@@ -283,7 +283,9 @@ for r in rows:
     if r.get("vk_drivers", "").split() not in ([], ["vulkan.mali.so"]): bad.append(f"{i} /vendor/lib64/hw 里还有别的 Vulkan 驱动：{r.get('vk_drivers')}")
     mm = models.get(r.get("spec_model", "")) or {}
     if mm.get("cpuTree"):
-        if r.get("cpu_online_type") != "regular file": bad.append(f"{i} /sys/devices/system/cpu/online 是「{r.get('cpu_online_type')}」，不是普通文件（CPU 目录没换上）")
+        denied = [k for k in ("cpu_online_type", "cpu_policies", "cpu_driver", "cpu_maxfreq") if "Permission denied" in r.get(k, "")]
+        if denied: bad.append(f"{i} CPU 目录 App 读不了（{'、'.join(denied)} 权限被拒：换上去的目录 SELinux 标签不对，踩坑 #147）")
+        elif r.get("cpu_online_type") != "regular file": bad.append(f"{i} /sys/devices/system/cpu/online 是「{r.get('cpu_online_type')}」，不是普通文件（CPU 目录没换上）")
         if r.get("cpu_driver") == "cpufreq-dt" or r.get("cpu_freqs0", "").startswith("408000 600000 816000"): bad.append(f"{i} CPU 目录还是 RK3588 的（{r.get('cpu_driver')}，{r.get('cpu_freqs0')}）")
     if r.get("ro.debuggable") != "0" or r.get("ro.build.type") != "user": bad.append(f"{i} 构建类型 {r.get('ro.build.type')} debuggable={r.get('ro.debuggable')}")
     if "cannot run as root" not in r.get("adb_root", "") : bad.append(f"{i} adb root 结果：{r.get('adb_root','')[:80]}")
