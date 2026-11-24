@@ -390,6 +390,55 @@ def codecs_of(pkg):
     return out
 
 
+def cameras_of(pkg):
+    """真机摄像头：[{facing: back/front, width, height, focalLengths, apertures, orientation, physicalSize}]，每个朝向只要第一个。
+    魔云腾三种写法：camera.json {"camera": [{facing 0 前 / 1 后, focalLengths, apertures, streamConfigurationMap [[宽, 高]]}]}；
+    camera.json [{facing "BACK", characteristics {整套 CameraCharacteristics}}]；device_info.json 的 camera.cameras [{facing, supportedSizes}]。"""
+    out = {}
+    def num(v):
+        try:
+            return float(v)
+        except (TypeError, ValueError):
+            return None
+    def add(facing, w, h, fl=None, ap=None, ori=None, phys=None):
+        facing = {"0": "front", "1": "back", "FRONT": "front", "BACK": "back"}.get(str(facing).upper() if not str(facing).isdigit() else str(facing), str(facing).lower())
+        if facing not in ("back", "front") or facing in out or not w or not h:
+            return
+        c = {"facing": facing, "width": int(w), "height": int(h)}
+        if fl: c["focalLengths"] = [round(x, 4) for x in (num(v) for v in fl) if x]
+        if ap: c["apertures"] = [round(x, 3) for x in (num(v) for v in ap) if x]
+        if ori is not None and num(ori) is not None: c["orientation"] = int(num(ori))
+        if phys and len(phys) == 2 and all(num(v) for v in phys): c["physicalSize"] = [round(num(v), 4) for v in phys]
+        out[facing] = c
+    try:
+        j = json.loads(pkg.text("camera.json") or "null")
+    except ValueError:
+        j = None
+    if isinstance(j, dict) and isinstance(j.get("camera"), list):
+        for c in j["camera"]:
+            sizes = [s for s in (c.get("streamConfigurationMap") or []) if isinstance(s, list) and len(s) == 2]
+            if sizes:
+                w, h = max(sizes, key=lambda s: s[0] * s[1])
+                add(c.get("facing"), w, h, c.get("focalLengths"), c.get("apertures"))
+    elif isinstance(j, list):
+        for c in j:
+            ch = (c or {}).get("characteristics") or {}
+            if c.get("parent_id", -1) not in (-1, None):
+                continue
+            pa = ch.get("android.sensor.info.pixelArraySize") or []
+            if len(pa) == 2:
+                add(c.get("facing") or (ch.get("android.lens.facing") or [""])[0], num(pa[0]), num(pa[1]),
+                    ch.get("android.lens.info.availableFocalLengths"), ch.get("android.lens.info.availableApertures"),
+                    (ch.get("android.sensor.orientation") or [None])[0], ch.get("android.sensor.info.physicalSize"))
+    if not out:
+        for c in ((device_info(pkg).get("camera") or {}).get("cameras") or []):
+            sizes = [tuple(int(x) for x in s.split("x")) for s in (c.get("supportedSizes") or []) if re.match(r"^\d+x\d+$", str(s))]
+            if sizes:
+                w, h = max(sizes, key=lambda s: s[0] * s[1])
+                add(c.get("facing"), w, h)
+    return [out[k] for k in ("back", "front") if k in out]
+
+
 def build_props_from(pkg, props):
     # 我们的采集包有各分区 build.prop 原文件：用 extract-buildprops.py 的规则（按加载顺序合并）
     bp = {k: v for k, v in pkg.files.items() if k.startswith("buildprop/")}
@@ -482,6 +531,9 @@ def convert(path, tac_db, host_gpu, host_cpus):
     sens = sensors_of(pkg)
     if sens:
         prof["sensors"] = sens
+    cams = cameras_of(pkg)
+    if cams:
+        prof["cameras"] = cams
     cods = codecs_of(pkg)
     if cods:
         prof["codecs"] = cods
