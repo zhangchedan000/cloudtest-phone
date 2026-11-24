@@ -339,6 +339,44 @@ def sensors_of(pkg):
     return [x for x in out if x["vendor"] != "AOSP"]
 
 
+def codecs_of(pkg):
+    """真机的硬件编解码器：[{name, canonical, type, encoder}]（别名的 canonical 是它指向的编解码器）。
+    魔云腾包 mediaCode.json（MediaCodecList 原样）；我们的采集包是 codecs/ 下的 media_codecs*.xml。软件的（c2.android / OMX.google）不要。"""
+    out = []
+    try:
+        lst = json.loads(pkg.text("mediaCode.json") or "[]")
+    except ValueError:
+        lst = []
+    if isinstance(lst, dict):
+        lst = lst.get("codecs") or lst.get("codecList") or []
+    for x in lst if isinstance(lst, list) else []:
+        if not isinstance(x, dict) or not x.get("getName") or not x.get("isHardwareAccelerated"):
+            continue
+        for t in x.get("getSupportedTypes") or []:
+            out.append({"name": x["getName"], "canonical": x.get("getCanonicalName") or x["getName"], "type": t, "encoder": bool(x.get("isEncoder"))})
+    if out:
+        return out
+    soft = re.compile(r"^(c2\.android\.|OMX\.google\.|c2\.google\.)")
+    for fname in sorted(k for k in pkg.files if k.startswith("codecs/")):
+        enc = None
+        for m in re.finditer(r"<(/?)(Encoders|Decoders)>|<MediaCodec\s+name=\"([^\"]+)\"(?:\s+type=\"([^\"]+)\")?[^>]*?(/?)>(.*?)(?:</MediaCodec>|(?=<MediaCodec)|$)",
+                             pkg.text(fname), re.S):
+            if m.group(2):
+                enc = (m.group(2) == "Encoders") if not m.group(1) else None
+                continue
+            name = m.group(3)
+            if soft.match(name):
+                continue
+            body = m.group(6) or ""
+            types = [m.group(4)] if m.group(4) else re.findall(r"<Type\s+name=\"([^\"]+)\"", body)
+            e = enc if enc is not None else ("encoder" in name.lower())
+            for t in types:
+                out.append({"name": name, "canonical": name, "type": t, "encoder": e})
+                for a in re.findall(r"<Alias\s+name=\"([^\"]+)\"", body):
+                    out.append({"name": a, "canonical": name, "type": t, "encoder": e})
+    return out
+
+
 def build_props_from(pkg, props):
     # 我们的采集包有各分区 build.prop 原文件：用 extract-buildprops.py 的规则（按加载顺序合并）
     bp = {k: v for k, v in pkg.files.items() if k.startswith("buildprop/")}
@@ -431,6 +469,9 @@ def convert(path, tac_db, host_gpu, host_cpus):
     sens = sensors_of(pkg)
     if sens:
         prof["sensors"] = sens
+    cods = codecs_of(pkg)
+    if cods:
+        prof["codecs"] = cods
     feats = features_of(pkg)
     if feats:
         prof["features"] = feats

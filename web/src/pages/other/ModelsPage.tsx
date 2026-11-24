@@ -176,6 +176,8 @@ function ModelDetail({ model: m }: { model: DeviceModel }) {
         }),
         { label: 'IMEI 型号码', children: m.imeiTacs?.length ? <span className="pp-mono pp-small">{m.imeiTacs.length} 个（{m.imeiTacs.slice(0, 3).join('、')}{m.imeiTacs.length > 3 ? '…' : ''}）</span> : <span className="pp-muted">没有：IMEI 用随机的 35 开头</span> },
         ...(m.features?.length ? [{ label: '系统特性', children: <span className="pp-small">真机 {m.features.length} 项（开机时照真机报，显卡 / 密钥库等按板子）</span> }] : []),
+        ...(m.sensors?.length ? [{ label: '传感器', children: <span className="pp-small">真机 {m.sensors.length} 个；加速度、陀螺仪、磁力计、距离、光线、气压按真机的名字 / 厂商 / 量程报（{[...new Set(m.sensors.filter((x) => [1, 2, 4, 5, 6, 8].includes(x.type)).map((x) => x.vendor))].slice(0, 4).join('、')}）</span> }] : []),
+        ...(m.codecs?.length ? [{ label: '编解码器', children: <span className="pp-small">真机硬件编解码器 {new Set(m.codecs.map((c) => c.name)).size} 个名字，加成板子编解码器的别名</span> }] : []),
         { label: '机型 ID', children: <span className="pp-mono pp-small">{m.id}</span> },
         ...(m.verifyNote ? [{ label: '说明', children: <span className="pp-small">{m.verifyNote}</span> }] : [])
       ]} />

@@ -75,6 +75,8 @@ type Model struct {
 	Features []string `json:"features,omitempty"`
 	// Sensors 真机的传感器清单（见 sensorshim.go）
 	Sensors []SensorInfo `json:"sensors,omitempty"`
+	// Codecs 真机的硬件编解码器（见 codecs.go）
+	Codecs []CodecInfo `json:"codecs,omitempty"`
 	Raw      json.RawMessage
 }
 

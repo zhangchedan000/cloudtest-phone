@@ -63,6 +63,10 @@ export interface DeviceModel {
   features?: string[]
   /** 真机 /data 总字节数 */
   dataBytes?: number
+  /** 真机传感器清单 */
+  sensors?: { type: number; name: string; vendor: string }[]
+  /** 真机硬件编解码器 */
+  codecs?: { name: string; canonical: string; type: string; encoder: boolean }[]
 }
 
 export type PhoneStatus = 'running' | 'stopped' | 'starting' | 'error'
