@@ -290,13 +290,10 @@ func label(boot bool) (int, error) {
 	// 真机上电池、温度节点在设备目录下、规则里单独标了类型，这里照真机打
 	fromKernel := func(mp, root string) int {
 		n := 0
-		// 整个目录挂进来的（真机 CPU 目录 /sys/devices/system/cpu，踩坑 #147）：挂载是只读的，setLabel 只能把
-		// 「挂载点本身」临时改可写，里面的文件打不上（全是 unlabeled，App / adb shell 读 CPU 目录全被 SELinux 拒）。
-		// 先把整个挂载点改可写，打完改回只读
+		// 整个目录挂进来的（真机 CPU 目录 /sys/devices/system/cpu）：挂之前已经由 __pp_labeltree 在中转目录里整棵打好
+		// （挂过去以后文件打不上，踩坑 #147），这里不再按新挂的 sysfs 重打（会把链接改成 sysfs，和真机不一样）
 		if fi, err := os.Lstat(mp); err == nil && fi.IsDir() {
-			if syscall.Mount("", mp, "", syscall.MS_REMOUNT|syscall.MS_BIND, "") == nil {
-				defer func() { _ = syscall.Mount("", mp, "", syscall.MS_REMOUNT|syscall.MS_BIND|syscall.MS_RDONLY, "") }()
-			}
+			return 0
 		}
 		_ = filepath.Walk(mp, func(p string, fi os.FileInfo, err error) error {
 			if err != nil {
