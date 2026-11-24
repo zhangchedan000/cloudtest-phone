@@ -5,6 +5,7 @@ import (
 	crand "crypto/rand"
 	"crypto/sha256"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -34,7 +35,14 @@ type Plan struct {
 	PhoneHost  int    // 手机拿到的地址 192.168.<Subnet>.<PhoneHost>
 	Channel    int    // 1 / 6 / 11
 	Dir        string // 配置、pid、日志放这里
+	Neighbors  []Neighbor // 周围的假邻居热点（各自独立小电台；手机不连它们，只为扫描时不止一个）
 }
+
+// nbrPhy / nbrIface 第 i 个假邻居热点的 hwsim 电台名和接口名（电台名带本次开机的随机后缀，和主 AP 同前缀，
+// 这样 Teardown 的「按前缀清网卡」能一并清掉；也会记进 radios 文件双保险）。
+func (p Plan) nbrPhy(i int) string   { return fmt.Sprintf("%sn%d", p.APPhy, i) }
+func (p Plan) nbrIface(i int) string { return fmt.Sprintf("wlann%d", i) }
+func (p Plan) nbrUnit(i int) string  { return fmt.Sprintf("nbr%d", i) }
 
 // 常见家用路由器：SSID 前缀和 MAC 前缀（OUI）一一对应，免得「TP-Link 的名字配华为的 MAC」。
 // style：名字后缀怎么生成（hex4：4 位十六进制；num2：两位数字；fritz：FRITZ!Box 型号 + 两个字母；plain5g：原名或加 5G）。
@@ -108,25 +116,70 @@ func PlanForCountry(phoneID, wifiMAC, dataDir, country string) (Plan, error) {
 		Channel:   []int{1, 6, 11}[int(h[6])%3],
 		Dir:       filepath.Join(dataDir, "phones", phoneID, "wifi"),
 	}
-	suffix := strings.ToUpper(fmt.Sprintf("%02x%02x", h[7], h[8]))
+	p.SSID = ssidForRouter(r, h)
+	p.Passphrase = wifiPass(h, 9)
+	p.Neighbors = neighborsFor(phoneID, list, p)
+	return p, nil
+}
+
+// ssidForRouter 按路由器牌子的命名风格 + 哈希生成一个 SSID。
+func ssidForRouter(r router, h [32]byte) string {
 	switch r.style {
 	case "num2":
-		p.SSID = r.ssid + strconv.Itoa(10+int(h[7])%90)
+		return r.ssid + strconv.Itoa(10+int(h[7])%90)
 	case "fritz":
 		models := []string{"7590", "7530", "7590 AX", "6660 Cable", "7490"}
-		p.SSID = r.ssid + models[int(h[7])%len(models)] + " " + string(rune('A'+int(h[8])%26)) + string(rune('A'+int(h[9])%26))
+		return r.ssid + models[int(h[7])%len(models)] + " " + string(rune('A'+int(h[8])%26)) + string(rune('A'+int(h[9])%26))
 	case "plain5g":
-		p.SSID = r.ssid + []string{"", "", "5G", "_5G"}[int(h[7])%4]
+		return r.ssid + []string{"", "", "5G", "_5G"}[int(h[7])%4]
 	default:
-		p.SSID = r.ssid + suffix
+		return r.ssid + strings.ToUpper(fmt.Sprintf("%02x%02x", h[7], h[8]))
 	}
+}
+
+// wifiPass 从哈希取一段 12 位 WPA2 口令（给自己的热点，也给假邻居——邻居口令没人用，只是让它像个加密网络）。
+func wifiPass(h [32]byte, off int) string {
 	const letters = "abcdefghjkmnpqrstuvwxyz23456789"
 	pass := make([]byte, 12)
 	for i := range pass {
-		pass[i] = letters[int(h[9+i])%len(letters)]
+		pass[i] = letters[int(h[(off+i)%len(h)])%len(letters)]
 	}
-	p.Passphrase = string(pass)
-	return p, nil
+	return string(pass)
+}
+
+// Neighbor 周围的一个假邻居热点（独立的小电台，只发信标让手机扫得到；手机不连它）。
+type Neighbor struct {
+	SSID       string
+	Passphrase string
+	BSSID      [6]byte // MAC 用对应牌子的 OUI，牌子和 MAC 对得上
+	Channel    int     // 1 / 6 / 11，和自己的热点及彼此尽量错开
+}
+
+// neighborsFor 按手机 ID 稳定生成 2~4 个假邻居热点（真机周围本来就有好几个 WiFi；只有一个是破绽 pp-probe#154）。
+// 名字用同一套常见路由器牌子、BSSID 用该牌子的 OUI、信道错开；和自己的热点及彼此都不重名。固定不变（真实环境也稳定）。
+func neighborsFor(phoneID string, list []router, self Plan) []Neighbor {
+	nh := sha256.Sum256([]byte("prism-wifi-nbr:" + phoneID))
+	count := 2 + int(nh[0])%3 // 2~4 个
+	chans := []int{1, 6, 11}
+	seen := map[string]bool{self.SSID: true}
+	var out []Neighbor
+	for i := 0; len(out) < count && i < count*4; i++ {
+		hh := sha256.Sum256([]byte(fmt.Sprintf("prism-wifi-nbr:%s:%d", phoneID, i)))
+		r := list[int(hh[0])%len(list)]
+		s := ssidForRouter(r, hh)
+		if seen[s] {
+			continue
+		}
+		seen[s] = true
+		ch := chans[(self.Channel/5+len(out)+1)%len(chans)] // 和自己的信道及彼此错开
+		out = append(out, Neighbor{
+			SSID:       s,
+			Passphrase: wifiPass(hh, 11),
+			BSSID:      [6]byte{r.oui[0], r.oui[1], r.oui[2], hh[1], hh[2], hh[3]},
+			Channel:    ch,
+		})
+	}
+	return out
 }
 
 // ParseMAC 解析 aa:bb:cc:dd:ee:ff。
@@ -153,6 +206,79 @@ func macString(m [6]byte) string {
 // RouterIP / PhoneIP 路由器、手机在 WiFi 里的地址。
 func (p Plan) RouterIP() string { return fmt.Sprintf("192.168.%d.1", p.Subnet) }
 func (p Plan) PhoneIP() string  { return fmt.Sprintf("192.168.%d.%d", p.Subnet, p.PhoneHost) }
+
+// nbrHostapdConf 一个假邻居热点的 hostapd 配置（单 SSID，WPA2，只发信标、不配 DHCP/NAT）。
+func nbrHostapdConf(iface string, n Neighbor) string {
+	return fmt.Sprintf(`interface=%s
+driver=nl80211
+ssid=%s
+hw_mode=g
+channel=%d
+ieee80211n=1
+wmm_enabled=1
+auth_algs=1
+wpa=2
+wpa_key_mgmt=WPA-PSK
+rsn_pairwise=CCMP
+wpa_passphrase=%s
+`, iface, n.SSID, n.Channel, n.Passphrase)
+}
+
+// addNeighbors 在路由器命名空间里给每个假邻居建一块独立的 hwsim 电台 + 起一个只发信标的 hostapd。
+// 全程 best-effort：任何一个失败只记日志、跳过，不影响手机已经配好的主 WiFi（主 WiFi 失败才回退有线）。
+// 新建的电台名追加进 radios 文件，Teardown 会按名字删掉。
+func addNeighbors(ctx context.Context, run Runner, newRadio NewRadioFunc, p Plan, nsPath string) {
+	in := func(args ...string) []string { return append([]string{"netns", "exec", p.Netns}, args...) }
+	sd := useSystemd()
+	var phys []string
+	for i, n := range p.Neighbors {
+		phy := p.nbrPhy(i)
+		if _, err := newRadio(nsPath, phy, n.BSSID); err != nil {
+			log.Printf("手机 %s：假邻居热点 %d 建电台失败（跳过）：%v", p.PhoneID, i, err)
+			continue
+		}
+		phys = append(phys, phy)
+		iface := p.nbrIface(i)
+		var ierr error
+		for j := 0; j < 10; j++ {
+			if _, ierr = run.Run(ctx, "ip", in("iw", "phy", phy, "interface", "add", iface, "type", "managed")...); ierr == nil {
+				break
+			}
+			time.Sleep(200 * time.Millisecond)
+		}
+		if ierr != nil {
+			log.Printf("手机 %s：假邻居热点 %d 建接口失败（跳过）：%v", p.PhoneID, i, ierr)
+			continue
+		}
+		if _, err := run.Run(ctx, "ip", in("ip", "link", "set", iface, "up")...); err != nil {
+			log.Printf("手机 %s：假邻居热点 %d 启用接口失败（跳过）：%v", p.PhoneID, i, err)
+			continue
+		}
+		conf := filepath.Join(p.Dir, fmt.Sprintf("hostapd-nbr%d.conf", i))
+		if err := os.WriteFile(conf, []byte(nbrHostapdConf(iface, n)), 0o600); err != nil {
+			continue
+		}
+		if sd {
+			u := unitName(p, p.nbrUnit(i))
+			_, _ = run.Run(ctx, "systemctl", "stop", u)
+			_, _ = run.Run(ctx, "systemctl", "reset-failed", u)
+			full := append([]string{"--unit=" + u, "--collect", "--quiet", "-p", "Restart=always", "-p", "RestartSec=5",
+				"--description=prism-phone 假邻居热点", "ip"}, in("hostapd", "-f", conf+".log", conf)...)
+			if out, err := run.Run(ctx, "systemd-run", full...); err != nil {
+				log.Printf("手机 %s：假邻居热点 %d hostapd 没起来（跳过）：%v %s", p.PhoneID, i, err, strings.TrimSpace(out))
+			}
+		} else {
+			if out, err := run.Run(ctx, "ip", in("hostapd", "-B", "-P", conf+".pid", "-f", conf+".log", conf)...); err != nil {
+				log.Printf("手机 %s：假邻居热点 %d hostapd 没起来（跳过）：%v %s", p.PhoneID, i, err, strings.TrimSpace(out))
+			}
+		}
+	}
+	// 把假邻居电台名也记进 radios 文件（和主 AP 同前缀，Teardown 会删；记进去是双保险）
+	if len(phys) > 0 {
+		old, _ := os.ReadFile(filepath.Join(p.Dir, "radios"))
+		_ = os.WriteFile(filepath.Join(p.Dir, "radios"), []byte(strings.TrimRight(string(old), "\n")+" "+strings.Join(phys, " ")+"\n"), 0o600)
+	}
+}
 
 // HostapdConf 热点配置（WPA2 个人，和普通家用路由器一样）。
 func (p Plan) HostapdConf() string {
@@ -311,6 +437,8 @@ func Setup(ctx context.Context, run Runner, newRadio NewRadioFunc, p Plan, conta
 			return err
 		}
 	}
+	// 主 WiFi 已经配好；再挂几个假邻居热点（best-effort，失败不影响主 WiFi）。
+	addNeighbors(ctx, run, newRadio, p, nsPath)
 	return nil
 }
 
@@ -466,10 +594,17 @@ func Teardown(ctx context.Context, run Runner, p Plan) error {
 		}
 	}
 	_ = os.Remove(filepath.Join(p.Dir, "radios"))
-	if useSystemd() {
-		_, _ = run.Run(ctx, "systemctl", "stop", unitName(p, "hostapd"), unitName(p, "dnsmasq"))
+	// 假邻居热点的 hostapd（按手机 ID 稳定重算，个数一致；多停几个空的也没关系）
+	nbrUnits := []string{}
+	nbrPids := []string{}
+	for i := 0; i < len(p.Neighbors)+4; i++ {
+		nbrUnits = append(nbrUnits, unitName(p, p.nbrUnit(i)))
+		nbrPids = append(nbrPids, fmt.Sprintf("hostapd-nbr%d.conf.pid", i))
 	}
-	for _, f := range []string{"hostapd.pid", "dnsmasq.pid"} {
+	if useSystemd() {
+		_, _ = run.Run(ctx, "systemctl", append([]string{"stop", unitName(p, "hostapd"), unitName(p, "dnsmasq")}, nbrUnits...)...)
+	}
+	for _, f := range append([]string{"hostapd.pid", "dnsmasq.pid"}, nbrPids...) {
 		if b, err := os.ReadFile(filepath.Join(p.Dir, f)); err == nil {
 			if pid := strings.TrimSpace(string(b)); pid != "" {
 				_, _ = run.Run(ctx, "kill", pid)

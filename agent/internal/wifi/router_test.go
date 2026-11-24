@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -14,7 +15,7 @@ func TestPlanForStableAndRealistic(t *testing.T) {
 		t.Fatal(err)
 	}
 	b, _ := PlanFor("378ad10f54b8", "64:a2:00:3c:5e:71", "/data")
-	if a != b {
+	if !reflect.DeepEqual(a, b) {
 		t.Fatal("同一台手机的 WiFi 配置每次都应该一样")
 	}
 	c, _ := PlanFor("6fa04a04f5ba", "64:a2:00:3c:5e:72", "/data")
@@ -60,8 +61,14 @@ func TestSetupOrderAndCommands(t *testing.T) {
 	if err := Setup(context.Background(), r, newRadio, p, 4242, "10.88.0.1", "10.88.0.1:1053"); err != nil {
 		t.Fatal(err)
 	}
-	if len(radios) != 2 || !strings.HasPrefix(radios[0], "/run/netns/ppr-378ad10f54b8 ") {
-		t.Fatalf("两块网卡都要在路由器命名空间里建（隔离）：%v", radios)
+	// sta + ap 两块主网卡 + 若干假邻居网卡，全都要在路由器命名空间里建（隔离）。
+	if len(radios) < 2 {
+		t.Fatalf("网卡太少：%v", radios)
+	}
+	for _, rr := range radios {
+		if !strings.HasPrefix(rr, "/run/netns/ppr-378ad10f54b8 ") {
+			t.Fatalf("网卡都要在路由器命名空间里建（隔离）：%v", radios)
+		}
 	}
 	j := strings.Join(r.calls, "\n")
 	idx := func(s string) int { return strings.Index(j, s) }
@@ -148,11 +155,12 @@ func TestRadioNamesUniqueAndLeftoversCleaned(t *testing.T) {
 	if !strings.Contains(d, p.StaPhy+"ab12") || !strings.Contains(d, p.APPhy+"ab12") || strings.Contains(d, "pps99999") {
 		t.Fatalf("应只清掉这台手机漏下的网卡：%v", deleted)
 	}
-	if len(created) != 2 || created[0] == p.StaPhy || !strings.HasPrefix(created[0], p.StaPhy) {
+	if len(created) < 2 || created[0] == p.StaPhy || !strings.HasPrefix(created[0], p.StaPhy) {
 		t.Fatalf("新网卡名要带随机后缀：%v", created)
 	}
 	b, _ := os.ReadFile(filepath.Join(p.Dir, "radios"))
-	if strings.TrimSpace(string(b)) != created[0]+" "+created[1] {
+	// radios 文件要含 sta + ap 两块主网卡（后面还可能跟假邻居网卡）
+	if !strings.Contains(string(b), created[0]) || !strings.Contains(string(b), created[1]) {
 		t.Fatalf("radios 文件：%q", b)
 	}
 	deleted = nil
