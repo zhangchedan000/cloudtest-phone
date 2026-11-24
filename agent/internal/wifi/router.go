@@ -34,7 +34,6 @@ type Plan struct {
 	PhoneHost  int    // 手机拿到的地址 192.168.<Subnet>.<PhoneHost>
 	Channel    int    // 1 / 6 / 11
 	Dir        string // 配置、pid、日志放这里
-	Neighbors  []Neighbor // 周围的假邻居热点（多 BSS，只为扫描时不止一个；手机不连它们）
 }
 
 // 常见家用路由器：SSID 前缀和 MAC 前缀（OUI）一一对应，免得「TP-Link 的名字配华为的 MAC」。
@@ -109,61 +108,25 @@ func PlanForCountry(phoneID, wifiMAC, dataDir, country string) (Plan, error) {
 		Channel:   []int{1, 6, 11}[int(h[6])%3],
 		Dir:       filepath.Join(dataDir, "phones", phoneID, "wifi"),
 	}
-	p.SSID = ssidForRouter(r, h)
-	p.Passphrase = wifiPass(h, 9)
-	p.Neighbors = neighborsFor(phoneID, list, p.SSID)
-	return p, nil
-}
-
-// ssidForRouter 按路由器牌子的命名风格 + 哈希生成一个 SSID。
-func ssidForRouter(r router, h [32]byte) string {
+	suffix := strings.ToUpper(fmt.Sprintf("%02x%02x", h[7], h[8]))
 	switch r.style {
 	case "num2":
-		return r.ssid + strconv.Itoa(10+int(h[7])%90)
+		p.SSID = r.ssid + strconv.Itoa(10+int(h[7])%90)
 	case "fritz":
 		models := []string{"7590", "7530", "7590 AX", "6660 Cable", "7490"}
-		return r.ssid + models[int(h[7])%len(models)] + " " + string(rune('A'+int(h[8])%26)) + string(rune('A'+int(h[9])%26))
+		p.SSID = r.ssid + models[int(h[7])%len(models)] + " " + string(rune('A'+int(h[8])%26)) + string(rune('A'+int(h[9])%26))
 	case "plain5g":
-		return r.ssid + []string{"", "", "5G", "_5G"}[int(h[7])%4]
+		p.SSID = r.ssid + []string{"", "", "5G", "_5G"}[int(h[7])%4]
 	default:
-		return r.ssid + strings.ToUpper(fmt.Sprintf("%02x%02x", h[7], h[8]))
+		p.SSID = r.ssid + suffix
 	}
-}
-
-// wifiPass 从哈希取一段 12 位 WPA2 口令（给自己的热点，也给假邻居——邻居的口令没人用，只是让它像个加密网络）。
-func wifiPass(h [32]byte, off int) string {
 	const letters = "abcdefghjkmnpqrstuvwxyz23456789"
 	pass := make([]byte, 12)
 	for i := range pass {
-		pass[i] = letters[int(h[(off+i)%len(h)])%len(letters)]
+		pass[i] = letters[int(h[9+i])%len(letters)]
 	}
-	return string(pass)
-}
-
-// Neighbor 周围的一个假邻居热点（只为了扫描时不止一个；手机不连它，口令随机）。
-type Neighbor struct {
-	SSID       string
-	Passphrase string
-}
-
-// neighborsFor 按手机 ID 稳定生成 2~4 个假邻居热点（真机周围本来就有好几个 WiFi；只有一个反而是破绽 pp-probe#154）。
-// 名字用同一套常见路由器牌子，和自己的热点及彼此都不重名。固定不变：同一台手机每次扫到的邻居一样（真实环境也稳定）。
-func neighborsFor(phoneID string, list []router, selfSSID string) []Neighbor {
-	nh := sha256.Sum256([]byte("prism-wifi-nbr:" + phoneID))
-	count := 2 + int(nh[0])%3 // 2~4 个
-	seen := map[string]bool{selfSSID: true}
-	var out []Neighbor
-	for i := 0; len(out) < count && i < count*4; i++ {
-		hh := sha256.Sum256([]byte(fmt.Sprintf("prism-wifi-nbr:%s:%d", phoneID, i)))
-		r := list[int(hh[0])%len(list)]
-		s := ssidForRouter(r, hh)
-		if seen[s] {
-			continue
-		}
-		seen[s] = true
-		out = append(out, Neighbor{SSID: s, Passphrase: wifiPass(hh, 11)})
-	}
-	return out
+	p.Passphrase = string(pass)
+	return p, nil
 }
 
 // ParseMAC 解析 aa:bb:cc:dd:ee:ff。
@@ -191,12 +154,9 @@ func macString(m [6]byte) string {
 func (p Plan) RouterIP() string { return fmt.Sprintf("192.168.%d.1", p.Subnet) }
 func (p Plan) PhoneIP() string  { return fmt.Sprintf("192.168.%d.%d", p.Subnet, p.PhoneHost) }
 
-// HostapdConf 热点配置（WPA2 个人，和普通家用路由器一样）。自己这个热点手机会连；
-// 后面再挂几个假邻居热点（多 BSS，同一块电台广播多个 SSID），让手机扫描时看到好几个网络，
-// 不是光秃秃一个（真机周围一般有好几个 WiFi，只有一个是 pp-probe#154 的破绽）。
+// HostapdConf 热点配置（WPA2 个人，和普通家用路由器一样）。
 func (p Plan) HostapdConf() string {
-	var b strings.Builder
-	fmt.Fprintf(&b, `interface=wlan1
+	return fmt.Sprintf(`interface=wlan1
 driver=nl80211
 ssid=%s
 hw_mode=g
@@ -209,21 +169,6 @@ wpa_key_mgmt=WPA-PSK
 rsn_pairwise=CCMP
 wpa_passphrase=%s
 `, p.SSID, p.Channel, p.Passphrase)
-	// 假邻居热点：每个一个额外 BSS（BSSID 由电台基址自动递增）。手机不连它们。
-	for i, n := range p.Neighbors {
-		fmt.Fprintf(&b, `
-bss=wlan1_%d
-ssid=%s
-ieee80211n=1
-wmm_enabled=1
-auth_algs=1
-wpa=2
-wpa_key_mgmt=WPA-PSK
-rsn_pairwise=CCMP
-wpa_passphrase=%s
-`, i+1, n.SSID, n.Passphrase)
-	}
-	return b.String()
 }
 
 // NewRadioFunc 建 hwsim 网卡（测试时换成假的）。

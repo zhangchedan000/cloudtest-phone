@@ -1,7 +1,6 @@
 package wifi
 
 import (
-	"reflect"
 	"context"
 	"os"
 	"path/filepath"
@@ -15,7 +14,7 @@ func TestPlanForStableAndRealistic(t *testing.T) {
 		t.Fatal(err)
 	}
 	b, _ := PlanFor("378ad10f54b8", "64:a2:00:3c:5e:71", "/data")
-	if !reflect.DeepEqual(a, b) {
+	if a != b {
 		t.Fatal("同一台手机的 WiFi 配置每次都应该一样")
 	}
 	c, _ := PlanFor("6fa04a04f5ba", "64:a2:00:3c:5e:72", "/data")
