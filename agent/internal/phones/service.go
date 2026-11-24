@@ -1033,6 +1033,11 @@ func (s *Service) Start(ctx context.Context, id string) error {
 	binds = append(binds, s.codecBinds(ctx, p.ID, image, s.model(p.ModelID))...)
 	binds = append(binds, s.cameraBinds(ctx, p.ID, image, s.model(p.ModelID))...)
 	bootArgs = append(bootArgs, dProps...) // ro.hardware.egl：原 build.prop 里没有，只能走开机参数（比镜像 gpu_config.sh 设的 mali 早）
+	// ro.board.platform（踩坑 #153）：以前一直空着（#12：在云服务器上和 ro.hardware 一起改成芯片名开不了机）。现在 ro.hardware 单独处理
+	// （镜像里有对应显示模块的名字，#149），显卡 / Vulkan 按 ro.hardware.egl / vulkan 找，平台名只是兜底，按机型设成真机的（kalama、mt6895……）
+	if pl := boardPlatform(s.resolvedValues(*p, st)); pl != "" {
+		bootArgs = append(bootArgs, "ro.board.platform="+pl)
+	}
 	propArgs := append([]string{}, bootArgs...)
 	if hw != "" {
 		propArgs = append(propArgs, "ro.hardware="+hw)

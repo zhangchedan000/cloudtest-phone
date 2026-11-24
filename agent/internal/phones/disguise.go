@@ -218,4 +218,13 @@ func (s *Service) imageCacheDir(ctx context.Context, image string) (string, erro
 	return filepath.Join(s.cfg.DataDir, "hwmods", key), nil
 }
 
+// boardPlatform 机型的平台名（ro.board.platform），不像样的不设。
+func boardPlatform(byKey map[string]any) string {
+	p := strings.ToLower(strings.TrimSpace(str(byKey["boardPlatform"])))
+	if !hwNameRe.MatchString(p) || p == "redroid" || strings.HasPrefix(p, "rk3") {
+		return ""
+	}
+	return p
+}
+
 func fileExists(p string) bool { _, err := os.Stat(p); return err == nil }

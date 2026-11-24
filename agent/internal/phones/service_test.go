@@ -199,9 +199,13 @@ func TestStartCreatesContainerWithProps(t *testing.T) {
 	if strings.Contains(cmd, "ro.product.marketname") {
 		t.Errorf("带空格的市场名不该出现在启动参数里：%s", cmd)
 	}
-	// ro.hardware / ro.board.platform 改了会开不了机（实测），不能传
-	if strings.Contains(cmd, "ro.hardware=") || strings.Contains(cmd, "ro.board.platform=") {
-		t.Errorf("ro.hardware / ro.board.platform 不能出现在启动参数里：%s", cmd)
+	// ro.hardware 改了会开不了机（实测），不能传（硬件名走入口的 androidboot.hardware，#149）；
+	// ro.board.platform 现在按机型传（踩坑 #153，硬件名单独处理以后平台名只是兜底）
+	if strings.Contains(cmd, " ro.hardware=") {
+		t.Errorf("ro.hardware 不能出现在启动参数里：%s", cmd)
+	}
+	if !strings.Contains(cmd, "ro.board.platform=mt6895") {
+		t.Errorf("平台名应按机型传：%s", cmd)
 	}
 	// persist.* 用启动参数设不进去，不传
 	if strings.Contains(cmd, "persist.sys") {
