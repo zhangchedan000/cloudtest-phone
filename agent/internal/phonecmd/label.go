@@ -2,6 +2,7 @@ package phonecmd
 
 import (
 	"bufio"
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -237,6 +238,38 @@ func LabelBoot() (int, error) { return label(true) }
 // LabelBinds 开机后管家又挂了伪造文件：只补管家清单里的挂载。/dev 这时不能再整个重打：安卓 init 建的属性文件
 // （/dev/__properties__/<类型>）、套接字的标签是按类型现打的，file_contexts 里没有，重打会全变成 device。
 func LabelBinds() (int, error) { return label(false) }
+
+// LabelTree 把 dir 下所有文件、目录、链接打成 ctx（mp 是 dir 所在的只读挂载点，临时改可写、打完改回只读）。
+// 给整棵伪造的 CPU 目录用：必须在手机里、在它挂到 /sys/devices/system/cpu 之前打——宿主机写的标签手机里不认，
+// 挂过去以后魔云腾内核又让文件打不上（踩坑 #147）
+func LabelTree(mp, dir, ctx string) (int, error) {
+	if !strings.HasPrefix(dir+"/", mp+"/") {
+		return 0, fmt.Errorf("%s 不在 %s 下", dir, mp)
+	}
+	if err := syscall.Mount("", mp, "", syscall.MS_REMOUNT|syscall.MS_BIND, ""); err != nil {
+		return 0, fmt.Errorf("改可写失败：%w", err)
+	}
+	defer func() { _ = syscall.Mount("", mp, "", syscall.MS_REMOUNT|syscall.MS_BIND|syscall.MS_RDONLY, "") }()
+	n := 0
+	var first error
+	err := filepath.Walk(dir, func(p string, _ os.FileInfo, err error) error {
+		if err != nil {
+			return nil
+		}
+		if e := lsetxattr(p, ctx); e != nil {
+			if first == nil {
+				first = fmt.Errorf("%s：%w", p, e)
+			}
+			return nil
+		}
+		n++
+		return nil
+	})
+	if err == nil && first != nil && n == 0 {
+		err = first
+	}
+	return n, err
+}
 
 func label(boot bool) (int, error) {
 	l, err := LoadLabeler(FileContextFiles)

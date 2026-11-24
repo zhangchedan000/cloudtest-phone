@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/zhangchedan000/prism-phone/agent/internal/phonecmd"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -237,13 +239,15 @@ func (s *Service) applyFakes(ctx context.Context, id string) {
 	}
 	// 已经挂上的不重复挂（管家重启后补做时，可能有一部分在重启前就挂好了）。
 	mounted := mountedTargets(ctx, s.run, name)
-	// 开了真 SELinux 的手机：整棵 CPU 目录挂上去之前，先让小助手在中转目录里把每个文件访问一遍，SELinux 在这里读到
-	// 宿主机写好的标签（CPUTree.write）并记住。挂到 /sys/devices/system/cpu 以后魔云腾内核会拦掉读标签，
-	// 没先读过的文件全成 unlabeled，App 读 possible / online 被拒（踩坑 #147）
+	// 开了真 SELinux 的手机：整棵 CPU 目录挂上去之前，让小助手在中转目录里亲手打好标签（踩坑 #147）。
+	// 宿主机写的标签手机里不认（魔云腾每台手机一套 SELinux）；挂到 /sys/devices/system/cpu 以后魔云腾内核又让文件
+	// 打不上标签。不打的话文件全是 unlabeled，谷歌服务等 App 读 possible / online 被拒
 	if sock := s.cmdSock(name); sock != "" {
 		for _, e := range entries {
 			if e.IsDir() && !mounted[targets[e.Name()]] {
-				_, _ = s.run.Run(ctx, s.cfg.InitHelper, "pp-cmdc", sock, "--", "sh", "-c", "ls -RZ "+fakeMount+"/"+e.Name()+" >/dev/null 2>&1")
+				if out, err := s.run.Run(ctx, s.cfg.InitHelper, "pp-cmdc", sock, "--", phonecmd.LabelTreeCmd, fakeMount, fakeMount+"/"+e.Name(), fakefs.CPUTreeLabel); err != nil {
+					log.Printf("手机 %s：%s 打标签失败：%v %s", id, targets[e.Name()], err, strings.TrimSpace(out))
+				}
 			}
 		}
 	}

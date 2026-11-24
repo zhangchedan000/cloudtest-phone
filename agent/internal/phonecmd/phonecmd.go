@@ -30,6 +30,9 @@ import (
 // RelabelCmd 小助手的内置命令：重新给挂载进来的东西补标签。
 const RelabelCmd = "__pp_relabel"
 
+// LabelTreeCmd 小助手的内置命令：__pp_labeltree <只读挂载点> <目录> <标签>，把目录里所有东西打成同一个标签。
+const LabelTreeCmd = "__pp_labeltree"
+
 type request struct {
 	Args []string `json:"args"`
 	Env  []string `json:"env,omitempty"`
@@ -138,6 +141,17 @@ func handle(c net.Conn) {
 	if json.Unmarshal(line, &req) != nil || len(req.Args) == 0 {
 		_ = writeFrame(c, &mu, 'R', []byte("phonecmd: 请求不对\n"))
 		_ = writeFrame(c, &mu, 'X', []byte{0, 0, 0, 127})
+		return
+	}
+	// 内置命令：给中转目录里的整棵伪造目录打标签（挂到 /sys/devices/system/cpu 之前，踩坑 #147）
+	if req.Args[0] == LabelTreeCmd && len(req.Args) == 4 {
+		n, err := LabelTree(req.Args[1], req.Args[2], req.Args[3])
+		msg, code := fmt.Sprintf("打了 %d 个标签\n", n), byte(0)
+		if err != nil {
+			msg, code = err.Error()+"\n", 1
+		}
+		_ = writeFrame(c, &mu, 'O', []byte(msg))
+		_ = writeFrame(c, &mu, 'X', []byte{0, 0, 0, code})
 		return
 	}
 	// 内置命令：管家挂完伪造文件后让小助手再补一遍标签
