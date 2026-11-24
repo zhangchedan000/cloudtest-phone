@@ -86,9 +86,40 @@ c2_seccomp_fix() {
   fi
   rm -rf "$PW"
 }
+# 增量补丁：Vulkan 没有显卡设备（踩坑 #148）。系统声称支持 Vulkan 1.1，App 枚举却是 0 个设备：/vendor/lib64/hw 里是 redroid 带的
+# 开源驱动（radeon / nouveau / freedreno / panfrost / virtio / lavapipe……，本身也是痕迹），没有 Mali 的入口模块，ro.hardware.vulkan 也是空的。
+# Mali 驱动 libGLES_mali.so 本身带 Vulkan，只缺 dobox 里那个 10K 的入口模块 vulkan.mali.so（依赖就是 libGLES_mali.so）。
+# 补上入口模块（App 进程要加载：same_process_hal_file）、开机最早设 ro.hardware.vulkan=mali、删掉开源驱动；只给新叠的这层打标签
+VKM=/vendor/lib64/hw/vulkan.mali.so
+vulkan_fix() {
+  src=$B/dobox$ver-vendor/lib64/hw/vulkan.mali.so
+  VW=$(mktemp -d "$B/vkfix.XXXX")
+  vcid=$(docker create "$1" /system/bin/sh)
+  if docker cp "$vcid:$VKM" "$VW/has" >/dev/null 2>&1; then docker rm "$vcid" >/dev/null; rm -rf "$VW"; return 0; fi
+  if [ ! -f "$src" ]; then docker rm "$vcid" >/dev/null; rm -rf "$VW"; log "· $1：没有 dobox$ver 的 vulkan.mali.so（$src），Vulkan 先不补"; return 0; fi
+  mkdir -p "$VW/ctx/vendor/lib64/hw" "$VW/ctx/vendor/etc/init" "$VW/ctx/vendor/etc/selinux"
+  cp "$src" "$VW/ctx$VKM"; chmod 644 "$VW/ctx$VKM"
+  printf 'on early-init\n    setprop ro.hardware.vulkan mali\n' > "$VW/ctx/vendor/etc/init/vulkan-mali.rc"; chmod 644 "$VW/ctx/vendor/etc/init/vulkan-mali.rc"
+  docker cp "$vcid:/vendor/etc/selinux/vendor_file_contexts" "$VW/ctx/vendor/etc/selinux/vendor_file_contexts" >/dev/null
+  grep -q 'vulkan\\.mali' "$VW/ctx/vendor/etc/selinux/vendor_file_contexts" ||
+    printf '/vendor/lib64/hw/vulkan\\.mali\\.so u:object_r:same_process_hal_file:s0\n' >> "$VW/ctx/vendor/etc/selinux/vendor_file_contexts"
+  chmod 644 "$VW/ctx/vendor/etc/selinux/vendor_file_contexts"
+  # 要删的开源驱动（docker build 的 RUN 用镜像自己的 toybox rm：和板子同是 arm64，能直接跑）
+  rmlist=$(docker run --rm --entrypoint /system/bin/ls "$1" /vendor/lib64/hw 2>/dev/null | grep -E '^vulkan\.(broadcom|freedreno|lvp|nouveau|panfrost|pastel|radeon|virtio|swiftshader|intel|v3d|asahi)\.so$' | sed 's|^|/vendor/lib64/hw/|' | tr '\n' ' ')
+  docker rm "$vcid" >/dev/null
+  { printf 'FROM %s\nCOPY ctx/ /\n' "$1"; [ -n "$rmlist" ] && printf 'RUN ["/system/bin/rm", "-f"%s]\n' "$(for f in $rmlist; do printf ', "%s"' "$f"; done)"; } > "$VW/Dockerfile"
+  docker build -q -t "$1" "$VW" >/dev/null || { rm -rf "$VW"; die "Vulkan 补丁那层没建成（$1）"; }
+  label_inputs "$1" "$VW"
+  label_layers "$VW" "$1" top
+  up=$(docker image inspect -f '{{.GraphDriver.Data.UpperDir}}' "$1")
+  ctx=$(python3 -c "import os,sys; print(os.getxattr(sys.argv[1], 'security.selinux').decode().strip(chr(0)))" "$up$VKM" 2>/dev/null)
+  [ "$ctx" = "u:object_r:same_process_hal_file:s0" ] || die "Vulkan 入口模块标签不对：$ctx"
+  log "✓ $1：Vulkan 补上 Mali 入口模块（ro.hardware.vulkan=mali），删了开源驱动：$(echo $rmlist | wc -w) 个"
+  rm -rf "$VW"
+}
 cur=$(docker image inspect -f '{{index .Config.Labels "prism.selinux"}}' "$img" 2>/dev/null || true)
 if [ "$cur" = "$SEL_VER" ]; then
-  if has_labels "$img"; then c2_seccomp_fix "$img"; log "$img 已经做好（第 $SEL_VER 版），跳过"; exit 0; fi
+  if has_labels "$img"; then c2_seccomp_fix "$img"; vulkan_fix "$img"; log "$img 已经做好（第 $SEL_VER 版），跳过"; exit 0; fi
   # docker save / load（导出包换新板）只带 security.capability，不带 security.selinux：镜像改过的内容都在，标签全丢了，
   # 手机开强制模式会全被拦。按镜像自己的规则和 file_contexts 把每一层重打一遍（2026-11-23 查实）
   log "$img 是做好的（第 $SEL_VER 版），但导入时丢了文件标签：重打"
@@ -99,6 +130,7 @@ if [ "$cur" = "$SEL_VER" ]; then
   has_labels "$img" || die "重打以后还是没有标签"
   log "✓ $img：标签重打好了"
   c2_seccomp_fix "$img"
+  vulkan_fix "$img"
   exit 0
 fi
 base=$img
@@ -383,3 +415,4 @@ printf 'FROM %s\nLABEL prism.selinux=%s\n' "$img-sel-wip" "$SEL_VER" | docker bu
 docker rmi "$img-sel-wip" >/dev/null 2>&1 || true
 log "✓ $img：已能开 SELinux（原镜像留在 $img-orig-sel）"
 c2_seccomp_fix "$img"
+vulkan_fix "$img"
