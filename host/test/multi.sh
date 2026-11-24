@@ -308,6 +308,14 @@ try:
 except OSError: pass
 for i, e in sorted(enc.items()):
     if "c2.rk." not in e: bad.append(f"{i} 实时画面没用上硬件编码（{e}）" + ("，原因看 %s.encoder-fallback.txt" % i if "c2.android" in e else ""))
+# 画面有没有内容：30 秒一路正常有 1MB 以上；只有十几 KB 是一直黑屏 / 不动（2026-11-24 伪装档扩展列表让界面画不出来，
+# 只查编码器时漏掉了）
+try:
+    for line in open(os.path.join(d, "stream.txt")):
+        a = line.split()
+        if len(a) >= 2 and a[1].isdigit() and int(a[1]) < 150000:
+            bad.append(f"{a[0]} 实时画面 30 秒只有 {int(a[1]) // 1024} KB，基本没有内容（黑屏？）")
+except OSError: pass
 # 有问题的手机 ID（KEEP_BAD=1 时收拾阶段不删，留着查）
 with open(os.path.join(d, "bad-ids.txt"), "w") as fh:
     fh.write("\n".join(sorted(set(b.split()[0] for b in bad if re.match(r"^[0-9a-f]{12}", b)))) + "\n")

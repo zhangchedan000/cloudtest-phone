@@ -6,7 +6,9 @@
  * （adreno、meow、pineapple…）指向这个库；它再打开板子真正的驱动 libGLES_mali.so，所有调用原样转过去，只改这几个：
  *   glGetString(GL_VENDOR / GL_RENDERER / GL_VERSION / GL_SHADING_LANGUAGE_VERSION / GL_EXTENSIONS)
  *   glGetStringi(GL_EXTENSIONS, i)、glGetIntegerv(GL_NUM_EXTENSIONS)
- * 返回机型包里录的真机值（显卡厂商、显卡名、驱动版本串、扩展列表）。
+ * 返回机型包里录的真机值（显卡厂商、显卡名、驱动版本串）。扩展列表只报「真机有、板子驱动也真支持」的那些
+ * （按真机的顺序）：全报真机的会让 Skia / Chrome 用上 Mali 没有的扩展（实测 GL_NV_shader_noperspective_interpolation
+ * 着色器编译失败 → 整个界面黑屏，2026-11-24）。代价是扩展列表比真机少几项（高通专有的那些）。
  *
  * 加载器的规矩：先 dlsym 驱动里的函数，没有就问驱动的 eglGetProcAddress。所以这里只导出 eglGetProcAddress 和要改的
  * 那几个 gl 函数，其余全部经 eglGetProcAddress 转给真驱动。真机扩展里有、Mali 驱动没有的函数，返回一个什么都不做
@@ -61,9 +63,11 @@ static void (*real_getIntegerv)(GLenum, GLint *);
 
 static char buf[CFG_SIZE];      /* cfg 拷出来的字符串 */
 static char extbuf[CFG_SIZE];   /* 扩展列表拆成一个个（glGetStringi 用） */
-static const char *s_vendor, *s_renderer, *s_version, *s_glsl, *s_exts;
-static const char *ext_list[MAX_EXT];
+static const char *s_vendor, *s_renderer, *s_version, *s_glsl, *s_fake_exts;
+static const char *ext_list[MAX_EXT];   /* 过滤后的扩展（glGetStringi 用） */
 static int ext_n;
+static char extstr[CFG_SIZE];           /* 过滤后的扩展，空格隔开（glGetString(GL_EXTENSIONS) 用） */
+static int ext_ready;                   /* 0 没做 1 正在做 2 做好了：要在有 GL 上下文的时候才能问真驱动 */
 
 static int str_eq(const char *a, const char *b) {
 	while (*a && *a == *b) a++, b++;
@@ -115,20 +119,56 @@ static void init(void) {
 			p++;
 		}
 		if (k == 5 && *f[1]) {
-			s_vendor = f[0], s_renderer = f[1], s_version = f[2], s_glsl = f[3], s_exts = f[4];
-			/* 扩展列表按空格拆开 */
-			int j = 0, q = 0;
-			while (s_exts[j] && q < CFG_SIZE - 1) {
-				while (s_exts[j] == ' ') j++;
-				if (!s_exts[j]) break;
-				if (ext_n < MAX_EXT) ext_list[ext_n++] = extbuf + q;
-				while (s_exts[j] && s_exts[j] != ' ' && q < CFG_SIZE - 2) extbuf[q++] = s_exts[j++];
-				extbuf[q++] = 0;
-			}
+			s_vendor = f[0], s_renderer = f[1], s_version = f[2], s_glsl = f[3], s_fake_exts = f[4];
 			spoof = 1;
 		}
 	}
 	__atomic_store_n(&inited, 1, __ATOMIC_RELEASE);
+}
+
+/* tok（长度 n）在空格隔开的列表 list 里吗 */
+static int has_token(const char *list, const char *tok, int n) {
+	const char *p = list;
+	while (p && *p) {
+		while (*p == ' ') p++;
+		const char *q = p;
+		while (*q && *q != ' ') q++;
+		if (q - p == n) {
+			int i = 0;
+			while (i < n && p[i] == tok[i]) i++;
+			if (i == n) return 1;
+		}
+		p = q;
+	}
+	return 0;
+}
+
+/* 过滤后的扩展列表：真机列表里、真驱动也有的（按真机顺序）。第一次问扩展时做（那时一定有 GL 上下文） */
+static void build_exts(void) {
+	int expect = 0;
+	if (__atomic_load_n(&ext_ready, __ATOMIC_ACQUIRE) == 2) return;
+	if (!__atomic_compare_exchange_n(&ext_ready, &expect, 1, 0, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) {
+		while (__atomic_load_n(&ext_ready, __ATOMIC_ACQUIRE) != 2) {}
+		return;
+	}
+	const char *realx = real_getString ? (const char *)real_getString(GL_EXTENSIONS) : 0;
+	int j = 0, q = 0, w = 0;
+	while (s_fake_exts[j]) {
+		while (s_fake_exts[j] == ' ') j++;
+		if (!s_fake_exts[j]) break;
+		int st = j;
+		while (s_fake_exts[j] && s_fake_exts[j] != ' ') j++;
+		int n = j - st;
+		if (!realx || !has_token(realx, s_fake_exts + st, n)) continue;
+		if (q + n + 2 >= CFG_SIZE || w + n + 2 >= CFG_SIZE || ext_n >= MAX_EXT) break;
+		ext_list[ext_n++] = extbuf + q;
+		for (int k = 0; k < n; k++) extbuf[q++] = s_fake_exts[st + k];
+		extbuf[q++] = 0;
+		if (w) extstr[w++] = ' ';
+		for (int k = 0; k < n; k++) extstr[w++] = s_fake_exts[st + k];
+	}
+	extstr[w] = 0;
+	__atomic_store_n(&ext_ready, 2, __ATOMIC_RELEASE);
 }
 
 EXPORT const GLubyte *glGetString(GLenum name) {
@@ -139,7 +179,7 @@ EXPORT const GLubyte *glGetString(GLenum name) {
 		case GL_RENDERER: return (const GLubyte *)s_renderer;
 		case GL_VERSION: if (*s_version) return (const GLubyte *)s_version; break;
 		case GL_SHADING_LANGUAGE_VERSION: if (*s_glsl) return (const GLubyte *)s_glsl; break;
-		case GL_EXTENSIONS: return (const GLubyte *)s_exts;
+		case GL_EXTENSIONS: build_exts(); return (const GLubyte *)extstr;
 		}
 	}
 	return real_getString ? real_getString(name) : 0;
@@ -147,13 +187,17 @@ EXPORT const GLubyte *glGetString(GLenum name) {
 
 EXPORT const GLubyte *glGetStringi(GLenum name, GLuint index) {
 	init();
-	if (spoof && name == GL_EXTENSIONS) return index < (GLuint)ext_n ? (const GLubyte *)ext_list[index] : 0;
+	if (spoof && name == GL_EXTENSIONS) {
+		build_exts();
+		return index < (GLuint)ext_n ? (const GLubyte *)ext_list[index] : 0;
+	}
 	return real_getStringi ? real_getStringi(name, index) : 0;
 }
 
 EXPORT void glGetIntegerv(GLenum pname, GLint *data) {
 	init();
 	if (spoof && pname == GL_NUM_EXTENSIONS && data) {
+		build_exts();
 		*data = ext_n;
 		return;
 	}
