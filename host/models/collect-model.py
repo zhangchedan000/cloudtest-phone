@@ -14,7 +14,7 @@
   cpu/               整个 /sys/devices/system/cpu（真链接保留成链接；读不了的文件留空）
   proc/              cpuinfo、meminfo、version、cmdline
   gpu/               dumpsys SurfaceFlinger（OpenGL 名字 / 驱动版本 / 扩展）、cmd gpu vkjson（Vulkan 设备信息）
-  display.txt、sensors.txt、features.txt、libraries.txt、codecs/（media_codecs*.xml）、input.txt
+  display.txt、sensors.txt、features.txt、storage.txt（/data 容量）、libraries.txt、codecs/（media_codecs*.xml）、input.txt
   lib/libc.so        真机 libc（风控会比对系统库的编译号）
   auxv               shell 进程的辅助向量（指令集 HWCAP）
   meta.json          采集时间、工具版本、adb 序列号的哈希（不存原序列号）
@@ -124,6 +124,7 @@ def main():
         w("display.txt", sh(serial, "wm size; wm density; dumpsys display 2>/dev/null | grep -E 'mBaseDisplayInfo|DisplayDeviceInfo|refreshRate|supportedModes' | head -40"))
         w("sensors.txt", sh(serial, "dumpsys sensorservice 2>/dev/null | head -400"))
         w("features.txt", sh(serial, "pm list features"))
+        w("storage.txt", sh(serial, "df -k /data 2>&1"))
         w("libraries.txt", sh(serial, "pm list libraries"))
         w("input.txt", sh(serial, "getevent -i 2>/dev/null | head -300; dumpsys input 2>/dev/null | grep -A3 'Device [0-9]*:' | head -200"))
         for p in sh(serial, "ls /vendor/etc/media_codecs*.xml /system/etc/media_codecs*.xml /odm/etc/media_codecs*.xml 2>/dev/null").split():

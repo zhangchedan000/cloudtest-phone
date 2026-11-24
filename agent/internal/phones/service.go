@@ -327,6 +327,10 @@ func (s *Service) Create(req CreateRequest) (store.Phone, error) {
 					mode = "proxy" // 时区、语言、位置默认跟随代理
 				}
 			}
+			// 内核版本：机型包录了真机的就用真机的（和魔云腾一样照真机回放），没录的随机
+			if (f.Key == "kernelRelease" || f.Key == "kernelBuild") && m != nil && str(m.Values[f.Key]) != "" {
+				mode = "model"
+			}
 			fs := store.FieldSetting{Mode: mode}
 			if mode == "random" {
 				fs.Value = RandomValue(f.Key, m)
@@ -989,7 +993,7 @@ func (s *Service) Start(ctx context.Context, id string) error {
 	if err := s.docker.EnsureNetwork(ctx, s.cfg.Network, s.cfg.Subnet, s.gateway()); err != nil {
 		return fmt.Errorf("准备网络：%w", err)
 	}
-	dataDir, err := s.prepareData(ctx, p.ID, byKey)
+	dataDir, err := s.prepareData(ctx, p.ID, byKey, s.model(p.ModelID))
 	if err != nil {
 		return err
 	}
@@ -1024,6 +1028,7 @@ func (s *Service) Start(ctx context.Context, id string) error {
 		hw = dhw
 	}
 	binds = append(binds, dBinds...)
+	binds = append(binds, s.featureBinds(ctx, p.ID, image, s.model(p.ModelID))...)
 	bootArgs = append(bootArgs, dProps...) // ro.hardware.egl：原 build.prop 里没有，只能走开机参数（比镜像 gpu_config.sh 设的 mali 早）
 	propArgs := append([]string{}, bootArgs...)
 	if hw != "" {

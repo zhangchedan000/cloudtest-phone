@@ -69,6 +69,10 @@ type Model struct {
 	// GPU 真机显卡字符串（伪装档用，见 disguise.go）；Hardware 真机 ro.hardware（qcom、mt6989……）
 	GPU      *GPUInfo `json:"gpu,omitempty"`
 	Hardware string   `json:"hardware,omitempty"`
+	// DataBytes 真机 /data 的总字节数（机型包录的；见 storage.go）
+	DataBytes int64 `json:"dataBytes,omitempty"`
+	// Features 真机的系统特性列表（pm list features：「名字」或「名字=版本」；见 features.go）
+	Features []string `json:"features,omitempty"`
 	Raw      json.RawMessage
 }
 

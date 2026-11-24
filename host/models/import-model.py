@@ -224,6 +224,81 @@ def display_of(pkg):
     return {}
 
 
+def device_info(pkg):
+    """魔云腾新格式的 device_info.json（解析不了返回 {}）。"""
+    try:
+        j = json.loads(pkg.text("device_info.json") or "{}")
+        return j if isinstance(j, dict) else {}
+    except ValueError:
+        return {}
+
+
+def kernel_of(pkg):
+    """真机内核版本号 + 编译信息（uname -r / uname -v）：我们的采集包读 proc/version；魔云腾包读 kernel.json 或
+    device_info.json 里的 kernel.dg_config（uname.version 结尾多一个 aarch64，是它的采集工具把 uname -a 切错了）。"""
+    m = re.match(r"Linux version (\S+) .*?(#\d+ .+?)\s*$", pkg.text("proc/version").strip(), re.S)
+    if m:
+        return m.group(1), m.group(2)
+    dg = ((device_info(pkg).get("kernel") or {}).get("dg_config") or {})
+    rel = dg.get("kernel.uname.release") or ""
+    if not rel:
+        try:
+            rel = json.loads(pkg.text("kernel.json") or "{}").get("kernelVersion", "")
+        except ValueError:
+            rel = ""
+    build = re.sub(r"\s+(aarch64|armv8l|Toybox)$", "", (dg.get("kernel.uname.version") or "").strip())
+    if not rel:
+        m = re.search(r'"uname"\s*:\s*"Linux \S+ (\S+) (#.*?)\s+aarch64', pkg.text("device_info.json"))
+        if m:
+            rel, build = m.group(1), build or m.group(2)
+    return rel.strip(), (build if build.startswith("#") else "")
+
+
+STORAGE_SIZES = (16, 32, 64, 128, 256, 512, 1024, 2048)
+
+
+def storage_of(pkg):
+    """/data 的真实总字节数（真机 256GB 的 /data 大约 241GB：系统分区占了一块）和标称容量（GB）。"""
+    total = 0
+    try:
+        total = int((json.loads(pkg.text("storage.json") or "{}").get("internal") or {}).get("totalSpace") or 0)
+    except (ValueError, AttributeError):
+        pass
+    di = device_info(pkg)
+    total = total or int(((di.get("storage") or {}).get("internal") or {}).get("totalBytes") or 0)
+    total = total or int(((di.get("kernel") or {}).get("dg_config") or {}).get("kernel.disk.data.total") or 0)
+    if not total:                                   # 我们的采集包：df -k /data
+        m = re.search(r"^\S+\s+(\d+)\s+\d+\s+\d+\s+\d+%\s+/data\s*$", pkg.text("storage.txt"), re.M)
+        total = int(m.group(1)) * 1024 if m else 0
+    if total < 8e9:
+        return 0, 0
+    return total, next((g for g in STORAGE_SIZES if g * 1e9 >= total), 0)
+
+
+def features_of(pkg):
+    """系统特性列表（pm list features），每项 "名字" 或 "名字=版本"。"""
+    out = []
+    for line in pkg.text("features.txt").splitlines():
+        line = line.strip()
+        if line.startswith("feature:") and not line.startswith("feature:reqGlEsVersion"):
+            out.append(line[len("feature:"):])
+    if out:
+        return out
+    feats = []
+    try:
+        j = json.loads(pkg.text("features.json") or "{}")
+        feats = j.get("features") or []
+    except ValueError:
+        pass
+    feats = feats or ((device_info(pkg).get("pm") or {}).get("features") or [])
+    for f in feats:
+        n = (f or {}).get("name")
+        if n:
+            v = f.get("version") or 0
+            out.append(f"{n}={v}" if v else n)
+    return out
+
+
 def build_props_from(pkg, props):
     # 我们的采集包有各分区 build.prop 原文件：用 extract-buildprops.py 的规则（按加载顺序合并）
     bp = {k: v for k, v in pkg.files.items() if k.startswith("buildprop/")}
@@ -274,6 +349,8 @@ def convert(path, tac_db, host_gpu, host_cpus):
     tree = cpu_tree(pkg)
     parts, midrs = cpu_parts_from(tree, pkg.text("cpuinfo") or pkg.text("proc/cpuinfo"))
     disp = display_of(pkg)
+    krel, kbuild = kernel_of(pkg)
+    sbytes, sgb = storage_of(pkg)
     mid = slug(f"{brand}-{model}")
     v9 = sorted({PART_NAMES.get((m >> 4) & 0xfff, hex((m >> 4) & 0xfff)) for m in midrs if (m >> 4) & 0xfff in ARMV9_PARTS})
     tok = re.compile(r"(^|\s)" + re.escape(model.upper()) + r"($|\s)")   # TAC 库的键是「品牌 机型名 型号代码」
@@ -286,6 +363,7 @@ def convert(path, tac_db, host_gpu, host_cpus):
         "memTotal": mem_gb(pkg.text("meminfo") or pkg.text("proc/meminfo")),
         "resolution": {"w": disp["w"], "h": disp["h"]} if disp.get("w") else None, "dpi": disp.get("dpi"),
         "refreshRate": disp.get("refresh"), "touchPoints": 10, "boardPlatform": props.get("ro.board.platform"),
+        "kernelRelease": krel or None, "kernelBuild": kbuild or None, "storageTotal": sgb or None,
     }.items() if v not in (None, "", [])}
     prof = {
         "id": mid, "schema": 1, "verified": False,
@@ -308,6 +386,11 @@ def convert(path, tac_db, host_gpu, host_cpus):
         prof["cpuMismatch"] = f"CPU 是 {'/'.join(v9)}（ARMv9），板子 RK3588 是上一代的 A76 / A55：指令集伪装不了，深度检测会看出来"
     if props.get("ro.build.fingerprint"):
         prof["fingerprints"] = {rel: props["ro.build.fingerprint"]}
+    if sbytes:
+        prof["dataBytes"] = sbytes
+    feats = features_of(pkg)
+    if feats:
+        prof["features"] = feats
     bp = build_props_from(pkg, props)
     if bp:
         prof["buildProps"] = {rel: bp}

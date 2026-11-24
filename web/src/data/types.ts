@@ -59,6 +59,10 @@ export interface DeviceModel {
   gpu?: { vendor: string; renderer: string; version: string; extensions?: string; egl?: string }
   /** 真机 ro.hardware（qcom、mt6989……） */
   hardware?: string
+  /** 真机系统特性列表（pm list features，「名字」或「名字=版本」） */
+  features?: string[]
+  /** 真机 /data 总字节数 */
+  dataBytes?: number
 }
 
 export type PhoneStatus = 'running' | 'stopped' | 'starting' | 'error'

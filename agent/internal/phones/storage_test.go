@@ -56,8 +56,8 @@ func TestNewPhoneGetsSizedDataImage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("新手机应建存储镜像：%v", err)
 	}
-	// POCO X4 GT 档案 storageTotal（GB，十进制）
-	if info.Size()%1_000_000_000 != 0 || info.Size() < 64_000_000_000 {
+	// POCO X4 GT 档案 storageTotal（GB，十进制）的 94%（真机 /data 比标称小一截）
+	if info.Size()%940_000_000 != 0 || info.Size() < 60_000_000_000 {
 		t.Fatalf("镜像大小不对：%d", info.Size())
 	}
 	joined := strings.Join(r.calls, "\n")
@@ -112,5 +112,18 @@ func TestResetMovesImageToTrash(t *testing.T) {
 	}
 	if items[0].SizeMB > 100 {
 		t.Fatalf("稀疏镜像应按实际占用算大小，不是表面大小：%.0f MB", items[0].SizeMB)
+	}
+}
+
+func TestStorageBytesUsesRealDataSize(t *testing.T) {
+	m := &Model{Values: map[string]any{"storageTotal": 256}, DataBytes: 241380061184}
+	if got := storageBytes(map[string]any{"storageTotal": 256}, m); got != 241380061184 {
+		t.Fatalf("标称容量和机型一样时用真机 /data 字节数：%d", got)
+	}
+	if got := storageBytes(map[string]any{"storageTotal": 512}, m); got != 512*940_000_000 {
+		t.Fatalf("手动改了容量就按 94%%：%d", got)
+	}
+	if got := storageBytes(map[string]any{}, m); got != 0 {
+		t.Fatalf("没填容量返回 0：%d", got)
 	}
 }

@@ -7,7 +7,7 @@ import { useWorkspace } from '@/data/store'
 import type { DeviceModel } from '@/data/types'
 import { ServerSelect } from '@/components/ServerSelect'
 
-const SHOWN = ['brand', 'model', 'device', 'socModel', 'cpuParts', 'cpuMaxFreq', 'memTotal', 'resolution', 'refreshRate']
+const SHOWN = ['brand', 'model', 'device', 'socModel', 'cpuParts', 'cpuMaxFreq', 'memTotal', 'storageTotal', 'resolution', 'refreshRate', 'kernelRelease']
 const SOURCE: Record<string, string> = { ours: '真机采集', capture: '真机采集', mytos: '魔云腾包', dir: '目录' }
 
 const str = (v: unknown) => (v === undefined || v === null ? '' : String(v))
@@ -175,6 +175,7 @@ function ModelDetail({ model: m }: { model: DeviceModel }) {
           return field && m.values[key] !== undefined ? [{ label: field.label, children: <span className="pp-mono pp-small">{formatValue(m.values[key], field)}</span> }] : []
         }),
         { label: 'IMEI 型号码', children: m.imeiTacs?.length ? <span className="pp-mono pp-small">{m.imeiTacs.length} 个（{m.imeiTacs.slice(0, 3).join('、')}{m.imeiTacs.length > 3 ? '…' : ''}）</span> : <span className="pp-muted">没有：IMEI 用随机的 35 开头</span> },
+        ...(m.features?.length ? [{ label: '系统特性', children: <span className="pp-small">真机 {m.features.length} 项（开机时照真机报，显卡 / 密钥库等按板子）</span> }] : []),
         { label: '机型 ID', children: <span className="pp-mono pp-small">{m.id}</span> },
         ...(m.verifyNote ? [{ label: '说明', children: <span className="pp-small">{m.verifyNote}</span> }] : [])
       ]} />

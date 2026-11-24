@@ -165,15 +165,10 @@ var hwModulesMu sync.Mutex
 func (s *Service) hwModules(ctx context.Context, image string, files map[string]string) (map[string]string, error) {
 	hwModulesMu.Lock()
 	defer hwModulesMu.Unlock()
-	idOut, err := s.run.Run(ctx, "docker", "image", "inspect", "-f", "{{.Id}}", image)
+	dir, err := s.imageCacheDir(ctx, image)
 	if err != nil {
 		return nil, err
 	}
-	key := strings.TrimPrefix(strings.TrimSpace(idOut), "sha256:")
-	if len(key) > 16 {
-		key = key[:16]
-	}
-	dir := filepath.Join(s.cfg.DataDir, "hwmods", key)
 	out := map[string]string{}
 	var missing []string
 	for name := range files {
@@ -208,6 +203,19 @@ func (s *Service) hwModules(ctx context.Context, image string, files map[string]
 		return nil, fmt.Errorf("镜像 %s 里没有要的模块", image)
 	}
 	return out, nil
+}
+
+// imageCacheDir 从镜像里取出来的文件的缓存目录（按镜像 ID 分，镜像换了自动重取）。
+func (s *Service) imageCacheDir(ctx context.Context, image string) (string, error) {
+	idOut, err := s.run.Run(ctx, "docker", "image", "inspect", "-f", "{{.Id}}", image)
+	if err != nil {
+		return "", err
+	}
+	key := strings.TrimPrefix(strings.TrimSpace(idOut), "sha256:")
+	if len(key) > 16 {
+		key = key[:16]
+	}
+	return filepath.Join(s.cfg.DataDir, "hwmods", key), nil
 }
 
 func fileExists(p string) bool { _, err := os.Stat(p); return err == nil }

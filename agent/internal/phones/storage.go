@@ -35,13 +35,20 @@ func DataImagesSupported() bool {
 	return true
 }
 
-// storageBytes 机型的存储容量（GB，十进制，和手机厂商标的一样）换成字节；没填返回 0。
-func storageBytes(byKey map[string]any) int64 {
+// storageBytes 手机 /data 的大小（字节）；没填容量返回 0。
+// 真机 /data 比标称容量小一截（系统分区占了，256GB 的手机 /data 约 241GB；设置里照样显示 256GB，安卓按 2 的幂往上取整）。
+// 容量就是机型的标称容量、机型包录了真机 /data 字节数（dataBytes）时照真机；否则按标称容量的 94%。
+func storageBytes(byKey map[string]any, m *Model) int64 {
 	gb, ok := toInt(byKey["storageTotal"])
 	if !ok || gb <= 0 || gb > 2048 {
 		return 0
 	}
-	return int64(gb) * 1_000_000_000
+	if m != nil && m.DataBytes > 0 {
+		if mg, ok := toInt(m.Values["storageTotal"]); ok && mg == gb && m.DataBytes <= int64(gb)*1_000_000_000 {
+			return m.DataBytes
+		}
+	}
+	return int64(gb) * 940_000_000
 }
 
 func isMounted(ctx context.Context, run Runner, dir string) bool {
@@ -66,7 +73,7 @@ func dirEmpty(dir string) bool {
 
 // prepareData 开机前准备 /data：有镜像就挂上；新手机（数据目录空的）按机型容量建镜像；
 // 老手机（目录里已有数据、没有镜像）照旧用目录。返回要挂进容器的宿主机目录。
-func (s *Service) prepareData(ctx context.Context, id string, byKey map[string]any) (string, error) {
+func (s *Service) prepareData(ctx context.Context, id string, byKey map[string]any, m *Model) (string, error) {
 	dir, img := s.dataDir(id), s.dataImage(id)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", err
@@ -88,7 +95,7 @@ func (s *Service) prepareData(ctx context.Context, id string, byKey map[string]a
 		}
 	}
 	if _, err := os.Stat(img); os.IsNotExist(err) {
-		size := storageBytes(byKey)
+		size := storageBytes(byKey, m)
 		if size == 0 || !dirEmpty(dir) {
 			return dir, nil // 没填容量，或老手机已有数据：不动
 		}
