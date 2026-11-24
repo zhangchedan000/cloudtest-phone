@@ -43,6 +43,8 @@ extern int AImageReader_getWindow(void *r, void **win);
 extern int AImageReader_acquireNextImage(void *r, void **img);
 extern int AImage_getPlaneData(const void *img, int plane, u8 **data, int *len);
 extern void AImage_delete(void *img);
+extern void ABinderProcess_setThreadPoolMaxThreadCount(u32 n);
+extern void ABinderProcess_startThreadPool(void);
 
 #define LENS_FACING 0x80005
 #define PIXEL_ARRAY 0xF0006
@@ -85,6 +87,9 @@ static int shot(void *mgr, const char *id, int w, int h) {
 
 static int run(int argc, char **argv) {
 	int w = argc > 2 ? atoi(argv[1]) : 1280, h = argc > 2 ? atoi(argv[2]) : 720;
+	/* 图像接收器（AImageReader）的缓冲队列在本进程里，摄像头服务要通过 binder 回调过来取缓冲区：没有 binder 线程就一直等 */
+	ABinderProcess_setThreadPoolMaxThreadCount(4);
+	ABinderProcess_startThreadPool();
 	void *mgr = ACameraManager_create();
 	ACameraIdList *list = 0;
 	if (!mgr || ACameraManager_getCameraIdList(mgr, &list) != 0 || !list) { printf("摄像头服务连不上\n"); return 1; }

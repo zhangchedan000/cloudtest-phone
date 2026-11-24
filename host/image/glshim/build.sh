@@ -56,10 +56,14 @@ int printf(const char *f, ...) { return 0; } void exit(int c) {} int usleep(unsi
 long write(int fd, const void *b, unsigned long n) { return 0; } int close(int fd) { return 0; } int atoi(const char *s) { return 0; }
 int snprintf(char *b, unsigned long n, const char *f, ...) { return 0; }
 EOF3
+cat > out/stub/binder.c <<'EOF3'
+void ABinderProcess_setThreadPoolMaxThreadCount(unsigned n) {} void ABinderProcess_startThreadPool(void) {}
+EOF3
+clang --target=aarch64-linux-android29 -fPIC -shared -nostdlib -fuse-ld=lld -Wl,-soname,libbinder_ndk.so -o out/stub/libbinder_ndk.so out/stub/binder.c
 clang --target=aarch64-linux-android29 -fPIC -shared -nostdlib -fuse-ld=lld -Wl,-soname,libcamera2ndk.so -o out/stub/libcamera2ndk.so out/stub/cam.c
 clang --target=aarch64-linux-android29 -fPIC -shared -nostdlib -fuse-ld=lld -Wl,-soname,libmediandk.so -o out/stub/libmediandk.so out/stub/media.c
 clang --target=aarch64-linux-android29 -fPIC -shared -nostdlib -fuse-ld=lld -Wl,-soname,libc.so -o out/stub/cam-libc.so out/stub/camlibc.c
 clang --target=aarch64-linux-android29 -O2 -fno-builtin -fPIE -pie -nostdlib -fuse-ld=lld -Wl,--dynamic-linker=/system/bin/linker64 -Wl,-z,noexecstack \
-	-o out/arm64/pp-camshot camshot.c out/stub/libcamera2ndk.so out/stub/libmediandk.so out/stub/cam-libc.so -Wl,-e,_start
+	-o out/arm64/pp-camshot camshot.c out/stub/libcamera2ndk.so out/stub/libmediandk.so out/stub/libbinder_ndk.so out/stub/cam-libc.so -Wl,-e,_start
 rm -rf out/stub
 ls -la out/*/libGLES_pp.so out/arm64/pp-glinfo out/arm64/pp-camshot
