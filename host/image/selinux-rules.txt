@@ -134,3 +134,13 @@ allow hal_sensors_default system_server_tmpfs file read,write,map,getattr
 # 就留着 devpts 标签 → 蓝牙 HAL 打不开串口、初始化失败崩两次后蓝牙一直关着（2026-11-23 验收实测，偶发）
 allow hal_bluetooth_default devpts chr_file read,write,open,ioctl,getattr
 allow hal_sensors_default devpts chr_file read,write,open,ioctl,getattr
+
+# ---- Widevine DRM HAL（dobox 的 widevine apex 移植进 /system/apex，踩坑 #155）----
+# 说明：redroid 打过补丁的 init 不认 apex 服务的 seclabel，这个 HAL 实际跑在 permissive 的 kernel 域
+# （和 pp 小助手一样）。下面几条按「正常 Android 里 drm HAL 该有的域」补，作为冗余保险（即使服务进了
+# hal_drm_default 域也能用）；实测只靠上面的 file_contexts 标签 + service_contexts 映射即可工作。
+allow init hal_drm_default process transition,siginh,rlimitinh,noatsecure,getattr
+allow hal_drm_default hal_drm_default_exec file entrypoint,read,execute,getattr,map,open
+permissive hal_drm_default
+allow appdomain hal_drm_default binder call,transfer
+allow hal_drm_default appdomain binder call,transfer

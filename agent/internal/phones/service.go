@@ -1108,6 +1108,7 @@ func (s *Service) Start(ctx context.Context, id string) error {
 	s.applyUname(ctx, p.ID, byKey)
 	s.applyMounts(ctx, p.ID)
 	s.guardLocalPorts(ctx, p.ID)
+	s.ensureMediaDrmDir(ctx, p.ID, image)
 	if btAvailable() && s.cfg.Sensors && s.imageHasBT(ctx, image) {
 		s.startBT(ctx, p.ID, byKey)
 	}

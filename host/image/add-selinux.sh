@@ -220,7 +220,7 @@ docker rm "$cid" >/dev/null
 #          落到通用的 device 类型，App 画界面 / 编码器会被拦）。和真 RK 手机用的类型一样；已经有的不重复加 ----
 mkdir -p "$O/vendor/etc/selinux"
 cp "$W/x/vendor_file_contexts" "$O/vendor/etc/selinux/vendor_file_contexts"
-for kv in "/dev/mali0 u:object_r:gpu_device:s0" "/dev/mpp_service u:object_r:video_device:s0" "/dev/rga u:object_r:video_device:s0" \
+for kv in "/system/apex/com\.google\.android\.widevine/bin/hw/android\.hardware\.drm-service\.widevine u:object_r:hal_drm_default_exec:s0" "/system/apex/com\.google\.android\.widevine/lib(64)?(/.*)? u:object_r:system_lib_file:s0" "/dev/mali0 u:object_r:gpu_device:s0" "/dev/mpp_service u:object_r:video_device:s0" "/dev/rga u:object_r:video_device:s0" \
           "/dev/dri(/.*)? u:object_r:gpu_device:s0" "/dev/loop[0-9]+ u:object_r:loop_device:s0" \
           "/system/apex/com\.android\.vndk\.[^/]+/lib(64)?(/.*)? u:object_r:system_lib_file:s0" \
           "/vendor/bin/hw/android\.hardware\.media\.c2@1\.1-service u:object_r:mediacodec_exec:s0" \
