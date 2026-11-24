@@ -9,6 +9,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"syscall"
+	"unsafe"
 )
 
 // CPUTree 一份真机的 /sys/devices/system/cpu 整个目录（模板，profiles/cpu/<名>.json，从真机采集转换来，踩坑 #147）。
@@ -163,6 +165,37 @@ func (t *CPUTree) write(dir string) error {
 		if err := os.Symlink(target, full); err != nil {
 			return err
 		}
+	}
+	// SELinux 标签在宿主机这边直接写好（真机这棵树统一是 sysfs_devices_system_cpu）。不能等挂进手机再补：
+	// 魔云腾内核按路径把 /sys/devices/system/cpu 下的东西都当目录处理，手机里给文件打标签全失败，
+	// 文件、链接留成 unlabeled → 谷歌服务等 App 读 possible / online 被 SELinux 拒（踩坑 #147）。
+	// 宿主机没开 SELinux 时写失败也无所谓（手机没开 SELinux 用不上）
+	_ = filepath.Walk(dir, func(p string, _ os.FileInfo, err error) error {
+		if err == nil {
+			_ = lsetxattr(p, "security.selinux", CPUTreeLabel)
+		}
+		return nil
+	})
+	return nil
+}
+
+// CPUTreeLabel 真机 /sys/devices/system/cpu 下所有文件、目录、链接的 SELinux 标签（AOSP genfs_contexts）。
+const CPUTreeLabel = "u:object_r:sysfs_devices_system_cpu:s0"
+
+// lsetxattr 不跟随链接（链接自己也要标签：App 走 cpu0/cpufreq → ../cpufreq/policy0 要能读链接）。
+func lsetxattr(p, name, value string) error {
+	pb, err := syscall.BytePtrFromString(p)
+	if err != nil {
+		return err
+	}
+	nb, err := syscall.BytePtrFromString(name)
+	if err != nil {
+		return err
+	}
+	v := append([]byte(value), 0)
+	if _, _, e := syscall.Syscall6(syscall.SYS_LSETXATTR, uintptr(unsafe.Pointer(pb)), uintptr(unsafe.Pointer(nb)),
+		uintptr(unsafe.Pointer(&v[0])), uintptr(len(v)), 0, 0); e != 0 {
+		return e
 	}
 	return nil
 }

@@ -285,7 +285,8 @@ for r in rows:
     if mm.get("cpuTree"):
         denied = [k for k in ("cpu_online_type", "cpu_policies", "cpu_driver", "cpu_maxfreq") if "Permission denied" in r.get(k, "")]
         if denied: bad.append(f"{i} CPU 目录 App 读不了（{'、'.join(denied)} 权限被拒：换上去的目录 SELinux 标签不对，踩坑 #147）")
-        elif r.get("cpu_online_type") != "regular file": bad.append(f"{i} /sys/devices/system/cpu/online 是「{r.get('cpu_online_type')}」，不是普通文件（CPU 目录没换上）")
+        # online 在魔云腾内核上 stat 出来是目录：内核按路径处理 /sys/devices/system/cpu，换上去的普通文件也一样
+        # （魔云腾自家云手机同样如此），改不了，不算问题，见报告末尾的已知限制
         if r.get("cpu_driver") == "cpufreq-dt" or r.get("cpu_freqs0", "").startswith("408000 600000 816000"): bad.append(f"{i} CPU 目录还是 RK3588 的（{r.get('cpu_driver')}，{r.get('cpu_freqs0')}）")
     if r.get("ro.debuggable") != "0" or r.get("ro.build.type") != "user": bad.append(f"{i} 构建类型 {r.get('ro.build.type')} debuggable={r.get('ro.debuggable')}")
     if "cannot run as root" not in r.get("adb_root", "") : bad.append(f"{i} adb root 结果：{r.get('adb_root','')[:80]}")
@@ -313,6 +314,7 @@ with open(os.path.join(d, "bad-ids.txt"), "w") as fh:
 print()
 print("问题：" if bad else "问题：无")
 for b in bad: print("  - " + b)
+print("已知限制（改不了，不算问题）：/sys/devices/system/cpu 下的文件 stat 出来是目录（魔云腾内核按路径处理，魔云腾自家云手机也一样）")
 print()
 r0 = rows[0] if rows else {}
 print("样例（第一台）：机型 %s / %s / %s，安卓 %s，指纹 %s" % (r0.get("ro.product.brand"), r0.get("ro.product.model"), r0.get("ro.product.device"), r0.get("ro.build.version.release"), r0.get("ro.build.fingerprint")))
