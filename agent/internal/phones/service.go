@@ -1024,11 +1024,11 @@ func (s *Service) Start(ctx context.Context, id string) error {
 		hw = dhw
 	}
 	binds = append(binds, dBinds...)
+	bootArgs = append(bootArgs, dProps...) // ro.hardware.egl：原 build.prop 里没有，只能走开机参数（比镜像 gpu_config.sh 设的 mali 早）
 	propArgs := append([]string{}, bootArgs...)
 	if hw != "" {
 		propArgs = append(propArgs, "ro.hardware="+hw)
 	}
-	propArgs = append(propArgs, dProps...)
 	if bpBinds, err := s.prepareBuildProps(ctx, p.ID, image, propArgs, spaced); err != nil {
 		log.Printf("手机 %s：build.prop 没改写（照镜像原样开机）：%v", p.ID, err)
 	} else {

@@ -360,6 +360,12 @@ func label(boot bool) (int, error) {
 			}
 		default:
 			n += l.Relabel(mp, true, nil)
+			// 挂的是镜像里原来没有的文件名（伪装档的 libGLES_adreno.so、gralloc.qcom.so……）：docker 要在容器可写层里建
+			// 挂载点，所在目录被复制上来一份，没有标签（unlabeled）→ 显存分配等服务进不了 /vendor/lib64/hw，整台开不了机。
+			// 所在目录按规则补标签（只补这一层目录，不递归）
+			if d := filepath.Dir(mp); d != "/" && (strings.HasPrefix(d, "/vendor/") || strings.HasPrefix(d, "/system/") || strings.HasPrefix(d, "/odm/") || strings.HasPrefix(d, "/product/")) {
+				n += l.Relabel(d, false, nil)
+			}
 		}
 	}
 	if boot {
