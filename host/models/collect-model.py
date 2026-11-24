@@ -20,7 +20,7 @@
   meta.json          采集时间、工具版本、adb 序列号的哈希（不存原序列号）
 不录：账号、短信、通讯录、照片、IMEI 等个人信息。
 """
-import argparse, datetime, hashlib, json, os, re, shutil, subprocess, sys, tempfile, zipfile
+import argparse, base64, datetime, hashlib, json, os, re, shlex, shutil, subprocess, sys, tempfile, zipfile
 
 TOOL_VERSION = 1
 SYS_CPU = "/sys/devices/system/cpu"
@@ -33,8 +33,9 @@ def adb(serial, *args, binary=False, timeout=120):
 
 
 def sh(serial, script, timeout=120):
-    # exec-out：不经过伪终端，二进制、换行都原样
-    return adb(serial, "exec-out", "sh", "-c", script, timeout=timeout)
+    # exec-out：不经过伪终端，二进制、换行都原样。adb 会把参数用空格拼起来交给手机上的 shell 再解析一遍，
+    # 所以整段脚本要自己加引号（不加的话 "sh -c dumpsys SurfaceFlinger" 只执行了 dumpsys，多行脚本直接拆坏）
+    return adb(serial, "exec-out", "sh -c " + shlex.quote(script), timeout=timeout)
 
 
 def pick_device(serial):
@@ -62,7 +63,6 @@ find . -maxdepth 6 2>/dev/null | while read -r p; do
 done'''
     out = sh(serial, script, timeout=600)
     n = {"F": 0, "L": 0, "D": 0}
-    import base64
     for line in out.splitlines():
         kind, _, rest = line.partition("|")
         path, _, val = rest.partition("|")
@@ -106,7 +106,7 @@ def main():
                              "/my_*/build.prop 2>/dev/null")
         nprop = 0
         for p in sorted(set(listing.split())):
-            data = adb(serial, "exec-out", "cat", p, binary=True)
+            data = adb(serial, "exec-out", "cat " + shlex.quote(p), binary=True)
             if data:
                 w("buildprop/" + p.lstrip("/").replace("/", "."), data); nprop += 1
         print(f"  build.prop：{nprop} 个分区文件")
@@ -127,9 +127,9 @@ def main():
         w("libraries.txt", sh(serial, "pm list libraries"))
         w("input.txt", sh(serial, "getevent -i 2>/dev/null | head -300; dumpsys input 2>/dev/null | grep -A3 'Device [0-9]*:' | head -200"))
         for p in sh(serial, "ls /vendor/etc/media_codecs*.xml /system/etc/media_codecs*.xml /odm/etc/media_codecs*.xml 2>/dev/null").split():
-            w("codecs/" + p.lstrip("/").replace("/", "."), adb(serial, "exec-out", "cat", p, binary=True))
+            w("codecs/" + p.lstrip("/").replace("/", "."), adb(serial, "exec-out", "cat " + shlex.quote(p), binary=True))
         for p in ("/apex/com.android.runtime/lib64/bionic/libc.so", "/system/lib64/libc.so"):
-            data = adb(serial, "exec-out", "cat", p, binary=True)
+            data = adb(serial, "exec-out", "cat " + shlex.quote(p), binary=True)
             if data[:4] == b"\x7fELF":
                 w("lib/libc.so", data); break
         meta = {"tool": "prism-phone collect-model", "version": TOOL_VERSION, "time": datetime.datetime.now().astimezone().isoformat(),
