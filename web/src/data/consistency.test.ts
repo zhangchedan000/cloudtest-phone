@@ -36,6 +36,13 @@ describe('一致性检查', () => {
     expect(run(16, { ...base.fields, fingerprint: { mode: 'manual', value: 'Xiaomi/aristotle_global/aristotle:16/X/Y:user/release-keys' } })).not.toContain('no-real-fingerprint')
   })
 
+  it('CPU 不是同一代的机型要警告，没有 CPU 目录数据的给提示', () => {
+    const run = (modelId: string) =>
+      checkPhone({ phone: { ...phones[0], modelId }, model: model(modelId), proxy: proxy('p-us-1'), host: host('rk3588-01') }).map((i) => i.code)
+    expect(run('nothing-phone-2a')).toContain('cpu-mismatch')
+    expect(run('xiaomi-13t')).not.toContain('cpu-mismatch')
+  })
+
   it('Mali-G610 机型放在 RK3588 上不报显卡问题', () => {
     expect(codes(phones[0], { host: host('rk3588-01') })).not.toContain('gpu-mismatch')
   })

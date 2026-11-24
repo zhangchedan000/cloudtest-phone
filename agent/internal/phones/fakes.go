@@ -108,6 +108,13 @@ func (s *Service) prepareFakes(p store.Phone, st store.State) (bool, error) {
 	}
 	_ = convert(byKey["cpuParts"], &spec.CPUParts)
 	_ = convert(byKey["cpuMaxFreq"], &spec.CPUMaxFreqKHz)
+	// 机型有真机 CPU 目录模板、核数和板子一样：整个 /sys/devices/system/cpu 换成真机的（踩坑 #147）。
+	// 核数对不上（开发机核少）就不用，免得目录里 8 个核、实际只有 4 个
+	if m := s.model(p.ModelID); m != nil && m.CPUTree != "" && s.cat != nil {
+		if t := s.cat.CPUTrees[m.CPUTree]; t != nil && t.CPUs() == s.hostCPUs() {
+			spec.CPUTree = t
+		}
+	}
 	// 宿主机核数比机型少时（开发机 4 核，手机 8 核），只写宿主机有的核，
 	// 否则 cpuinfo 里 8 个核、/sys/devices/system/cpu/online 只有 0-3，自相矛盾。
 	spec.CPUParts, spec.CPUMaxFreqKHz = fitCPUs(spec.CPUParts, spec.CPUMaxFreqKHz, s.hostCPUs())

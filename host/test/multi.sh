@@ -128,6 +128,14 @@ echo "uid=$(id -u)"
 echo "pkgs=$(pm list packages 2>/dev/null | wc -l)"; echo "gms=$(pm list packages com.google.android.gms 2>/dev/null | wc -l)"
 echo "tz_now=$(date +%Z%z)"
 echo "ping=$(ping -c1 -W3 1.1.1.1 >/dev/null 2>&1 && echo ok || echo fail)"
+C=/sys/devices/system/cpu
+echo "cpu_parts=$(grep "CPU part" /proc/cpuinfo | awk "{print \$NF}" | tr "\n" " ")"
+echo "cpu_midrs=$(for i in 0 1 2 3 4 5 6 7; do cat $C/cpu$i/regs/identification/midr_el1 2>/dev/null; done | tr "\n" " ")"
+echo "cpu_online_type=$(stat -c %F $C/online 2>&1)"
+echo "cpu_policies=$(ls $C/cpufreq 2>&1 | tr "\n" " ")"
+echo "cpu_driver=$(cat $C/cpu0/cpufreq/scaling_driver 2>&1)"; echo "cpu_idle=$(cat $C/cpuidle/current_driver 2>&1)"
+echo "cpu_maxfreq=$(for i in 0 7; do cat $C/cpu$i/cpufreq/cpuinfo_max_freq 2>&1; done | tr "\n" " ")"
+echo "cpu_freqs0=$(cat $C/cpu0/cpufreq/scaling_available_frequencies 2>&1 | cut -c1-60)"
 '
 : > "$DIR/adb.txt"; rm -f "$DIR"/*.kv "$DIR/stream.txt"
 while read -r id ver g cc px mdl; do
@@ -263,6 +271,15 @@ for r in rows:
     # 指纹 / 版本号里的工程编译字样（机型档案没这个安卓版本的真指纹时，兜底拼出来的会带 eng.*，2026-11-23）
     fpv = " ".join(r.get(k, "") for k in ("ro.build.fingerprint", "ro.vendor.build.fingerprint", "ro.build.version.incremental"))
     if re.search(r"eng\.|test-keys|userdebug|redroid|frank", fpv): bad.append(f"{i} 指纹里有工程版字样：{r.get('ro.build.fingerprint','')[:110]}")
+    # CPU（踩坑 #147）：cpuinfo 的核心型号和每个核的 midr 文件要一致；/sys/devices/system/cpu 下要是普通文件（魔云腾内核原样会 stat 成目录）；
+    # 有真机 CPU 目录模板的机型不能再露 RK3588 的调频驱动 / 频率表
+    parts = r.get("cpu_parts", "").split(); midrs = r.get("cpu_midrs", "").split()
+    if parts and midrs and [p.lower() for p in parts] != ["0x%03x" % ((int(m, 16) >> 4) & 0xfff) for m in midrs]:
+        bad.append(f"{i} cpuinfo 的核心型号 {' '.join(parts)} 和 midr 文件 {' '.join(midrs)} 对不上")
+    mm = models.get(r.get("spec_model", "")) or {}
+    if mm.get("cpuTree"):
+        if r.get("cpu_online_type") != "regular file": bad.append(f"{i} /sys/devices/system/cpu/online 是「{r.get('cpu_online_type')}」，不是普通文件（CPU 目录没换上）")
+        if r.get("cpu_driver") == "cpufreq-dt" or r.get("cpu_freqs0", "").startswith("408000 600000 816000"): bad.append(f"{i} CPU 目录还是 RK3588 的（{r.get('cpu_driver')}，{r.get('cpu_freqs0')}）")
     if r.get("ro.debuggable") != "0" or r.get("ro.build.type") != "user": bad.append(f"{i} 构建类型 {r.get('ro.build.type')} debuggable={r.get('ro.debuggable')}")
     if "cannot run as root" not in r.get("adb_root", "") : bad.append(f"{i} adb root 结果：{r.get('adb_root','')[:80]}")
     if r.get("spec_gapps") == "true" and not (r.get("gms", "0").isdigit() and int(r.get("gms", "0")) >= 1): bad.append(f"{i} 谷歌版没有 GMS")
@@ -294,6 +311,8 @@ r0 = rows[0] if rows else {}
 print("样例（第一台）：机型 %s / %s / %s，安卓 %s，指纹 %s" % (r0.get("ro.product.brand"), r0.get("ro.product.model"), r0.get("ro.product.device"), r0.get("ro.build.version.release"), r0.get("ro.build.fingerprint")))
 print("  屏幕 %s %s，CPU %s，核 %s，%s，内核 %s，%s" % (r0.get("wm_size"), r0.get("wm_density"), r0.get("cpu_hw"), r0.get("nproc"), r0.get("memtotal"), r0.get("uname"), r0.get("gles", "")[:60]))
 print("  电池 %s，WiFi %s %s，网卡 %s，传感器 %s，ping %s" % (r0.get("battery"), r0.get("wifi_ssid"), r0.get("wifi_mac"), r0.get("ifaces"), r0.get("sensors"), r0.get("ping")))
+for r in rows:
+    print("  CPU %s：核 %s | midr %s | 调频 %s / 空闲 %s | 分组 %s | 最高 %s | 文件类型 %s" % (r.get("id"), r.get("cpu_parts", "").strip(), r.get("cpu_midrs", "").strip()[:60], r.get("cpu_driver"), r.get("cpu_idle"), r.get("cpu_policies", "").strip(), r.get("cpu_maxfreq", "").strip(), r.get("cpu_online_type")))
 print()
 for f in ("host-idle.txt", "host-stream.txt", "stream.txt", "encoder.txt", "adb.txt"):
     p = os.path.join(d, f)

@@ -6,6 +6,8 @@ import (
 	"io/fs"
 	"path"
 	"sort"
+
+	"github.com/zhangchedan000/prism-phone/agent/internal/fakefs"
 )
 
 // 字段清单和机型库都来自仓库根目录的 profiles/（编译时打包进程序），和管理页读的是同一份。
@@ -31,6 +33,8 @@ type Catalog struct {
 	Version int     `json:"version"`
 	Fields  []Field `json:"fields"`
 	Raw     json.RawMessage
+	// CPUTrees 真机 CPU 目录模板（profiles/cpu/<名>.json），机型档案的 cpuTree 按名字引用（踩坑 #147）
+	CPUTrees map[string]*fakefs.CPUTree `json:"-"`
 }
 
 type Model struct {
@@ -41,6 +45,11 @@ type Model struct {
 	Market          string         `json:"market"`
 	Values          map[string]any `json:"values"`
 	AndroidVersions []int          `json:"androidVersions"`
+	// CPUTree 用哪份真机 CPU 目录模板（profiles/cpu/<名>.json）。有就整个 /sys/devices/system/cpu 换成它，
+	// cpuParts / cpuMaxFreq 不用（踩坑 #147）。没有的机型 CPU 目录还是板子的，面板提示。
+	CPUTree string `json:"cpuTree,omitempty"`
+	// CPUMismatch 这款机型的 CPU 和板子不是同一代（例如天玑 7200 的 ARMv9 A715 / A510），指令集伪装不了，面板提示
+	CPUMismatch string `json:"cpuMismatch,omitempty"`
 	// ImeiTacs 这款机型真实的 IMEI 前 8 位（型号核准码 TAC），每台手机固定挑一个。没有就随机 35xxxxxx——
 	// 对不上任何真机型，查 IMEI 归属就露馅（2026-11-23；数据取自魔云腾的 TAC 库，按型号代码精确匹配）。
 	ImeiTacs []string `json:"imeiTacs"`
@@ -95,5 +104,33 @@ func LoadProfiles(fsys fs.FS, dir string) (*Catalog, []Model, error) {
 		models = append(models, m)
 	}
 	sort.Slice(models, func(i, j int) bool { return models[i].ID < models[j].ID })
+	cat.CPUTrees = map[string]*fakefs.CPUTree{}
+	if entries, err := fs.ReadDir(fsys, path.Join(dir, "cpu")); err == nil {
+		for _, e := range entries {
+			if e.IsDir() || path.Ext(e.Name()) != ".json" {
+				continue
+			}
+			data, err := fs.ReadFile(fsys, path.Join(dir, "cpu", e.Name()))
+			if err != nil {
+				return nil, nil, err
+			}
+			var t fakefs.CPUTree
+			if err := json.Unmarshal(data, &t); err != nil {
+				return nil, nil, fmt.Errorf("CPU 模板 %s 格式错误：%w", e.Name(), err)
+			}
+			if t.Name == "" {
+				t.Name = e.Name()[:len(e.Name())-len(".json")]
+			}
+			if err := t.Validate(); err != nil {
+				return nil, nil, err
+			}
+			cat.CPUTrees[t.Name] = &t
+		}
+	}
+	for _, m := range models {
+		if m.CPUTree != "" && cat.CPUTrees[m.CPUTree] == nil {
+			return nil, nil, fmt.Errorf("机型 %s 引用的 CPU 模板 %s 不存在", m.ID, m.CPUTree)
+		}
+	}
 	return &cat, models, nil
 }

@@ -64,6 +64,12 @@ export function checkPhone({ phone, model, proxy, host, others = [] }: CheckInpu
       const have = Object.keys(model.fingerprints).sort().join('/')
       issues.push({ level: 'warning', code: 'no-real-fingerprint', fields: ['androidVersion'], message: `机型库里还没有这款机型 Android ${phone.androidVersion} 的真机指纹，系统指纹会带工程版字样（eng.*）。建议用 Android ${have}，或在指纹一栏导入真机的。` })
     }
+    // CPU（踩坑 #147）：和板子不是同一代的指令集改不了；没有真机 CPU 目录数据的，/sys/devices/system/cpu 还是板子的
+    if (model.cpuMismatch) {
+      issues.push({ level: 'warning', code: 'cpu-mismatch', fields: ['model'], message: `CPU 对不上：${model.cpuMismatch}` })
+    } else if (!model.cpuTree && host?.gpuFamily !== 'software') {
+      issues.push({ level: 'info', code: 'no-cpu-tree', fields: ['model'], message: '机型库里还没有这款机型的真机 CPU 目录数据，App 查 /sys/devices/system/cpu 看到的频率表、调频驱动还是板子的。' })
+    }
     if (!model.verified) {
       issues.push({ level: 'info', code: 'model-unverified', message: '这个机型档案还没用真机/固件核实，部分数值可能不准。' })
     }

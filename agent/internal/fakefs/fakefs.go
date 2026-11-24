@@ -27,6 +27,9 @@ type Spec struct {
 	KernelRelease string // 例如 5.10.198-android12-9-gc2f7e1a40b6d
 	KernelBuild   string // 例如 #1 SMP PREEMPT Mon Jun 3 08:12:45 UTC 2025
 	HostCPUInfo   string // 宿主机真实 /proc/cpuinfo（用来照抄 Features 等能力字段）
+	// CPUTree 有就整个 /sys/devices/system/cpu 换成这份真机目录，cpuinfo 的核心型号也按它的 midr 出（踩坑 #147）；
+	// 这时 CPUParts / CPUMaxFreqKHz 不用。
+	CPUTree *CPUTree
 	// BootID 这次开机的 boot_id（每台手机每次开机一个新的 UUID）。容器共用宿主机内核，
 	// /proc/sys/kernel/random/boot_id 所有手机读到的都一样——App 不要权限就能读，一对比就知道是同一台机器（踩坑 #79）。
 	BootID string
@@ -37,6 +40,7 @@ type File struct {
 	Target  string // 容器里要盖住的路径
 	Name    string // 在伪造目录里的文件名
 	Content string
+	Tree    *CPUTree // 不是单个文件而是整个目录（Target 是目录）
 }
 
 // Build 生成全部伪造文件。缺数据的项跳过（不生成半真半假的内容）。
@@ -52,7 +56,20 @@ func Build(s Spec) ([]File, error) {
 	if s.BootID != "" {
 		files = append(files, File{Target: "/proc/sys/kernel/random/boot_id", Name: "boot_id", Content: s.BootID + "\n"})
 	}
-	if len(s.CPUParts) > 0 {
+	if s.CPUTree != nil {
+		parts, err := s.CPUTree.Parts()
+		if err != nil {
+			return nil, err
+		}
+		cpuinfo, _, err := cpuInfo(parts, s.HostCPUInfo)
+		if err != nil {
+			return nil, err
+		}
+		files = append(files,
+			File{Target: "/proc/cpuinfo", Name: "cpuinfo", Content: cpuinfo},
+			File{Target: "/sys/devices/system/cpu", Name: "cpu", Tree: s.CPUTree},
+		)
+	} else if len(s.CPUParts) > 0 {
 		cpuinfo, midrs, err := cpuInfo(s.CPUParts, s.HostCPUInfo)
 		if err != nil {
 			return nil, err
@@ -67,6 +84,9 @@ func Build(s Spec) ([]File, error) {
 		}
 	}
 	for i, khz := range s.CPUMaxFreqKHz {
+		if s.CPUTree != nil {
+			break
+		}
 		v := strconv.Itoa(khz) + "\n"
 		files = append(files,
 			File{Target: fmt.Sprintf("/sys/devices/system/cpu/cpu%d/cpufreq/cpuinfo_max_freq", i), Name: fmt.Sprintf("cpuinfo_max_freq.cpu%d", i), Content: v},
@@ -151,6 +171,12 @@ func Write(dir string, files []File) error {
 		return err
 	}
 	for _, f := range files {
+		if f.Tree != nil {
+			if err := f.Tree.write(filepath.Join(dir, f.Name)); err != nil {
+				return err
+			}
+			continue
+		}
 		if err := os.WriteFile(filepath.Join(dir, f.Name), []byte(f.Content), 0o444); err != nil {
 			return err
 		}

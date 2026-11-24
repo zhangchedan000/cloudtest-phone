@@ -30,6 +30,7 @@
     15,
     16
   ],
+  "cpuMismatch": "天玑 7200 是 ARMv9 的 Cortex-A715 / A510，板子 RK3588 是上一代的 A76 / A55：App 读到的指令集（getauxval / cpuinfo Features）是 A76 那一代，执行 ARMv9 新指令会崩，这项伪装不了，深度检测会看出来（踩坑 #147）",
   "imeiTacs": [
     "86152007",
     "86208607",

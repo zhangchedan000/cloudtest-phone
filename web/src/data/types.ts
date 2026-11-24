@@ -44,6 +44,10 @@ export interface DeviceModel {
   androidVersions: number[]
   /** 按安卓版本（"14"/"15"/"16"）存的真机系统指纹；没有的版本开机时只能用镜像的编译号拼，带 eng.* 字样。 */
   fingerprints?: Record<string, string>
+  /** 用哪份真机 CPU 目录模板（profiles/cpu/<名>.json）；没有的机型 /sys/devices/system/cpu 还是板子的。 */
+  cpuTree?: string
+  /** CPU 和板子不是同一代（指令集伪装不了）时的说明。 */
+  cpuMismatch?: string
 }
 
 export type PhoneStatus = 'running' | 'stopped' | 'starting' | 'error'
