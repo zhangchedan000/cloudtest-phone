@@ -136,6 +136,8 @@ type Service struct {
 	store    *store.Store
 	cat      *Catalog
 	models   []Model
+	builtin  []Model      // 程序里内置的机型（重新加载本地机型库时用）
+	modelsMu sync.RWMutex // models 会被「重新加载机型库」整个换掉
 	now      func() time.Time
 	run      Runner
 	raw      RawRunner
@@ -166,7 +168,7 @@ type Service struct {
 }
 
 func NewService(cfg Config, d Docker, st *store.Store, cat *Catalog, models []Model) *Service {
-	s := &Service{cfg: cfg, docker: d, store: st, cat: cat, models: models, now: time.Now, async: true, newRadio: wifi.NewRadioInNetns}
+	s := &Service{cfg: cfg, docker: d, store: st, cat: cat, models: models, builtin: models, now: time.Now, async: true, newRadio: wifi.NewRadioInNetns}
 	// 开了真 SELinux 的手机，docker exec 自动改走手机里的命令小助手（踩坑 #135）
 	s.run = phoneExecRunner{inner: execRunner{}, s: s}
 	s.raw = phoneExecRaw{inner: execRaw{}, s: s}
@@ -243,17 +245,37 @@ func (s *Service) SetConnectionCloser(fn func(ctx context.Context, ip string) (i
 // NetworkEnabled 网络模块（mihomo）开没开。没开时云手机直接用宿主机网络，只适合开发测试。
 func (s *Service) NetworkEnabled() bool { return s.netGuard != nil }
 
-func (s *Service) Models() []Model   { return s.models }
+func (s *Service) Models() []Model {
+	s.modelsMu.RLock()
+	defer s.modelsMu.RUnlock()
+	return s.models
+}
 func (s *Service) Catalog() *Catalog { return s.cat }
 func (s *Service) Config() Config    { return s.cfg }
 
 func (s *Service) model(id string) *Model {
+	s.modelsMu.RLock()
+	defer s.modelsMu.RUnlock()
+	// 返回切片里那一项的指针：重新加载机型库是整个换新切片、旧的不改，拿着旧指针的地方照常可用
 	for i := range s.models {
 		if s.models[i].ID == id {
 			return &s.models[i]
 		}
 	}
 	return nil
+}
+
+// LocalModelsDir 本地机型库（导入的机型）：<数据目录>/models。
+func (s *Service) LocalModelsDir() string { return filepath.Join(s.cfg.DataDir, "models") }
+
+// ReloadModels 重新读本地机型库（导入机型后不用重启管家）。返回内置、本地各几款。
+func (s *Service) ReloadModels() (int, int) {
+	local := LoadLocal(s.LocalModelsDir(), s.cat)
+	merged := MergeModels(s.builtin, local)
+	s.modelsMu.Lock()
+	s.models = merged
+	s.modelsMu.Unlock()
+	return len(s.builtin), len(local)
 }
 
 func containerName(id string) string { return "pp-" + id }

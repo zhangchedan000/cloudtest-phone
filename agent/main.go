@@ -168,6 +168,10 @@ func main() {
 		}
 	}
 	svc := phones.NewService(cfg, dc, st, cat, models)
+	// 本地机型库（导入的机型，<数据目录>/models）；之后导入新的走 POST /api/models/reload
+	if b, l := svc.ReloadModels(); l > 0 {
+		log.Printf("机型库：内置 %d 款、本地 %d 款", b, l)
+	}
 	if cfg.PreallocLoops {
 		go phones.PreallocLoopDevices()
 	}

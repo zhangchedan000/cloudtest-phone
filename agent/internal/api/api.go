@@ -57,6 +57,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/host", s.host)
 	mux.HandleFunc("GET /api/fields", s.fields)
 	mux.HandleFunc("GET /api/models", s.models)
+	mux.HandleFunc("POST /api/models/reload", s.reloadModels)
 	mux.HandleFunc("GET /api/phones", s.listPhones)
 	mux.HandleFunc("POST /api/phones", s.createPhone)
 	mux.HandleFunc("PUT /api/phones/{id}", s.savePhone)
@@ -259,6 +260,12 @@ func (s *Server) models(w http.ResponseWriter, _ *http.Request) {
 		raws = append(raws, m.Raw)
 	}
 	writeJSON(w, http.StatusOK, raws)
+}
+
+// reloadModels 重新读本地机型库（导入机型后）。
+func (s *Server) reloadModels(w http.ResponseWriter, _ *http.Request) {
+	builtin, local := s.svc.ReloadModels()
+	writeJSON(w, http.StatusOK, map[string]int{"builtin": builtin, "local": local})
 }
 
 func (s *Server) listPhones(w http.ResponseWriter, r *http.Request) {
