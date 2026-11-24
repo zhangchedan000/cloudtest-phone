@@ -348,15 +348,28 @@ def codecs_of(pkg):
     except ValueError:
         lst = []
     if isinstance(lst, dict):
-        lst = lst.get("codecs") or lst.get("codecList") or []
+        lst = lst.get("mediaList") or lst.get("codecs") or lst.get("codecList") or []
+    if not lst:
+        lst = ((device_info(pkg).get("codec") or {}).get("codecs") or [])
+    soft = re.compile(r"^(c2\.android\.|OMX\.google\.|c2\.google\.)|ffmpeg|\.sw\.|soft", re.I)
     for x in lst if isinstance(lst, list) else []:
-        if not isinstance(x, dict) or not x.get("getName") or not x.get("isHardwareAccelerated"):
+        if not isinstance(x, dict) or not x.get("getName"):
             continue
-        for t in x.get("getSupportedTypes") or []:
-            out.append({"name": x["getName"], "canonical": x.get("getCanonicalName") or x["getName"], "type": t, "encoder": bool(x.get("isEncoder"))})
+        name = x["getName"]
+        # 老一点的格式没有「硬件 / 编码器」标志：按名字猜（只要视频的、非软件的；.secure 是加密播放专用，不要）
+        hw = x.get("isHardwareAccelerated")
+        types = x.get("getSupportedTypes") or []
+        if hw is None:
+            hw = not soft.search(name) and all(t.startswith("video/") for t in types)
+        if not hw or name.endswith(".secure"):
+            continue
+        enc = x.get("isEncoder")
+        if enc is None:
+            enc = "encoder" in name.lower()
+        for t in types:
+            out.append({"name": name, "canonical": x.get("getCanonicalName") or name, "type": t, "encoder": bool(enc)})
     if out:
         return out
-    soft = re.compile(r"^(c2\.android\.|OMX\.google\.|c2\.google\.)")
     for fname in sorted(k for k in pkg.files if k.startswith("codecs/")):
         enc = None
         for m in re.finditer(r"<(/?)(Encoders|Decoders)>|<MediaCodec\s+name=\"([^\"]+)\"(?:\s+type=\"([^\"]+)\")?[^>]*?(/?)>(.*?)(?:</MediaCodec>|(?=<MediaCodec)|$)",
