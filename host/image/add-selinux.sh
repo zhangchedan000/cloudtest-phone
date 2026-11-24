@@ -126,6 +126,17 @@ camera_fix() {
   crc=0; sh "$(cd "$(dirname "$0")" && pwd)/add-camera.sh" "$1" "$ver" "$CW/w" || crc=$?
   if [ "$crc" = 2 ]; then rm -rf "$CW"; return 0; fi
   if [ "$crc" != 0 ]; then rm -rf "$CW"; log "· $1：摄像头没补上（见上面的原因），先不补"; return 0; fi
+  # 规则补丁：镜像现在的 precompiled_sepolicy 加上摄像头那几条，放进这一层
+  here=$(cd "$(dirname "$0")" && pwd)
+  label_inputs "$1" "$CW/w"
+  cp "$here/selinux-camera-rules.txt" "$CW/w/rules.txt"; cp "$here/sepatch.c" "$CW/w/sepatch.c"
+  docker run --rm --platform linux/arm64 -v "$CW/w:/w" -v "$B/kmod/aptcache:/aptc" debian:12-slim bash -ec '
+    apt-get update -qq >/dev/null 2>&1; apt-get install -y -qq --no-install-recommends -o Dir::Cache::Archives=/aptc gcc libc6-dev libsepol-dev >/dev/null 2>&1
+    gcc -O2 -o /tmp/sepatch /w/sepatch.c -l:libsepol.a
+    /tmp/sepatch /w/policy /w/policy.patched /w/rules.txt
+  ' || { rm -rf "$CW"; die "摄像头规则补丁没打上"; }
+  mkdir -p "$CW/w/ctx/vendor/etc/selinux"
+  cp "$CW/w/policy.patched" "$CW/w/ctx/vendor/etc/selinux/precompiled_sepolicy"; chmod 644 "$CW/w/ctx/vendor/etc/selinux/precompiled_sepolicy"
   printf 'FROM %s\nCOPY ctx/ /\nLABEL prism.camera=1\n' "$1" > "$CW/w/Dockerfile"
   docker build -q -t "$1" "$CW/w" >/dev/null || { rm -rf "$CW"; die "摄像头那层没建成（$1）"; }
   label_inputs "$1" "$CW/w"

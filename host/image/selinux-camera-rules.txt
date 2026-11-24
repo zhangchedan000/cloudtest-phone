@@ -1,0 +1,5 @@
+# 摄像头服务（踩坑 #152，add-selinux.sh 的 camera_fix 加进 precompiled_sepolicy）。
+# 模拟器的摄像头服务要的是模拟器的显存接口，板子是瑞芯微 / Mali 的（HIDL IMapper 4.0 直通），镜像的规则没给摄像头域开：
+# 查不到 IMapper → 导入图像缓冲区时崩。具体还要哪些权限要一条条试，摄像头域设成只记录不拦截（App 读不到规则，看不出来）。
+permissive hal_camera_default
+allow hal_camera_default hal_graphics_mapper_hwservice hwservice_manager find
