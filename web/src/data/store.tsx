@@ -1,8 +1,8 @@
 import { App } from 'antd'
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { api, ApiError, LOCAL, rememberPhoneServer, saveToken, savedToken, setClipboard, setRemoteServers, writeTokenCookie, type HostInfo, type InputRequest, type ServerRef } from './api'
 import { scaleInput, screenOf } from './groupControl'
-import { models } from './catalog'
+import { models as builtinModels } from './catalog'
 import { checkPhone, type Issue } from './consistency'
 import * as mock from './mock'
 import type { DeviceModel, FieldSetting, Group, Host, Phone, PhoneStatus, Proxy } from './types'
@@ -55,6 +55,8 @@ interface Workspace {
   setFollowers: (id: string, ids: string[]) => void
   login: (token: string) => Promise<void>
   refresh: () => Promise<void>
+  /** 重新拉机型库（导入机型之后）。 */
+  refreshModels: () => Promise<void>
 }
 
 const WorkspaceContext = createContext<Workspace | null>(null)
@@ -82,7 +84,22 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [groups, setGroups] = useState<Group[]>([])
   const [hosts, setHosts] = useState<Host[]>([])
   const [servers, setServers] = useState<ServerRef[]>([])
+  // 机型库：先用页面里打包的内置机型，接上管家后换成管家的（内置 + 本地导入的）
+  const [models, setModels] = useState<DeviceModel[]>(builtinModels)
   const [followers, setFollowersState] = useState<Record<string, string[]>>({})
+
+  // 机型列表大（每款带各分区 build 属性），不跟着 5 秒刷新走：第一次加载和导入 / 重新加载之后才拉
+  const modelsLoaded = useRef(false)
+  const loadModels = useCallback(async (serverList: ServerRef[]) => {
+    const lists = await Promise.all([api.models().catch(() => undefined), ...serverList.map((sv) => api.models(sv.id).catch(() => undefined))])
+    // 按 ID 合并：本机的优先，别的服务器上导入的机型也列出来（那台的手机要用）
+    const byId = new Map<string, DeviceModel>()
+    for (const m of [...(lists[0]?.length ? lists[0] : builtinModels), ...lists.slice(1).flatMap((l) => l ?? [])]) {
+      if (!byId.has(m.id)) byId.set(m.id, m)
+    }
+    setModels([...byId.values()].sort((a, b) => a.id.localeCompare(b.id)))
+    modelsLoaded.current = true
+  }, [])
 
   const load = useCallback(async () => {
     try {
@@ -120,6 +137,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       setPhones(allPhones)
       setProxies(allProxies)
       setGroups(allGroups)
+      if (!modelsLoaded.current) await loadModels(serverList ?? [])
       setMode('live')
     } catch (error) {
       if (error instanceof ApiError && error.status === 401) { setMode('login'); return }
@@ -128,7 +146,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       setPhones(mock.phones); setProxies(mock.proxies); setGroups(mock.groups); setHosts(mock.hosts)
       setMode('demo')
     }
-  }, [])
+  }, [loadModels])
 
   useEffect(() => {
     const token = savedToken()
@@ -143,7 +161,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     return () => clearInterval(timer)
   }, [mode, load])
 
-  const modelOf = useCallback((phone: Phone) => models.find((m) => m.id === phone.modelId), [])
+  const modelOf = useCallback((phone: Phone) => models.find((m) => m.id === phone.modelId), [models])
   const same = (a?: string, b?: string) => (a ?? LOCAL) === (b ?? LOCAL)
   const proxyOf = useCallback((phone: Phone) => proxies.find((p) => p.id === phone.proxyId && same(p.serverId, phone.serverId)), [proxies])
   const hostOf = useCallback((phone: Phone) => hosts.find((h) => h.id === phone.hostId) ?? (mode === 'live' ? hosts[0] : undefined), [hosts, mode])
@@ -287,9 +305,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         writeTokenCookie(token)
         await load()
       },
-      refresh: load
+      refresh: load,
+      refreshModels: () => loadModels(servers)
     }
-  }, [mode, phones, proxies, groups, hosts, servers, followers, modelOf, proxyOf, hostOf, groupOf, issuesOf, load, message])
+  }, [mode, phones, proxies, groups, hosts, servers, models, followers, modelOf, proxyOf, hostOf, groupOf, issuesOf, load, loadModels, message])
 
   return <WorkspaceContext.Provider value={value}>{children}</WorkspaceContext.Provider>
 }

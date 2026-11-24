@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"net/http"
 	"net/url"
@@ -58,6 +59,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/fields", s.fields)
 	mux.HandleFunc("GET /api/models", s.models)
 	mux.HandleFunc("POST /api/models/reload", s.reloadModels)
+	mux.HandleFunc("POST /api/models/import", s.importModels)
 	mux.HandleFunc("GET /api/phones", s.listPhones)
 	mux.HandleFunc("POST /api/phones", s.createPhone)
 	mux.HandleFunc("PUT /api/phones/{id}", s.savePhone)
@@ -266,6 +268,40 @@ func (s *Server) models(w http.ResponseWriter, _ *http.Request) {
 func (s *Server) reloadModels(w http.ResponseWriter, _ *http.Request) {
 	builtin, local := s.svc.ReloadModels()
 	writeJSON(w, http.StatusOK, map[string]int{"builtin": builtin, "local": local})
+}
+
+// importModels 上传机型包（multipart，字段名 file，可以多个）导入本地机型库。
+func (s *Server) importModels(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, 200<<20)
+	if err := r.ParseMultipartForm(32 << 20); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "上传格式不对：" + err.Error()})
+		return
+	}
+	pkgs := map[string][]byte{}
+	for _, fh := range r.MultipartForm.File["file"] {
+		f, err := fh.Open()
+		if err != nil {
+			fail(w, err)
+			return
+		}
+		b, err := io.ReadAll(f)
+		f.Close()
+		if err != nil {
+			fail(w, err)
+			return
+		}
+		pkgs[fh.Filename] = b
+	}
+	if len(pkgs) == 0 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "没有收到机型包（字段名 file）"})
+		return
+	}
+	res, err := s.svc.ImportModels(r.Context(), pkgs)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error(), "output": res.Output})
+		return
+	}
+	writeJSON(w, http.StatusOK, res)
 }
 
 func (s *Server) listPhones(w http.ResponseWriter, r *http.Request) {

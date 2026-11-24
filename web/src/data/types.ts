@@ -48,6 +48,13 @@ export interface DeviceModel {
   cpuTree?: string
   /** CPU 和板子不是同一代（指令集伪装不了）时的说明。 */
   cpuMismatch?: string
+  /** consistent：真机显卡就是板子的（干活一面天然一致）；disguised：显卡不同，靠伪装。留空当 consistent。 */
+  tier?: 'consistent' | 'disguised'
+  /** 来自本地机型库（导入的），不是管家程序内置的。 */
+  local?: boolean
+  /** 导入来源：capture（我们采集的真机包）/ mytos（魔云腾机型包）/ dir */
+  source?: string
+  imeiTacs?: string[]
 }
 
 export type PhoneStatus = 'running' | 'stopped' | 'starting' | 'error'

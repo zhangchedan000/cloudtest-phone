@@ -198,7 +198,8 @@ def build_props_from(pkg, props):
     bp = {k: v for k, v in pkg.files.items() if k.startswith("buildprop/")}
     if bp:
         import importlib.util, tempfile
-        spec = importlib.util.spec_from_file_location("eb", os.path.join(os.path.dirname(HERE), "extract-buildprops.py"))
+        eb_path = next(p for p in (os.path.join(HERE, "extract-buildprops.py"), os.path.join(os.path.dirname(HERE), "extract-buildprops.py")) if os.path.exists(p))
+        spec = importlib.util.spec_from_file_location("eb", eb_path)
         eb = importlib.util.module_from_spec(spec); spec.loader.exec_module(eb)
         with tempfile.TemporaryDirectory() as d:
             for k, v in bp.items():
@@ -284,12 +285,13 @@ def main():
     ap = argparse.ArgumentParser(description="导入机型包到本地机型库")
     ap.add_argument("pkgs", nargs="+", help="机型包 zip，或已经解开的目录")
     ap.add_argument("--out", default="/mmc/pp-data/models")
-    ap.add_argument("--tac", default="/mmc/mytTemp/resource/imei/tac_by_model.json")
+    ap.add_argument("--tac", default="", help="TAC 库（型号 → IMEI 前 8 位），默认找 <out>/../tac_by_model.json、/mmc/mytTemp/resource/imei/tac_by_model.json")
     ap.add_argument("--host-gpu", default="Mali-G610")
     ap.add_argument("--host-cpus", type=int, default=os.cpu_count() or 8)
     ap.add_argument("--dry-run", action="store_true")
     a = ap.parse_args()
-    tac = json.load(open(a.tac)) if os.path.exists(a.tac) else {}
+    tp = a.tac or next((p for p in (os.path.join(os.path.dirname(a.out.rstrip("/")), "tac_by_model.json"), "/mmc/mytTemp/resource/imei/tac_by_model.json") if os.path.exists(p)), "")
+    tac = json.load(open(tp)) if tp else {}
     for p in a.pkgs:
         try:
             prof, cpu = convert(p, tac, a.host_gpu, a.host_cpus)

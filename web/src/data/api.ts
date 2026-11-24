@@ -1,4 +1,4 @@
-import type { FieldSetting, Group, Phone, Proxy, ProxyCheck } from './types'
+import type { FieldSetting, Group, Phone, Proxy, ProxyCheck, DeviceModel } from './types'
 
 /**
  * 管家程序的接口。管理页由管家程序自己提供，所以地址就是当前网页的 /api/。
@@ -134,6 +134,10 @@ export const api = {
   createGroup: (group: Omit<Group, 'id'>, sid?: string) => call<Group>('POST', '/groups', group, sid),
   updateGroup: (group: Group, sid?: string) => call<Group>('PUT', `/groups/${group.id}`, group, sid),
   deleteGroup: (id: string, sid?: string) => call('DELETE', `/groups/${id}`, undefined, sid),
+  /** 机型库（内置 + 本地导入的）。 */
+  models: (sid?: string) => call<DeviceModel[]>('GET', '/models', undefined, sid),
+  /** 重新读本地机型库（手动往 <数据目录>/models 放了档案之后）。 */
+  reloadModels: (sid?: string) => call<{ builtin: number; local: number }>('POST', '/models/reload', undefined, sid),
   /** 别的服务器（只在本机上管）。 */
   servers: () => call<ServerRef[]>('GET', '/servers', undefined, LOCAL),
   addServer: (req: { name?: string; url: string; token: string }) => call<ServerRef>('POST', '/servers', req, LOCAL),
@@ -159,6 +163,23 @@ export function upload(path: string, file: File, onProgress?: (percent: number) 
     form.append('file', file)
     xhr.send(form)
   })
+}
+
+export interface ModelImportResult { output: string[]; builtin: number; local: number }
+
+/** 导入机型包（我们采集的 / 魔云腾的 zip，可以多个）到这台服务器的本地机型库。 */
+export async function importModels(files: File[], serverId?: string): Promise<ModelImportResult> {
+  const form = new FormData()
+  for (const f of files) form.append('file', f)
+  let response: Response
+  try {
+    response = await fetch(apiUrl('/models/import', serverId), { method: 'POST', headers: authHeaders('/models/import', serverId), body: form })
+  } catch {
+    throw new ApiError('上传失败：连不上管家程序', 0)
+  }
+  const data = await response.json().catch(() => ({})) as Partial<ModelImportResult> & { error?: string }
+  if (!response.ok) throw new ApiError([data.error ?? `导入失败（${response.status}）`, ...(data.output ?? [])].join('\n'), response.status)
+  return { output: data.output ?? [], builtin: data.builtin ?? 0, local: data.local ?? 0 }
 }
 
 /** 批量结果：每台一条。 */

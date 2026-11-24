@@ -131,6 +131,9 @@ func main() {
 		MaxRunning: *maxRunning, DevHost: *devHost,
 	}
 	cfg.DataImages = !*noDataImages && phones.DataImagesSupported()
+	if tools, err := fs.Sub(assets.FS, "tools"); err == nil {
+		cfg.Tools = tools
+	}
 	cfg.PreallocLoops = os.Geteuid() == 0
 	cfg.MemFollowModel = *memFollow
 	cfg.MemOvercommit = *memOvercommit

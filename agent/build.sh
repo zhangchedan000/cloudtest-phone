@@ -4,8 +4,10 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 root=..
-rm -rf internal/assets/profiles internal/assets/web
+rm -rf internal/assets/profiles internal/assets/web internal/assets/tools
 cp -r "$root/profiles" internal/assets/profiles
+# 导入机型包要用的脚本（管理页「导入机型包」由管家调 python3 跑）
+mkdir -p internal/assets/tools && cp "$root/host/models/import-model.py" "$root/host/extract-buildprops.py" internal/assets/tools/
 if [ -d "$root/web/dist" ]; then cp -r "$root/web/dist" internal/assets/web; else mkdir -p internal/assets/web && echo '<p>管理页没有编译（web/dist 不存在）</p>' > internal/assets/web/index.html; fi
 ver=$(git -C "$root" describe --always --dirty 2>/dev/null || echo dev)
 out=${1:-bin/prism-phone-agent}

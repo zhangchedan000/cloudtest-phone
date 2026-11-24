@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log"
 	"net/netip"
 	"os"
@@ -39,6 +40,7 @@ type Config struct {
 	Images      map[int]string // 安卓版本 → 镜像
 	GappsImages map[int]string // 安卓版本 → 带谷歌服务（GMS）的镜像；空 = 这台机器不支持谷歌服务
 	DataDir     string         // 每台云手机的 /data 放在 DataDir/phones/<id>/data
+	Tools       fs.FS          // 打包在管家里的脚本（导入机型包用：import-model.py、extract-buildprops.py）
 	Network     string         // 容器网络名
 	Subnet      string         // 例如 10.88.0.0/16
 	MemoryMB    int64          // 每台容器内存上限（保护宿主机）
