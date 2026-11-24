@@ -119,9 +119,26 @@ vulkan_fix() {
   log "✓ $1：Vulkan 补上 Mali 入口模块（ro.hardware.vulkan=mali，来自 $(basename $(dirname $(dirname $(dirname $src)))))"
   rm -rf "$VW"
 }
+# 增量补丁：摄像头（踩坑 #152）。模拟器的模拟摄像头服务，文件由 add-camera.sh 准备；镜像加标签 prism.camera=1（管家据此按机型换摄像头参数）
+CAMB=/vendor/bin/hw/android.hardware.camera.provider@2.7-service
+camera_fix() {
+  CW=$(mktemp -d "$B/camfix.XXXX")
+  crc=0; sh "$(cd "$(dirname "$0")" && pwd)/add-camera.sh" "$1" "$ver" "$CW/w" || crc=$?
+  if [ "$crc" = 2 ]; then rm -rf "$CW"; return 0; fi
+  if [ "$crc" != 0 ]; then rm -rf "$CW"; log "· $1：摄像头没补上（见上面的原因），先不补"; return 0; fi
+  printf 'FROM %s\nCOPY ctx/ /\nLABEL prism.camera=1\n' "$1" > "$CW/w/Dockerfile"
+  docker build -q -t "$1" "$CW/w" >/dev/null || { rm -rf "$CW"; die "摄像头那层没建成（$1）"; }
+  label_inputs "$1" "$CW/w"
+  label_layers "$CW/w" "$1" top
+  up=$(docker image inspect -f '{{.GraphDriver.Data.UpperDir}}' "$1")
+  ctx=$(python3 -c "import os,sys; print(os.getxattr(sys.argv[1], 'security.selinux').decode().strip(chr(0)))" "$up$CAMB" 2>/dev/null)
+  [ "$ctx" = "u:object_r:hal_camera_default_exec:s0" ] || die "摄像头服务标签不对：$ctx"
+  log "✓ $1：补上摄像头服务"
+  rm -rf "$CW"
+}
 cur=$(docker image inspect -f '{{index .Config.Labels "prism.selinux"}}' "$img" 2>/dev/null || true)
 if [ "$cur" = "$SEL_VER" ]; then
-  if has_labels "$img"; then c2_seccomp_fix "$img"; vulkan_fix "$img"; log "$img 已经做好（第 $SEL_VER 版），跳过"; exit 0; fi
+  if has_labels "$img"; then c2_seccomp_fix "$img"; vulkan_fix "$img"; camera_fix "$img"; log "$img 已经做好（第 $SEL_VER 版），跳过"; exit 0; fi
   # docker save / load（导出包换新板）只带 security.capability，不带 security.selinux：镜像改过的内容都在，标签全丢了，
   # 手机开强制模式会全被拦。按镜像自己的规则和 file_contexts 把每一层重打一遍（2026-11-23 查实）
   log "$img 是做好的（第 $SEL_VER 版），但导入时丢了文件标签：重打"
@@ -133,6 +150,7 @@ if [ "$cur" = "$SEL_VER" ]; then
   log "✓ $img：标签重打好了"
   c2_seccomp_fix "$img"
   vulkan_fix "$img"
+  camera_fix "$img"
   exit 0
 fi
 base=$img
@@ -418,3 +436,4 @@ docker rmi "$img-sel-wip" >/dev/null 2>&1 || true
 log "✓ $img：已能开 SELinux（原镜像留在 $img-orig-sel）"
 c2_seccomp_fix "$img"
 vulkan_fix "$img"
+camera_fix "$img"
