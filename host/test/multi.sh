@@ -130,6 +130,10 @@ echo "tz_now=$(date +%Z%z)"
 echo "ping=$(ping -c1 -W3 1.1.1.1 >/dev/null 2>&1 && echo ok || echo fail)"
 echo "vk_device=$(cmd gpu vkjson 2>/dev/null | grep -m1 deviceName | tr -d " \t,\"" | cut -d: -f2)"
 echo "vk_drivers=$(ls /vendor/lib64/hw 2>/dev/null | grep "^vulkan" | tr "\n" " ")"
+echo "sensor_vendors=$(dumpsys sensorservice 2>/dev/null | grep -E "^0x0000" | cut -d"|" -f2 | tr -s " " | sort -u | tr "\n" ";")"
+echo "features_n=$(pm list features 2>/dev/null | wc -l)"; echo "feat_ethernet=$(pm list features 2>/dev/null | grep -c android.hardware.ethernet)"
+echo "codec_rk_alias=$(dumpsys media.player 2>/dev/null | grep -oE "(c2|OMX)\.[A-Za-z0-9_.-]+" | grep -vE "^(c2\.android|OMX\.google|c2\.rk)\." | sort -u | wc -l)"
+echo "data_kb=$(df -k /data 2>/dev/null | tail -1 | tr -s " " | cut -d" " -f2)"
 C=/sys/devices/system/cpu
 echo "cpu_parts=$(grep "CPU part" /proc/cpuinfo | awk "{print \$NF}" | tr "\n" " ")"
 echo "cpu_midrs=$(for i in 0 1 2 3 4 5 6 7; do cat $C/cpu$i/regs/identification/midr_el1 2>/dev/null; done | tr "\n" " ")"
@@ -289,6 +293,13 @@ for r in rows:
     # 只能有一个入口模块：一致档 vulkan.mali.so；伪装档是真机的名字（vulkan.adreno.so），镜像自带的 mali 那个开机时删掉
     if len(r.get("vk_drivers", "").split()) > 1: bad.append(f"{i} /vendor/lib64/hw 里有不止一个 Vulkan 驱动：{r.get('vk_drivers')}")
     mm = models.get(r.get("spec_model", "")) or {}
+    # 机型第二层（踩坑 #151）：机型录了什么，手机里就要照真机
+    mv2 = mm.get("values") or {}
+    if mv2.get("kernelRelease") and r.get("uname") and r["uname"] != mv2["kernelRelease"]: bad.append(f"{i} 内核版本 {r['uname']}，机型的是 {mv2['kernelRelease']}")
+    if mm.get("sensors") and ("MTK" in r.get("sensor_vendors", "").split(";") or not r.get("sensor_vendors")): bad.append(f"{i} 传感器还是通用名 / 厂商 MTK（没换成真机的）：{r.get('sensor_vendors','')[:100]}")
+    if mm.get("features") and r.get("feat_ethernet") not in ("0", ""): bad.append(f"{i} 系统特性没换成真机的（还有 android.hardware.ethernet，共 {r.get('features_n')} 项）")
+    if mm.get("codecs") and r.get("codec_rk_alias") in ("0", ""): bad.append(f"{i} 编解码器列表里没有真机的名字")
+    if mm.get("dataBytes") and r.get("data_kb", "").isdigit() and abs(int(r["data_kb"]) * 1024 - mm["dataBytes"]) > mm["dataBytes"] * 0.01: bad.append(f"{i} /data 容量 {int(r['data_kb'])//1024//1024}GB，真机 {mm['dataBytes']//1024**3}GB")
     if mm.get("cpuTree"):
         denied = [k for k in ("cpu_online_type", "cpu_policies", "cpu_driver", "cpu_maxfreq") if "Permission denied" in r.get(k, "")]
         if denied: bad.append(f"{i} CPU 目录 App 读不了（{'、'.join(denied)} 权限被拒：换上去的目录 SELinux 标签不对，踩坑 #147）")
