@@ -9,6 +9,7 @@
  * 返回机型包里录的真机值（显卡厂商、显卡名、驱动版本串）。扩展列表只报「真机有、板子驱动也真支持」的那些
  * （按真机的顺序）：全报真机的会让 Skia / Chrome 用上 Mali 没有的扩展（实测 GL_NV_shader_noperspective_interpolation
  * 着色器编译失败 → 整个界面黑屏，2026-11-24）。代价是扩展列表比真机少几项（高通专有的那些）。
+ * 机型包没录扩展列表（只有显卡名 / 版本的）：扩展原样透传真驱动的。
  *
  * 加载器的规矩：先 dlsym 驱动里的函数，没有就问驱动的 eglGetProcAddress。所以这里只导出 eglGetProcAddress 和要改的
  * 那几个 gl 函数，其余全部经 eglGetProcAddress 转给真驱动。真机扩展里有、Mali 驱动没有的函数，返回一个什么都不做
@@ -179,7 +180,7 @@ EXPORT const GLubyte *glGetString(GLenum name) {
 		case GL_RENDERER: return (const GLubyte *)s_renderer;
 		case GL_VERSION: if (*s_version) return (const GLubyte *)s_version; break;
 		case GL_SHADING_LANGUAGE_VERSION: if (*s_glsl) return (const GLubyte *)s_glsl; break;
-		case GL_EXTENSIONS: build_exts(); return (const GLubyte *)extstr;
+		case GL_EXTENSIONS: if (*s_fake_exts) { build_exts(); return (const GLubyte *)extstr; } break;
 		}
 	}
 	return real_getString ? real_getString(name) : 0;
@@ -187,7 +188,7 @@ EXPORT const GLubyte *glGetString(GLenum name) {
 
 EXPORT const GLubyte *glGetStringi(GLenum name, GLuint index) {
 	init();
-	if (spoof && name == GL_EXTENSIONS) {
+	if (spoof && name == GL_EXTENSIONS && *s_fake_exts) {
 		build_exts();
 		return index < (GLuint)ext_n ? (const GLubyte *)ext_list[index] : 0;
 	}
@@ -196,7 +197,7 @@ EXPORT const GLubyte *glGetStringi(GLenum name, GLuint index) {
 
 EXPORT void glGetIntegerv(GLenum pname, GLint *data) {
 	init();
-	if (spoof && pname == GL_NUM_EXTENSIONS && data) {
+	if (spoof && pname == GL_NUM_EXTENSIONS && data && *s_fake_exts) {
 		build_exts();
 		*data = ext_n;
 		return;
@@ -215,6 +216,6 @@ EXPORT fn_t eglGetProcAddress(const char *name) {
 	if (str_eq(name, "glGetIntegerv")) return (fn_t)glGetIntegerv;
 	fn_t f = real ? (fn_t)dlsym(real, name) : 0;
 	if (!f && real_gpa) f = real_gpa(name);
-	if (!f && spoof && name[0] == 'g' && name[1] == 'l') f = (fn_t)noop;
+	if (!f && spoof && *s_fake_exts && name[0] == 'g' && name[1] == 'l') f = (fn_t)noop; /* 只在报了真机扩展列表时 */
 	return f;
 }

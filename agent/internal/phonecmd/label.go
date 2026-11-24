@@ -360,6 +360,13 @@ func label(boot bool) (int, error) {
 			}
 		default:
 			n += l.Relabel(mp, true, nil)
+			// 伪装档挂成真机名字的 Vulkan 入口模块（vulkan.adreno.so……）：规则里只有 vulkan.mali.so 单独标成 App 能加载的
+			// same_process_hal_file，别的名字按目录规则成了 vendor_hal_file，App 加载不了 Vulkan
+			if strings.HasPrefix(mp, "/vendor/lib64/hw/vulkan.") || strings.HasPrefix(mp, "/vendor/lib/hw/vulkan.") {
+				if setLabel(mp, "u:object_r:same_process_hal_file:s0") == nil {
+					n++
+				}
+			}
 			// 挂的是镜像里原来没有的文件名（伪装档的 libGLES_adreno.so、gralloc.qcom.so……）：docker 要在容器可写层里建
 			// 挂载点，所在目录被复制上来一份，没有标签（unlabeled）→ 显存分配等服务进不了 /vendor/lib64/hw，整台开不了机。
 			// 往上每一级目录都被复制上来了（/vendor/lib/hw、/vendor/lib、/vendor 都实测是 unlabeled），逐级按规则补标签（不递归）

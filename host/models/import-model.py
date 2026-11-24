@@ -175,15 +175,17 @@ def gpu_of(pkg, props):
 
 def gpu_info(pkg, props):
     """真机的显卡字符串（伪装档用：转接库照这个回答 glGetString）。没录的返回 None。"""
-    info = {}
+    info, egl_hw = {}, ""
     di = pkg.text("device_info.json")
     if di:
         try:
             g = json.loads(di).get("gpu") or {}
         except ValueError:
             g = {}
-        info = {"vendor": g.get("gles20.vendor", ""), "renderer": g.get("gles20.renderer", ""),
-                "version": g.get("gles20.version", ""), "extensions": g.get("gles20.extensions", "")}
+        egl_hw = g.get("eglHardware", "")
+        # 两种写法：gles20.renderer……（带扩展列表）；glRenderer……（老一点的包，只有扩展数量，没有列表）
+        info = {"vendor": g.get("gles20.vendor") or g.get("glVendor", ""), "renderer": g.get("gles20.renderer") or g.get("glRenderer", ""),
+                "version": g.get("gles20.version") or g.get("glVersion", ""), "extensions": g.get("gles20.extensions") or g.get("glExtensions", "")}
     if not info.get("renderer"):
         # 我们采集的：dumpsys SurfaceFlinger 的「GLES: 厂商, 显卡名, 版本」，下一行是扩展列表
         sf = pkg.text("gpu/surfaceflinger.txt").splitlines()
@@ -197,7 +199,7 @@ def gpu_info(pkg, props):
         return None
     m = re.match(r"OpenGL ES (\d)\.(\d)", info.get("version", ""))
     info["glsl"] = f"OpenGL ES GLSL ES {m.group(1)}.{m.group(2)}0" if m and m.group(1) >= "3" else ("OpenGL ES GLSL ES 1.00" if m else "")
-    info["egl"] = props.get("ro.hardware.egl", "")
+    info["egl"] = props.get("ro.hardware.egl", "") or egl_hw
     info["vulkan"] = props.get("ro.hardware.vulkan", "")
     return {k: v for k, v in info.items() if v}
 

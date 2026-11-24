@@ -2,7 +2,7 @@
   "id": "xiaomi-13t",
   "schema": 1,
   "verified": false,
-  "verifyNote": "2026-11-15 核对：官网 mi.com 确认 天玑 8200-Ultra、144Hz；分辨率 1220×2712 / 446 ppi 来自第三方规格站；出厂 Android 13（MIUI 14）；固件记录（代号 aristotle）全球版最高 Android 16（OS3.0.6.0.WMFMIXM）。型号 2306EPN60G 这次没找到独立来源；dpi 填的是 ppi，待真机核实。A15 全球版指纹：incremental OS2.0.212.0.VMFMIXM 来自 xmfirmwareupdater（aristotle 全球版 stable）；build id AP3A.240905.015.A2 为 HyperOS2/A15 标准值（与 plato/zircon/Pacman 一致）。待真机 dump 复核 build id+incremental 配对。A16(HyperOS3)全球增量 OS3.0.6.0.WMFMIXM（ximitime/4gnews，2026-06 起推送，安全补丁 2026-08）——build id 未查到，待真机 dump 或魔云腾 A16 镜像读取后拼完整 A16 指纹 | buildProps(14) 和 fingerprint(14)：真实出厂 build.prop，来源 github.com/xdaGari/tadiphone-buildprop-archive 的 xiaomi/aristotle/missi_phone_global-user-14-UP1A.230905.011-V816.0.2.0.UMFMIXM-release-keys（HyperOS 1 全球版），用 host/extract-buildprops.py 抠出各分区身份（各分区保持真机原样：system/product 分区是通用系统镜像的值，odm 分区指纹停在出厂安卓版本）。 | buildProps(15) 和 fingerprint(15)：小米官方完整包 aristotle_global-ota_full-OS2.0.214.0.VMFMIXM-user-15.0（HyperOS 2 全球版，网上没有现成转储，2026-11-16 在阿什本下载后用 payload-dumper-go 拆分区、erofs 工具只读取出各分区 build.prop，临时文件已删；ro.sf.lcd_density=480）。原来的 A15 指纹（OS2.0.212.0，增量号来自更新站）换成和官方包一致的。",
+  "verifyNote": "2026-11-15 核对：官网 mi.com 确认 天玑 8200-Ultra、144Hz；分辨率 1220×2712 / 446 ppi 来自第三方规格站；出厂 Android 13（MIUI 14）；固件记录（代号 aristotle）全球版最高 Android 16（OS3.0.6.0.WMFMIXM）。型号 2306EPN60G 这次没找到独立来源；dpi 填的是 ppi，待真机核实。A15 全球版指纹：incremental OS2.0.212.0.VMFMIXM 来自 xmfirmwareupdater（aristotle 全球版 stable）；build id AP3A.240905.015.A2 为 HyperOS2/A15 标准值（与 plato/zircon/Pacman 一致）。待真机 dump 复核 build id+incremental 配对。A16(HyperOS3)全球增量 OS3.0.6.0.WMFMIXM（ximitime/4gnews，2026-06 起推送，安全补丁 2026-08）——build id 未查到，待真机 dump 或魔云腾 A16 镜像读取后拼完整 A16 指纹 | buildProps(14) 和 fingerprint(14)：真实出厂 build.prop，来源 github.com/xdaGari/tadiphone-buildprop-archive 的 xiaomi/aristotle/missi_phone_global-user-14-UP1A.230905.011-V816.0.2.0.UMFMIXM-release-keys（HyperOS 1 全球版），用 host/extract-buildprops.py 抠出各分区身份（各分区保持真机原样：system/product 分区是通用系统镜像的值，odm 分区指纹停在出厂安卓版本）。 | buildProps(15) 和 fingerprint(15)：小米官方完整包 aristotle_global-ota_full-OS2.0.214.0.VMFMIXM-user-15.0（HyperOS 2 全球版，网上没有现成转储，2026-11-16 在阿什本下载后用 payload-dumper-go 拆分区、erofs 工具只读取出各分区 build.prop，临时文件已删；ro.sf.lcd_density=480）。原来的 A15 指纹（OS2.0.212.0，增量号来自更新站）换成和官方包一致的。 | 显卡字符串（Mali-G610 MC6、驱动版本 r32p1、ro.hardware.egl=meow）取自魔云腾天玑 8200 真机包 V2314A；扩展列表没录，原样用板子驱动的（同是 Mali-G610）",
   "gpuFamily": "Mali-G610",
   "market": "GLOBAL",
   "values": {
@@ -47,6 +47,7 @@
     "boardPlatform": "mt6896"
   },
   "cpuTree": "mt6896",
+  "gpu": {"vendor": "ARM", "renderer": "Mali-G610 MC6", "version": "OpenGL ES 3.2 v1.r32p1-01eac0.54329dee8f160f288c574caaf67bbe", "glsl": "OpenGL ES GLSL ES 3.20", "egl": "meow", "vulkan": "mali"},
   "androidVersions": [
     13,
     14,

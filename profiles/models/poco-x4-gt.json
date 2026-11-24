@@ -2,7 +2,7 @@
   "id": "poco-x4-gt",
   "schema": 1,
   "verified": false,
-  "verifyNote": "2026-11-15 核对：官网 po.co 规格页确认 天玑 8100、4×A78 2.85GHz + 4×A55 2.0GHz、Mali-G610 MC6、2460×1080、144Hz、8+128 / 8+256、出厂 Android 12；固件记录（xmfirmwareupdater，代号 xaga，全球版和 Redmi Note 11T Pro / K50i 共用）最高 Android 14。fingerprint 为真实 stock 指纹（全球版 HyperOS 2.0 / Android 14），来源：设备树 github.com/XagaForge/android_device_xiaomi_xaga 的 lineage_xaga.mk BuildFingerprint。dpi（安卓显示密度）官网没有，待真机核实 | buildProps(14)：整机转储 github.com/Jiovanni-dump/poco_xaga_dump（missi_phone_global-user 14 UP1A.231005.007 OS2.0.3.0.ULOMIXM，和原来的指纹同一版），只读 SKU xaga 的文件（同一固件里还有 xagain / xagapro / xagaproin）。",
+  "verifyNote": "2026-11-15 核对：官网 po.co 规格页确认 天玑 8100、4×A78 2.85GHz + 4×A55 2.0GHz、Mali-G610 MC6、2460×1080、144Hz、8+128 / 8+256、出厂 Android 12；固件记录（xmfirmwareupdater，代号 xaga，全球版和 Redmi Note 11T Pro / K50i 共用）最高 Android 14。fingerprint 为真实 stock 指纹（全球版 HyperOS 2.0 / Android 14），来源：设备树 github.com/XagaForge/android_device_xiaomi_xaga 的 lineage_xaga.mk BuildFingerprint。dpi（安卓显示密度）官网没有，待真机核实 | buildProps(14)：整机转储 github.com/Jiovanni-dump/poco_xaga_dump（missi_phone_global-user 14 UP1A.231005.007 OS2.0.3.0.ULOMIXM，和原来的指纹同一版），只读 SKU xaga 的文件（同一固件里还有 xagain / xagapro / xagaproin）。 | 显卡字符串（Mali-G610 MC6、驱动版本 r32p1、ro.hardware.egl=meow）取自魔云腾天玑 8200 真机包 V2314A；扩展列表没录，原样用板子驱动的（同是 Mali-G610）",
   "gpuFamily": "Mali-G610",
   "market": "GLOBAL",
   "values": {
@@ -47,6 +47,7 @@
     "boardPlatform": "mt6895"
   },
   "cpuTree": "mt6895",
+  "gpu": {"vendor": "ARM", "renderer": "Mali-G610 MC6", "version": "OpenGL ES 3.2 v1.r32p1-01eac0.54329dee8f160f288c574caaf67bbe", "glsl": "OpenGL ES GLSL ES 3.20", "egl": "meow", "vulkan": "mali"},
   "androidVersions": [
     12,
     13,

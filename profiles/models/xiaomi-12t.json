@@ -2,7 +2,7 @@
   "id": "xiaomi-12t",
   "schema": 1,
   "verified": false,
-  "verifyNote": "2026-11-15 核对：官网 mi.com 规格页确认 天玑 8100-Ultra、2712×1220、120Hz、446 ppi、8+128 / 8+256、出厂 Android 12；固件记录（代号 plato）全球版最高 Android 15（OS2.0.219.0.VLQMIXM）。dpi 填的是 ppi，安卓实际显示密度待真机核实；CPU 识别信息没有可靠来源，没填 | fingerprint(15) 真实 stock：设备树 github.com/mt6895-plato/android_device_xiaomi_plato | buildProps(14) 和 fingerprint(14)：真实出厂 build.prop，来源 github.com/xdaGari/tadiphone-buildprop-archive 的 xiaomi/plato/missi_phone_eea-user-14-UP1A.230905.011-V816.0.5.0.ULQEUXM-release-keys（HyperOS 1 欧洲版；存档里没有全球版安卓 14），用 host/extract-buildprops.py 抠出各分区身份（各分区保持真机原样：system/product 分区是通用系统镜像的值，odm 分区指纹停在出厂安卓版本）。 | buildProps(14) 换成全球版：整机转储 github.com/Jiovanni-dump/xiaomi_plato_dump（missi_phone_global-user 14 UP1A.230905.011 V816.0.12.0.ULQMIXM），和安卓 15 的全球版对得上（原来是欧洲版）。 | buildProps(15) 和 fingerprint(15)：小米官方完整包 plato_global-ota_full-OS2.0.202.0.VLQMIXM-user-15.0（HyperOS 2 全球版，host/ota-buildprops.sh 同样办法取出；ro.sf.lcd_density=480）。原来的 A15 指纹（OS2.0.219.0，设备树里抄的）换成和官方包一致的。",
+  "verifyNote": "2026-11-15 核对：官网 mi.com 规格页确认 天玑 8100-Ultra、2712×1220、120Hz、446 ppi、8+128 / 8+256、出厂 Android 12；固件记录（代号 plato）全球版最高 Android 15（OS2.0.219.0.VLQMIXM）。dpi 填的是 ppi，安卓实际显示密度待真机核实；CPU 识别信息没有可靠来源，没填 | fingerprint(15) 真实 stock：设备树 github.com/mt6895-plato/android_device_xiaomi_plato | buildProps(14) 和 fingerprint(14)：真实出厂 build.prop，来源 github.com/xdaGari/tadiphone-buildprop-archive 的 xiaomi/plato/missi_phone_eea-user-14-UP1A.230905.011-V816.0.5.0.ULQEUXM-release-keys（HyperOS 1 欧洲版；存档里没有全球版安卓 14），用 host/extract-buildprops.py 抠出各分区身份（各分区保持真机原样：system/product 分区是通用系统镜像的值，odm 分区指纹停在出厂安卓版本）。 | buildProps(14) 换成全球版：整机转储 github.com/Jiovanni-dump/xiaomi_plato_dump（missi_phone_global-user 14 UP1A.230905.011 V816.0.12.0.ULQMIXM），和安卓 15 的全球版对得上（原来是欧洲版）。 | buildProps(15) 和 fingerprint(15)：小米官方完整包 plato_global-ota_full-OS2.0.202.0.VLQMIXM-user-15.0（HyperOS 2 全球版，host/ota-buildprops.sh 同样办法取出；ro.sf.lcd_density=480）。原来的 A15 指纹（OS2.0.219.0，设备树里抄的）换成和官方包一致的。 | 显卡字符串（Mali-G610 MC6、驱动版本 r32p1、ro.hardware.egl=meow）取自魔云腾天玑 8200 真机包 V2314A；扩展列表没录，原样用板子驱动的（同是 Mali-G610）",
   "gpuFamily": "Mali-G610",
   "market": "GLOBAL",
   "values": {
@@ -25,6 +25,7 @@
     "boardPlatform": "mt6895"
   },
   "cpuTree": "mt6895",
+  "gpu": {"vendor": "ARM", "renderer": "Mali-G610 MC6", "version": "OpenGL ES 3.2 v1.r32p1-01eac0.54329dee8f160f288c574caaf67bbe", "glsl": "OpenGL ES GLSL ES 3.20", "egl": "meow", "vulkan": "mali"},
   "androidVersions": [
     12,
     13,

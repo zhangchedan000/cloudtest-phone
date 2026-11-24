@@ -93,18 +93,21 @@ func shimConfig(lib []byte, g *GPUInfo) ([]byte, error) {
 // disguiseBinds 伪装档开机前要挂的东西和要加的属性。返回的 hw 非空时替代机型芯片名当 ro.hardware。
 // have = 镜像带了驱动的芯片名（镜像标签 prism.hw），没有（老镜像）就什么都不做。
 func (s *Service) disguiseBinds(ctx context.Context, id, image string, m *Model, have []string) (binds, props []string, hw string) {
-	if m == nil || !m.Disguised() || len(have) == 0 {
+	if m == nil || len(have) == 0 || (!m.Disguised() && (m.GPU == nil || m.GPU.Renderer == "")) {
 		return nil, nil, ""
 	}
-	// 1. 硬件名：真机的 ro.hardware（qcom、mt6989……）镜像里没有对应的显示 / 显存模块，就把镜像里现成的一份挂成这个名字
-	if want := strings.ToLower(m.Hardware); hwNameRe.MatchString(want) && want != "redroid" {
+	// 1. 硬件名（只有伪装档：一致档的芯片名镜像里本来就有）：真机的 ro.hardware（qcom、mt6989……）镜像里没有对应的显示 / 显存模块，就把镜像里现成的一份挂成这个名字
+	if want := strings.ToLower(m.Hardware); m.Disguised() && hwNameRe.MatchString(want) && want != "redroid" {
 		ok := false
 		for _, h := range have {
 			ok = ok || h == want
 		}
 		if ok {
 			hw = want
-		} else if mods, err := s.hwModules(ctx, image, have[0]); err != nil {
+		} else if mods, err := s.hwModules(ctx, image, map[string]string{
+			"lib64/hw/gralloc": "/vendor/lib64/hw/gralloc." + have[0] + ".so", "lib64/hw/hwcomposer": "/vendor/lib64/hw/hwcomposer." + have[0] + ".so",
+			"lib/hw/gralloc": "/vendor/lib/hw/gralloc." + have[0] + ".so", "lib/hw/hwcomposer": "/vendor/lib/hw/hwcomposer." + have[0] + ".so",
+		}); err != nil {
 			log.Printf("手机 %s：取显示模块失败，硬件名照旧：%v", id, err)
 		} else {
 			for rel, src := range mods { // rel = lib64/hw/gralloc
@@ -128,11 +131,33 @@ func (s *Service) disguiseBinds(ctx context.Context, id, image string, m *Model,
 			}
 		}
 	}
+	// 3. Vulkan 入口模块的名字（ro.hardware.vulkan）：真机是 adreno 等，镜像里只有 vulkan.mali.so，挂一份成真机的名字。
+	// 显卡名还是 Mali（Vulkan 不伪装），只是属性和文件名跟真机一致；标签由小助手补成 same_process_hal_file（phonecmd/label.go）
+	if vk := shimVulkanName(m); vk != "" && vk != "mali" {
+		if mods, err := s.hwModules(ctx, image, map[string]string{"lib64/hw/vulkan": "/vendor/lib64/hw/vulkan.mali.so"}); err == nil {
+			binds = append(binds, mods["lib64/hw/vulkan"]+":/vendor/lib64/hw/vulkan."+vk+".so:ro")
+			props = append(props, "ro.hardware.vulkan="+vk)
+		}
+	}
 	return binds, props, hw
 }
 
-// hwModules 从镜像里取一份显示 / 显存模块（按芯片名 from 的那份），缓存在数据目录里。返回 「lib64/hw/gralloc」→ 宿主机文件。
-func (s *Service) hwModules(ctx context.Context, image, from string) (map[string]string, error) {
+// shimVulkanName 真机的 ro.hardware.vulkan；真机没设的高通机型用 adreno（总比在高通手机上写 mali 强），其余照旧 mali。
+func shimVulkanName(m *Model) string {
+	if m.GPU == nil {
+		return ""
+	}
+	if v := strings.ToLower(m.GPU.Vulkan); hwNameRe.MatchString(v) {
+		return v
+	}
+	if strings.Contains(strings.ToLower(m.GPU.Vendor), "qualcomm") {
+		return "adreno"
+	}
+	return ""
+}
+
+// hwModules 从镜像里取几个文件（files：缓存名 → 镜像里的路径），缓存在数据目录里。返回 缓存名 → 宿主机文件（镜像里没有的不返回）。
+func (s *Service) hwModules(ctx context.Context, image string, files map[string]string) (map[string]string, error) {
 	idOut, err := s.run.Run(ctx, "docker", "image", "inspect", "-f", "{{.Id}}", image)
 	if err != nil {
 		return nil, err
@@ -142,42 +167,38 @@ func (s *Service) hwModules(ctx context.Context, image, from string) (map[string
 		key = key[:16]
 	}
 	dir := filepath.Join(s.cfg.DataDir, "hwmods", key)
-	want := map[string]string{}
-	for _, arch := range []string{"lib64", "lib"} {
-		for _, mod := range []string{"gralloc", "hwcomposer"} {
-			want[arch+"/hw/"+mod] = filepath.Join(dir, arch, mod+".so")
+	out := map[string]string{}
+	var missing []string
+	for name := range files {
+		p := filepath.Join(dir, name+".so")
+		if fi, err := os.Stat(p); err == nil && fi.Size() > 0 {
+			out[name] = p
+		} else if !fileExists(p + ".none") {
+			missing = append(missing, name)
 		}
 	}
-	missing := false
-	for _, p := range want {
-		if _, err := os.Stat(p); err != nil {
-			missing = true
-		}
-	}
-	if missing && !fileExists(filepath.Join(dir, ".done")) {
+	if len(missing) > 0 {
 		cid, err := s.run.Run(ctx, "docker", "create", image, "/system/bin/sh")
 		if err != nil {
 			return nil, err
 		}
 		cid = strings.TrimSpace(cid)
 		defer s.run.Run(ctx, "docker", "rm", cid) //nolint:errcheck
-		for rel, p := range want {
+		for _, name := range missing {
+			p := filepath.Join(dir, name+".so")
 			_ = os.MkdirAll(filepath.Dir(p), 0o755)
-			src := "/vendor/" + rel + "." + from + ".so"
-			if _, err := s.run.Run(ctx, "docker", "cp", cid+":"+src, p); err != nil {
-				_ = os.Remove(p) // 镜像里没有这一份（比如没有 32 位）：不挂
+			if _, err := s.run.Run(ctx, "docker", "cp", cid+":"+files[name], p); err == nil {
+				if fi, err := os.Stat(p); err == nil && fi.Size() > 0 {
+					out[name] = p
+					continue
+				}
 			}
-		}
-		_ = os.WriteFile(filepath.Join(dir, ".done"), nil, 0o644)
-	}
-	out := map[string]string{}
-	for rel, p := range want {
-		if fi, err := os.Stat(p); err == nil && fi.Size() > 0 {
-			out[rel] = p
+			_ = os.Remove(p)
+			_ = os.WriteFile(p+".none", nil, 0o644) // 镜像里没有（比如没有 32 位）：记下来，下次不再取
 		}
 	}
 	if len(out) == 0 {
-		return nil, fmt.Errorf("镜像 %s 里没有 %s 的显示模块", image, from)
+		return nil, fmt.Errorf("镜像 %s 里没有要的模块", image)
 	}
 	return out, nil
 }

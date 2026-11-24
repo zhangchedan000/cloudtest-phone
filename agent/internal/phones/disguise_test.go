@@ -57,3 +57,25 @@ func TestShimEGLName(t *testing.T) {
 		}
 	}
 }
+
+func TestShimVulkanName(t *testing.T) {
+	cases := []struct {
+		g    *GPUInfo
+		want string
+	}{
+		{&GPUInfo{Vendor: "Qualcomm", Vulkan: "adreno"}, "adreno"},
+		{&GPUInfo{Vendor: "Qualcomm"}, "adreno"},
+		{&GPUInfo{Vendor: "ARM", Vulkan: "mali"}, "mali"},
+		{&GPUInfo{Vendor: "ARM"}, ""},
+		{nil, ""},
+	}
+	for _, c := range cases {
+		if got := shimVulkanName(&Model{GPU: c.g}); got != c.want {
+			t.Errorf("%+v → %q，应该是 %q", c.g, got, c.want)
+		}
+	}
+	// 一致档的联发科机型：egl 用真机的 meow（包着 mali，和真机一样）
+	if got := shimEGLName(&Model{GPU: &GPUInfo{Vendor: "ARM", EGL: "meow"}, Hardware: "mt6895"}); got != "meow" {
+		t.Errorf("一致档 → %q", got)
+	}
+}
