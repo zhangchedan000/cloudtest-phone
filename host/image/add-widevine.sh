@@ -95,22 +95,24 @@ if grep -q '^ro.apex.updatable=true' "$W/bp" 2>/dev/null; then
 # Widevine 兼容启动（可更新 apex 模式绕开 apexd，踩坑 #155）：开机把 apex_manifest.pb 补进 /apex，
 # 再用正确身份从 /system/apex 的可执行路径启动 drm HAL。
 on post-fs-data
-    # L3 CDM 的 keybox 基目录：init（root）在这里建好，标签对、且在 /data 准备好之后，App 读设备 ID 时
-    # HAL（media 身份）就能在里面建 L3 文件系统。漏了这句 → HAL 报「Could not create base directories
-    # for Level3FileSystem: Permission denied」→ abort（dobox 的 apex .rc 里本来就有这句，踩坑 #155）。
+    # L3 CDM 的 keybox 基目录（dobox apex .rc 里本来就有这句）。
     mkdir /data/vendor/mediadrm 0770 media mediadrm
     restorecon_recursive /data/vendor/mediadrm
-    # HAL 硬编码读 /apex/<自己名字>/apex_manifest.pb，补进 /apex（HAL 和 init 同命名空间，看得到）。
+    # 关键（踩坑 #155）：widevine HAL 按自己的可执行路径判断「我属于哪个 apex」，要求路径以
+    # /apex/<名>/ 开头，才能取到 apex 版本；否则 GetWVCdmVersion 抛异常、整个 HAL abort。
+    # 可更新模式下 apexd 不激活我们的展开目录，所以 init 自己把 /system/apex/<名> bind 到真 /apex/<名>，
+    # 让 HAL 从 /apex/<名>/bin/hw 跑（bind mount 保留源 /system 的「可执行」，/apex tmpfs 本身 noexec 不影响它）。
+    # 这样可执行路径 = /apex/com.google.android.widevine/bin/hw/...，apex 判断通过，和 A14 一致。
     mkdir /apex/com.google.android.widevine 0755 root root
-    copy /system/apex/com.google.android.widevine/apex_manifest.pb /apex/com.google.android.widevine/apex_manifest.pb
+    mount none /system/apex/com.google.android.widevine /apex/com.google.android.widevine bind
 
-service vendor.drm-widevine-hal /system/apex/com.google.android.widevine/bin/hw/android.hardware.drm-service.widevine
+service vendor.drm-widevine-hal /apex/com.google.android.widevine/bin/hw/android.hardware.drm-service.widevine
     seclabel u:r:hal_drm_default:s0
     interface aidl android.hardware.drm.IDrmFactory/widevine
     class hal
     user media
     group media mediadrm drmrpc system
-    setenv LD_LIBRARY_PATH /system/apex/com.google.android.widevine/lib64
+    setenv LD_LIBRARY_PATH /apex/com.google.android.widevine/lib64
     ioprio rt 4
     task_profiles ProcessCapacityHigh
 RC
