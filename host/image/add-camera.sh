@@ -77,7 +77,8 @@ def needed(p):
     out = subprocess.run(["readelf", "-d", p], capture_output=True, text=True).stdout
     return [l.split("[")[1].split("]")[0] for l in out.splitlines() if "(NEEDED)" in l]
 def in_image(lib):
-    for d in ("/vendor/lib64", f"/apex/com.android.vndk.v{ver}/lib64", "/system/apex/com.android.vndk.v%s" % ver):
+    # 安卓 14 的 VNDK 在镜像里是摊开的目录 /system/apex/com.android.vndk.current（开机挂成 /apex/com.android.vndk.v34）
+    for d in ("/vendor/lib64", "/system/apex/com.android.vndk.current/lib64", f"/system/apex/com.android.vndk.v{int(ver) + 20}/lib64"):
         if subprocess.run(["docker", "cp", f"{cid}:{d}/{lib}", probe], capture_output=True).returncode == 0:
             os.remove(probe)
             return True
