@@ -8,7 +8,7 @@ import type { DeviceModel } from '@/data/types'
 import { ServerSelect } from '@/components/ServerSelect'
 
 const SHOWN = ['brand', 'model', 'device', 'socModel', 'cpuParts', 'cpuMaxFreq', 'memTotal', 'resolution', 'refreshRate']
-const SOURCE: Record<string, string> = { capture: '真机采集', mytos: '魔云腾包', dir: '目录' }
+const SOURCE: Record<string, string> = { ours: '真机采集', capture: '真机采集', mytos: '魔云腾包', dir: '目录' }
 
 const str = (v: unknown) => (v === undefined || v === null ? '' : String(v))
 

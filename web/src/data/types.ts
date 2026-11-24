@@ -52,7 +52,7 @@ export interface DeviceModel {
   tier?: 'consistent' | 'disguised'
   /** 来自本地机型库（导入的），不是管家程序内置的。 */
   local?: boolean
-  /** 导入来源：capture（我们采集的真机包）/ mytos（魔云腾机型包）/ dir */
+  /** 导入来源：ours（我们采集的真机包）/ mytos（魔云腾机型包）/ dir */
   source?: string
   imeiTacs?: string[]
 }
