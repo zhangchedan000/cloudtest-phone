@@ -134,6 +134,7 @@ echo "sensor_vendors=$(dumpsys sensorservice 2>/dev/null | grep -E "^0x0000" | c
 echo "features_n=$(pm list features 2>/dev/null | wc -l)"; echo "feat_ethernet=$(pm list features 2>/dev/null | grep -c android.hardware.ethernet)"
 echo "codec_rk_alias=$(dumpsys media.player 2>/dev/null | grep -oE "(c2|OMX)\.[A-Za-z0-9_.-]+" | grep -vE "^(c2\.android|OMX\.google|c2\.rk)\." | sort -u | wc -l)"
 echo "data_kb=$(df -k /data 2>/dev/null | tail -1 | tr -s " " | cut -d" " -f2)"
+echo "cameras=$(dumpsys media.camera 2>/dev/null | grep -m1 "Number of camera devices" | tr -dc 0-9)"
 C=/sys/devices/system/cpu
 echo "cpu_parts=$(grep "CPU part" /proc/cpuinfo | awk "{print \$NF}" | tr "\n" " ")"
 echo "cpu_midrs=$(for i in 0 1 2 3 4 5 6 7; do cat $C/cpu$i/regs/identification/midr_el1 2>/dev/null; done | tr "\n" " ")"
@@ -300,6 +301,8 @@ for r in rows:
     if mm.get("features") and r.get("feat_ethernet") not in ("0", ""): bad.append(f"{i} 系统特性没换成真机的（还有 android.hardware.ethernet，共 {r.get('features_n')} 项）")
     if mm.get("codecs") and r.get("codec_rk_alias") in ("0", ""): bad.append(f"{i} 编解码器列表里没有真机的名字")
     if mm.get("dataBytes") and r.get("data_kb", "").isdigit() and abs(int(r["data_kb"]) * 1024 - mm["dataBytes"]) > mm["dataBytes"] * 0.01: bad.append(f"{i} /data 容量 {int(r['data_kb'])//1024//1024}GB，真机 {mm['dataBytes']//1024**3}GB")
+    # 摄像头（踩坑 #152）：镜像补了模拟摄像头，每台都有前后两个
+    if r.get("cameras", "") != "2": bad.append(f"{i} 摄像头 {r.get('cameras') or 0} 个（应有前后 2 个）")
     if mm.get("cpuTree"):
         denied = [k for k in ("cpu_online_type", "cpu_policies", "cpu_driver", "cpu_maxfreq") if "Permission denied" in r.get(k, "")]
         if denied: bad.append(f"{i} CPU 目录 App 读不了（{'、'.join(denied)} 权限被拒：换上去的目录 SELinux 标签不对，踩坑 #147）")
