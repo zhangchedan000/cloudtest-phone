@@ -188,7 +188,13 @@ log "ADB 拉值完成（$(grep -c 'state=device' "$DIR/adb.txt")/$(wc -l < "$DIR
 log "同时开 $(wc -l < "$DIR/phones.txt") 路实时画面 30 秒"
 while read -r id _; do
   [ "$(docker inspect -f '{{.State.Running}}' "pp-$id" 2>/dev/null)" = true ] || continue
-  ( b=$(curl -s -m30 -H "$H" "$API/phones/$id/stream?w=720&h=1600" -o /dev/null -w '%{size_download}'); echo "$id $b" >> "$DIR/stream.txt" ) &
+  ( b=$(curl -s -m30 -H "$H" "$API/phones/$id/stream?w=720&h=1600" -o "$DIR/$id.h264" -w '%{size_download}')
+    # 最大关键帧多大：纯黑 / 纯色画面的关键帧只有一两 KB；画面不动时总数据量也很小，但关键帧照样有十几 KB（看总量会误报）
+    idr=$(python3 -c "
+import re,sys
+d=open(sys.argv[1],'rb').read(); p=[m.start() for m in re.finditer(b'\x00\x00\x00\x01',d)]+[len(d)]
+print(max([b-a for a,b in zip(p,p[1:]) if (d[a+4]&31)==5] or [0]))" "$DIR/$id.h264" 2>/dev/null)
+    rm -f "$DIR/$id.h264"; echo "$id $b ${idr:-0}" >> "$DIR/stream.txt" ) &
   # 画面要动起来才像真在用（静止画面编码几乎不耗 CPU）：每 2 秒左右滑一下桌面
   pex "pp-$id" sh -c 'for i in $(seq 1 14); do input swipe 900 1300 150 1300 250; sleep 1; input swipe 150 1300 900 1300 250; sleep 1; done' </dev/null >/dev/null 2>&1 &
 done < "$DIR/phones.txt"
@@ -308,13 +314,12 @@ try:
 except OSError: pass
 for i, e in sorted(enc.items()):
     if "c2.rk." not in e: bad.append(f"{i} 实时画面没用上硬件编码（{e}）" + ("，原因看 %s.encoder-fallback.txt" % i if "c2.android" in e else ""))
-# 画面有没有内容：30 秒一路正常有 1MB 以上；只有十几 KB 是一直黑屏 / 不动（2026-11-24 伪装档扩展列表让界面画不出来，
-# 只查编码器时漏掉了）
+# 画面有没有内容（2026-11-24 伪装档扩展列表让界面画不出来，只查编码器时漏掉了）：看最大关键帧，纯黑的只有一两 KB
 try:
     for line in open(os.path.join(d, "stream.txt")):
         a = line.split()
-        if len(a) >= 2 and a[1].isdigit() and int(a[1]) < 150000:
-            bad.append(f"{a[0]} 实时画面 30 秒只有 {int(a[1]) // 1024} KB，基本没有内容（黑屏？）")
+        if len(a) >= 3 and a[2].isdigit() and int(a[2]) < 5000:
+            bad.append(f"{a[0]} 实时画面最大的关键帧只有 {int(a[2])} 字节（30 秒共 {int(a[1]) // 1024} KB）：黑屏 / 纯色")
 except OSError: pass
 # 有问题的手机 ID（KEEP_BAD=1 时收拾阶段不删，留着查）
 with open(os.path.join(d, "bad-ids.txt"), "w") as fh:
