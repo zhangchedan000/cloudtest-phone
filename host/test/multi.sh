@@ -128,6 +128,8 @@ echo "uid=$(id -u)"
 echo "pkgs=$(pm list packages 2>/dev/null | wc -l)"; echo "gms=$(pm list packages com.google.android.gms 2>/dev/null | wc -l)"
 echo "tz_now=$(date +%Z%z)"
 echo "ping=$(ping -c1 -W3 1.1.1.1 >/dev/null 2>&1 && echo ok || echo fail)"
+echo "vk_device=$(cmd gpu vkjson 2>/dev/null | grep -m1 deviceName | tr -d " \t,\"" | cut -d: -f2)"
+echo "vk_drivers=$(ls /vendor/lib64/hw 2>/dev/null | grep "^vulkan" | tr "\n" " ")"
 C=/sys/devices/system/cpu
 echo "cpu_parts=$(grep "CPU part" /proc/cpuinfo | awk "{print \$NF}" | tr "\n" " ")"
 echo "cpu_midrs=$(for i in 0 1 2 3 4 5 6 7; do cat $C/cpu$i/regs/identification/midr_el1 2>/dev/null; done | tr "\n" " ")"
@@ -276,6 +278,9 @@ for r in rows:
     parts = r.get("cpu_parts", "").split(); midrs = r.get("cpu_midrs", "").split()
     if parts and midrs and [p.lower() for p in parts] != ["0x%03x" % ((int(m, 16) >> 4) & 0xfff) for m in midrs]:
         bad.append(f"{i} cpuinfo 的核心型号 {' '.join(parts)} 和 midr 文件 {' '.join(midrs)} 对不上")
+    # Vulkan（踩坑 #148）：要能枚举到 Mali 显卡；驱动目录里只能有 Mali 的入口模块（redroid 的开源驱动是痕迹）
+    if not r.get("vk_device", "").startswith("Mali"): bad.append(f"{i} Vulkan 枚举不到显卡（{r.get('vk_device') or '0 个设备'}）")
+    if r.get("vk_drivers", "").split() not in ([], ["vulkan.mali.so"]): bad.append(f"{i} /vendor/lib64/hw 里还有别的 Vulkan 驱动：{r.get('vk_drivers')}")
     mm = models.get(r.get("spec_model", "")) or {}
     if mm.get("cpuTree"):
         if r.get("cpu_online_type") != "regular file": bad.append(f"{i} /sys/devices/system/cpu/online 是「{r.get('cpu_online_type')}」，不是普通文件（CPU 目录没换上）")
