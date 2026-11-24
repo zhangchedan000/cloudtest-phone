@@ -1029,6 +1029,7 @@ func (s *Service) Start(ctx context.Context, id string) error {
 	}
 	binds = append(binds, dBinds...)
 	binds = append(binds, s.featureBinds(ctx, p.ID, image, s.model(p.ModelID))...)
+	binds = append(binds, s.sensorShimBinds(ctx, p.ID, image, s.model(p.ModelID))...)
 	bootArgs = append(bootArgs, dProps...) // ro.hardware.egl：原 build.prop 里没有，只能走开机参数（比镜像 gpu_config.sh 设的 mali 早）
 	propArgs := append([]string{}, bootArgs...)
 	if hw != "" {
@@ -1046,6 +1047,7 @@ func (s *Service) Start(ctx context.Context, id string) error {
 	if entrypoint != nil && s.cfg.Sensors && s.imageHasSensors(ctx, image) {
 		byKey := s.resolvedValues(*p, st)
 		spec := sensorSpec(*p, st, byKey)
+		spec.Mask = sensorMask(s.model(p.ModelID))
 		if s.imageLabel(ctx, image, "prism.ril") == "1" {
 			spec.Modem = s.simSpec(*p, st, byKey)
 			if spec.Modem != nil {

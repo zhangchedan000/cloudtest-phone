@@ -99,7 +99,9 @@ func (s *Service) prepareData(ctx context.Context, id string, byKey map[string]a
 		if size == 0 || !dirEmpty(dir) {
 			return dir, nil // 没填容量，或老手机已有数据：不动
 		}
-		if err := createImage(ctx, s.run, img, size); err != nil {
+		// ext4 自己的元数据（inode 表、日志）占掉约 2.1%：镜像放大这么多，手机里 df / StatFs 看到的总容量才是目标值
+		// （2026-11-24 实测：239.3GB 的镜像 df 只有 234.4GB，比真机少 2%）
+		if err := createImage(ctx, s.run, img, size+size*215/10000); err != nil {
 			_ = os.Remove(img)
 			return "", err
 		}

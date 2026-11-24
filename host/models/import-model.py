@@ -299,6 +299,46 @@ def features_of(pkg):
     return out
 
 
+def sensors_of(pkg):
+    """真机传感器清单：[{type, name, vendor, version, maxRange, resolution, power, minDelay, maxDelay, fifoRes, fifoMax, flags}]。
+    魔云腾包 sensor.json 有全套；我们的采集包是 dumpsys sensorservice 文本（没有量程 / 精度 / 功耗，留 0 = 用 HAL 自己的）。"""
+    out = []
+    try:
+        j = json.loads(pkg.text("sensor.json") or "{}")
+    except ValueError:
+        j = {}
+    lst = j.get("sensor_list") if isinstance(j, dict) else None
+    if not lst:
+        lst = ((device_info(pkg).get("sensor") or {}).get("sensorList") or (device_info(pkg).get("sensor") or {}).get("sensor_list") or [])
+    for x in lst or []:
+        if not isinstance(x, dict) or not x.get("name") or not x.get("type"):
+            continue
+        out.append({"type": int(x["type"]), "name": str(x["name"]), "vendor": str(x.get("vendor") or ""), "version": int(x.get("version") or 1),
+                    "maxRange": float(x.get("maximum_range") or x.get("maxRange") or 0), "resolution": float(x.get("resolution") or 0),
+                    "power": float(x.get("power") or 0), "minDelay": int(x.get("mMinDelay", x.get("minDelay", 0)) or 0),
+                    "maxDelay": int(x.get("mMaxDelay", x.get("maxDelay", 0)) or 0), "fifoRes": int(x.get("mFifoReservedEventCount") or 0),
+                    "fifoMax": int(x.get("mFifoMaxEventCount") or 0), "flags": int(x.get("mFlags") or 0)})
+    if out:
+        return out
+    lines = pkg.text("sensors.txt").splitlines()
+    for i, l in enumerate(lines):
+        m = re.match(r"^\s*0x[0-9a-f]+\)\s*(.+?)\s*\|\s*(.*?)\s*\|\s*ver:\s*(\d+)\s*\|\s*type:\s*\S+\((\d+)\).*?flags:\s*0x([0-9a-f]+)", l)
+        if not m:
+            continue
+        nxt = lines[i + 1] if i + 1 < len(lines) else ""
+        hz = lambda k: float(re.search(k + r"=([\d.]+)Hz", nxt).group(1)) if re.search(k + r"=([\d.]+)Hz", nxt) else 0
+        fifo = re.search(r"FIFO \(max,reserved\) = \((\d+), (\d+)\)", nxt)
+        maxr, minr = hz("maxRate"), hz("minRate")
+        out.append({"type": int(m.group(4)), "name": m.group(1), "vendor": m.group(2), "version": int(m.group(3)),
+                    "maxRange": 0, "resolution": 0, "power": 0,
+                    "minDelay": int(round(1e6 / maxr)) if maxr else (-1 if "one-shot" in nxt else 0),
+                    "maxDelay": int(round(1e6 / minr)) if minr else 0,
+                    "fifoRes": int(fifo.group(2)) if fifo else 0, "fifoMax": int(fifo.group(1)) if fifo else 0,
+                    "flags": int(m.group(5), 16)})
+    # dumpsys 里还有安卓自己融合出来的（厂商 AOSP、句柄 0x5f...），不是硬件传感器
+    return [x for x in out if x["vendor"] != "AOSP"]
+
+
 def build_props_from(pkg, props):
     # 我们的采集包有各分区 build.prop 原文件：用 extract-buildprops.py 的规则（按加载顺序合并）
     bp = {k: v for k, v in pkg.files.items() if k.startswith("buildprop/")}
@@ -388,6 +428,9 @@ def convert(path, tac_db, host_gpu, host_cpus):
         prof["fingerprints"] = {rel: props["ro.build.fingerprint"]}
     if sbytes:
         prof["dataBytes"] = sbytes
+    sens = sensors_of(pkg)
+    if sens:
+        prof["sensors"] = sens
     feats = features_of(pkg)
     if feats:
         prof["features"] = feats

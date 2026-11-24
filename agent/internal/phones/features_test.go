@@ -3,6 +3,8 @@ package phones
 import (
 	"strings"
 	"testing"
+
+	"github.com/zhangchedan000/prism-phone/agent/internal/sensors"
 )
 
 func TestPlanFeatures(t *testing.T) {
@@ -14,7 +16,7 @@ func TestPlanFeatures(t *testing.T) {
 		"android.hardware.hardware_keystore=100", "android.hardware.consumerir", "android.software.verified_boot",
 		"android.software.virtualization_framework", "android.software.incremental_delivery=2", "com.vivo.themestore.SUPPORTED",
 		"cn.google.services", "android.sofware.nfc.beam", "android.software.opengles.deqp.level=132449025"})
-	add, remove := planFeatures(img, real)
+	add, remove := planFeatures(img, real, sensorFeatures(sensors.DefaultMask))
 	for _, want := range []string{"android.hardware.bluetooth_le", "android.hardware.nfc", "android.hardware.sensor.gyroscope",
 		"android.software.verified_boot", "com.vivo.themestore.SUPPORTED", "android.software.opengles.deqp.level"} {
 		if _, ok := add[want]; !ok {

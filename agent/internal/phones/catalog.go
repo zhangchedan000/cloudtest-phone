@@ -73,6 +73,8 @@ type Model struct {
 	DataBytes int64 `json:"dataBytes,omitempty"`
 	// Features 真机的系统特性列表（pm list features：「名字」或「名字=版本」；见 features.go）
 	Features []string `json:"features,omitempty"`
+	// Sensors 真机的传感器清单（见 sensorshim.go）
+	Sensors []SensorInfo `json:"sensors,omitempty"`
 	Raw      json.RawMessage
 }
 

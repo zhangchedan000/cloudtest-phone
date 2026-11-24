@@ -56,8 +56,8 @@ func TestNewPhoneGetsSizedDataImage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("新手机应建存储镜像：%v", err)
 	}
-	// POCO X4 GT 档案 storageTotal（GB，十进制）的 94%（真机 /data 比标称小一截）
-	if info.Size()%940_000_000 != 0 || info.Size() < 60_000_000_000 {
+	// POCO X4 GT 档案 storageTotal（GB，十进制）的 94%（真机 /data 比标称小一截），再加 ext4 元数据的 2.15%
+	if want := storageBytes(map[string]any{"storageTotal": svc.model("poco-x4-gt").Values["storageTotal"]}, svc.model("poco-x4-gt")); want == 0 || info.Size() != want+want*215/10000 {
 		t.Fatalf("镜像大小不对：%d", info.Size())
 	}
 	joined := strings.Join(r.calls, "\n")

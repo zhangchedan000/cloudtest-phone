@@ -22,7 +22,7 @@ import (
 // 不是全照搬，有几类按板子来（照搬会让 App 用上板子没有的能力，或者系统服务起不来）：
 //   - 显卡（Vulkan / OpenGL 版本）、密钥库（keystore 版本、StrongBox）、内存档位：按板子真实能力
 //   - 需要对应硬件服务、声称了却没有会让系统服务崩的（红外、WiFi Aware / RTT / 直连、UWB、Thread……）：不加
-//   - 传感器：只报我们真有的（加速度、陀螺仪、磁力计、距离、光线）
+//   - 传感器：只报这台手机真有的（sensorshim.go：真机有的那几种里我们能喂数据的）
 //   - 电话、WiFi、蓝牙、触屏、屏幕方向、定位、麦克风这些在用的：不删（电话的子特性是安卓 14 起框架要的，真机包是 13 的也不删）
 //   - 软件特性（android.software.*）按镜像的系统版本来，只补几个纯标志（verified_boot、midi……）
 //   - 厂商特性（com.vivo.*、com.mediatek.* ……）照搬；谷歌的（com.google.*、cn.google.*）按镜像（cn.google.services 会让谷歌服务按国内版跑）
@@ -34,8 +34,6 @@ var (
 	featNeverAdd = []string{"android.hardware.consumerir", "android.hardware.wifi.aware", "android.hardware.wifi.rtt",
 		"android.hardware.wifi.direct", "android.hardware.uwb", "android.hardware.thread_network", "android.hardware.type.",
 		"android.hardware.ethernet", "android.hardware.context_hub", "android.hardware.sensor."}
-	featSensorsWeHave = map[string]bool{"android.hardware.sensor.accelerometer": true, "android.hardware.sensor.gyroscope": true,
-		"android.hardware.sensor.compass": true, "android.hardware.sensor.proximity": true, "android.hardware.sensor.light": true}
 	featNeverRemove = []string{"android.hardware.telephony", "android.hardware.wifi", "android.hardware.bluetooth",
 		"android.hardware.touchscreen", "android.hardware.faketouch", "android.hardware.screen.", "android.hardware.location",
 		"android.hardware.microphone", "android.hardware.audio.output", "android.hardware.sensor.", "android.hardware.usb.accessory"}
@@ -69,7 +67,7 @@ func parseFeatureList(list []string) map[string]int {
 }
 
 // planFeatures 比对镜像和真机的特性：要加的（名字 → 版本）、要标成没有的。
-func planFeatures(img, real map[string]int) (add map[string]int, remove []string) {
+func planFeatures(img, real map[string]int, haveSensors map[string]bool) (add map[string]int, remove []string) {
 	add = map[string]int{}
 	for name, ver := range real {
 		if _, ok := img[name]; ok {
@@ -77,7 +75,7 @@ func planFeatures(img, real map[string]int) (add map[string]int, remove []string
 		}
 		switch {
 		case strings.HasPrefix(name, "android.hardware."):
-			if hasPrefixAny(name, featKeepBoard) || (hasPrefixAny(name, featNeverAdd) && !featSensorsWeHave[name]) {
+			if hasPrefixAny(name, featKeepBoard) || (hasPrefixAny(name, featNeverAdd) && !haveSensors[name]) {
 				continue
 			}
 		case strings.HasPrefix(name, "android.software."):
@@ -213,7 +211,7 @@ func (s *Service) featureBinds(ctx context.Context, id, image string, m *Model) 
 		log.Printf("手机 %s：读镜像的系统特性失败，特性照镜像：%v", id, err)
 		return nil
 	}
-	add, remove := planFeatures(img, parseFeatureList(m.Features))
+	add, remove := planFeatures(img, parseFeatureList(m.Features), sensorFeatures(sensorMask(m)))
 	if len(add) == 0 && len(remove) == 0 {
 		return nil
 	}
