@@ -7,4 +7,5 @@ agent/bin/
 __pycache__/
 host/image/glshim/out/
 host/image/sensorshim/out/
+host/image/vkshim/out/
 host/test/probe/out/
