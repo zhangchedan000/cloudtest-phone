@@ -362,9 +362,9 @@ func label(boot bool) (int, error) {
 			n += l.Relabel(mp, true, nil)
 			// 伪装档挂成真机名字的 Vulkan 入口模块（vulkan.adreno.so……）：规则里只有 vulkan.mali.so 单独标成 App 能加载的
 			// same_process_hal_file，别的名字按目录规则成了 vendor_hal_file，App 加载不了 Vulkan
-			// .vkreal.so 是伪装档 Vulkan 转接库 dlopen 的真 Mali 驱动（隐藏点文件），也要能被 App 进程加载
+			// .vkreal.so / .glreal.so 是伪装档 Vulkan / GL 转接库 dlopen 的真 Mali 驱动（隐藏点文件），也要能被 App 进程加载
 			if strings.HasPrefix(mp, "/vendor/lib64/hw/vulkan.") || strings.HasPrefix(mp, "/vendor/lib/hw/vulkan.") ||
-				mp == "/vendor/lib64/hw/.vkreal.so" {
+				mp == "/vendor/lib64/hw/.vkreal.so" || mp == "/vendor/lib64/egl/.glreal.so" || mp == "/vendor/lib/egl/.glreal.so" {
 				if setLabel(mp, "u:object_r:same_process_hal_file:s0") == nil {
 					n++
 				}

@@ -41,10 +41,12 @@ extern int close(int fd);
 #define GL_SHADING_LANGUAGE_VERSION 0x8B8C
 #define GL_NUM_EXTENSIONS 0x821D
 
+/* 真驱动挂到中性名的隐藏点文件 .glreal.so（原来直接 dlopen libGLES_mali.so，App 读自己的 /proc/self/maps
+ * 就看到「mali」——一台号称 Adreno 的机器 maps 里有 mali 就露馅，踩坑 #157 补充）。照 Vulkan 的 .vkreal.so 做法。 */
 #ifdef __LP64__
-#define REAL_DRIVER "/vendor/lib64/egl/libGLES_mali.so"
+#define REAL_DRIVER "/vendor/lib64/egl/.glreal.so"
 #else
-#define REAL_DRIVER "/vendor/lib/egl/libGLES_mali.so"
+#define REAL_DRIVER "/vendor/lib/egl/.glreal.so"
 #endif
 
 #define EXPORT __attribute__((visibility("default")))

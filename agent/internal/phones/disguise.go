@@ -117,17 +117,23 @@ func (s *Service) disguiseBinds(ctx context.Context, id, image string, m *Model,
 			hw = want
 		}
 	}
-	// 2. 显卡字符串：转接库挂成真机的 egl 名字，ro.hardware.egl 指过去
+	// 2. 显卡字符串：转接库挂成真机的 egl 名字，ro.hardware.egl 指过去。
+	// 转接库 dlopen 真 Mali 驱动做实际渲染，挂到中性名的隐藏点文件 .glreal.so（原来直接 dlopen libGLES_mali.so，
+	// App 读自己 /proc/self/maps 就看到 mali——号称 Adreno 的机器 maps 里有 mali 就露馅，踩坑 #157 补充）。照 Vulkan 的 .vkreal.so 做法。
+	// 抽不出真驱动就整段跳过（退回不伪装显卡、用真 Mali），不能让 shim dlopen 一个不存在的 .glreal.so 把 GL 弄挂。
 	if m.GPU != nil && m.GPU.Renderer != "" && s.cfg.Tools != nil {
-		if lib, err := fs.ReadFile(s.cfg.Tools, "libGLES_pp.so"); err == nil {
-			if patched, err := shimConfig(lib, m.GPU); err == nil {
-				dir := filepath.Join(s.phoneDir(id), "glshim")
-				_ = os.MkdirAll(dir, 0o755)
-				p := filepath.Join(dir, "libGLES.so")
-				if os.WriteFile(p, patched, 0o644) == nil {
-					name := shimEGLName(m)
-					binds = append(binds, p+":/vendor/lib64/egl/libGLES_"+name+".so:ro")
-					props = append(props, "ro.hardware.egl="+name)
+		if real, err := s.hwModules(ctx, image, map[string]string{"lib64/egl/gles": "/vendor/lib64/egl/libGLES_mali.so"}); err == nil {
+			if lib, err := fs.ReadFile(s.cfg.Tools, "libGLES_pp.so"); err == nil {
+				if patched, err := shimConfig(lib, m.GPU); err == nil {
+					dir := filepath.Join(s.phoneDir(id), "glshim")
+					_ = os.MkdirAll(dir, 0o755)
+					p := filepath.Join(dir, "libGLES.so")
+					if os.WriteFile(p, patched, 0o644) == nil {
+						name := shimEGLName(m)
+						binds = append(binds, real["lib64/egl/gles"]+":/vendor/lib64/egl/.glreal.so:ro")
+						binds = append(binds, p+":/vendor/lib64/egl/libGLES_"+name+".so:ro")
+						props = append(props, "ro.hardware.egl="+name)
+					}
 				}
 			}
 		}
