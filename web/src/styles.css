@@ -46,7 +46,7 @@ body { background: var(--fb-bg); color: var(--fb-text); font-family: Inter, ui-s
 .pp-host-section-head { display: flex; align-items: center; gap: 8px; padding-bottom: 8px; border-bottom: 1px solid var(--fb-line); }
 .pp-host-section-toggle { margin-left: auto; }
 
-.pp-slot-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; min-height: 280px; border: 1px dashed var(--fb-line); border-radius: 12px; background: var(--fb-surface-muted); cursor: pointer; transition: border-color .15s, background .15s; }
+.pp-slot-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; min-height: calc(min(var(--screen-w, 120px), var(--slot-w, 210px) - 28px) * 2 + 56px); border: 1px dashed var(--fb-line); border-radius: 12px; background: var(--fb-surface-muted); cursor: pointer; transition: border-color .15s, background .15s; }
 .pp-slot-empty:hover { border-color: var(--fb-accent); background: var(--fb-chip); }
 .pp-slot-plus { font-size: 26px; color: var(--fb-text-muted); }
 
@@ -68,7 +68,7 @@ body { background: var(--fb-bg); color: var(--fb-text); font-family: Inter, ui-s
 /* 手机画面 */
 .pp-phone { display: flex; flex-direction: column; align-items: center; gap: 8px; }
 .pp-phone-screen { position: relative; overflow: hidden; background: var(--fb-sidebar-bg); border: 6px solid var(--fb-sidebar-card); border-radius: 22px; }
-.pp-phone-thumb .pp-phone-screen { width: 120px; height: 240px; border-width: 4px; border-radius: 16px; }
+.pp-phone-thumb .pp-phone-screen { width: var(--pp-sw); height: calc(var(--pp-sw) * 2); border-width: 4px; border-radius: 16px; --pp-sw: min(var(--screen-w, 120px), var(--slot-w, 210px) - 28px); }
 .pp-phone-large .pp-phone-screen { width: 300px; height: 640px; }
 .pp-phone-status { display: flex; justify-content: space-between; padding: 6px 10px; font-size: 10px; color: var(--fb-on-accent); }
 .pp-phone-large .pp-phone-status { font-size: 13px; padding: 10px 16px; }

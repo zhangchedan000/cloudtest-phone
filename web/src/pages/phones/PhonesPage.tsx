@@ -25,6 +25,7 @@ export function PhonesPage() {
   const [managingGroups, setManagingGroups] = useState(false)
   const [hideEmpty, setHideEmpty] = useState(false)
   const [slotW, setSlotW] = useState(210)
+  const [screenW, setScreenW] = useState(120)
   const [open, setOpen] = useState<Phone>()
   const [openMode, setOpenMode] = useState<'view' | 'edit'>('view')
   // 打开手机：单独弹一个窗口（可以同时开好几台）；浏览器拦了弹窗就在页面里打开
@@ -176,7 +177,7 @@ export function PhonesPage() {
         {mine.length === 0 && (hideEmpty || empties === 0) ? (
           <Empty description="这台机器还没有云手机" image={Empty.PRESENTED_IMAGE_SIMPLE}><Button type="primary" icon={<PlusOutlined />} onClick={() => addPhoneOn(h.id)}>创建</Button></Empty>
         ) : (
-          <div className="pp-grid" style={{ ['--slot-w' as string]: `${slotW}px` }}>
+          <div className="pp-grid" style={{ ['--slot-w' as string]: `${slotW}px`, ['--screen-w' as string]: `${screenW}px` }}>
             {mine.map(renderPhoneCard)}
             {!hideEmpty && Array.from({ length: empties }, (_, i) => renderEmptySlot(h, i))}
           </div>
@@ -247,7 +248,8 @@ export function PhonesPage() {
               <Select style={{ width: 150 }} value={groupId} onChange={setGroupId} options={[{ value: 'all', label: '全部分组' }, ...ws.groups.map((g) => ({ value: `${g.serverId ?? 'local'}|${g.id}`, label: ws.servers.length ? `${g.name}（${ws.serverName(g.serverId)}）` : g.name }))]} />
               <Button onClick={() => setManagingGroups(true)}>分组管理</Button>
               <Input allowClear prefix={<SearchOutlined />} placeholder="名称 / 机型" value={query} onChange={(e) => setQuery(e.target.value)} style={{ width: 180 }} />
-              {view === 'cards' && <span className="pp-slot-slider"><span className="pp-muted pp-small">坑位大小</span><Slider min={160} max={300} value={slotW} onChange={setSlotW} style={{ width: 110 }} tooltip={{ open: false }} /></span>}
+              {view === 'cards' && <span className="pp-slot-slider"><span className="pp-muted pp-small">窗口大小</span><Slider min={170} max={340} value={slotW} onChange={setSlotW} style={{ width: 96 }} tooltip={{ open: false }} /></span>}
+              {view === 'cards' && <span className="pp-slot-slider"><span className="pp-muted pp-small">投屏大小</span><Slider min={90} max={200} value={screenW} onChange={setScreenW} style={{ width: 96 }} tooltip={{ open: false }} /></span>}
             </Space>
             <Space wrap>
               {selected.length > 0 && <span className="pp-muted">已选 {selected.length} 台</span>}
