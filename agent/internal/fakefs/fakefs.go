@@ -33,6 +33,12 @@ type Spec struct {
 	// BootID 这次开机的 boot_id（每台手机每次开机一个新的 UUID）。容器共用宿主机内核，
 	// /proc/sys/kernel/random/boot_id 所有手机读到的都一样——App 不要权限就能读，一对比就知道是同一台机器（踩坑 #79）。
 	BootID string
+	// DeviceTreeModel / DeviceTreeCompatible 盖住 /proc/device-tree 和 /sys/firmware/devicetree/base 下的
+	// model / compatible——真 RK3588 板子在这里写着 "Linux Q1" / "rockchip,rk3588"，暴露宿主硬件（踩坑 #157）。
+	// 普通 App（untrusted_app）读不到这俩（sysfs 标签、SELinux 挡，真机同样挡），这是给 root / 深度检测的防御纵深；
+	// 留空就不盖。值是设备树属性，按 NUL 结尾字符串写（compatible 可含多段，用 \x00 分隔）。
+	DeviceTreeModel      string
+	DeviceTreeCompatible string
 }
 
 // File 一个伪造文件：容器里的路径 → 内容。
@@ -102,6 +108,22 @@ func Build(s Spec) ([]File, error) {
 			File{Target: "/proc/sys/kernel/osrelease", Name: "osrelease", Content: s.KernelRelease + "\n"},
 			File{Target: "/proc/sys/kernel/version", Name: "version", Content: build + "\n"},
 			File{Target: "/proc/version", Name: "proc_version", Content: ProcVersion(s.KernelRelease, build)},
+		)
+	}
+	// 设备树 model / compatible：盖住宿主机真板子名（Linux Q1 / rockchip,rk3588，踩坑 #157）。
+	// 设备树属性是 NUL 结尾字符串，内容直接写文件（不经 JSON），NUL 能保留。/proc/device-tree 可能是
+	// /sys/firmware/devicetree/base 的软链，两条路径都试挂（真路径挂上了，软链那条挂不上会被跳过，不影响）。
+	for _, dt := range []struct{ val, base string }{
+		{s.DeviceTreeModel, "model"},
+		{s.DeviceTreeCompatible, "compatible"},
+	} {
+		if dt.val == "" {
+			continue
+		}
+		content := dt.val + "\x00"
+		files = append(files,
+			File{Target: "/sys/firmware/devicetree/base/" + dt.base, Name: "dt_" + dt.base + "_sys", Content: content},
+			File{Target: "/proc/device-tree/" + dt.base, Name: "dt_" + dt.base + "_proc", Content: content},
 		)
 	}
 	return files, nil

@@ -1037,6 +1037,10 @@ func (s *Service) Start(ctx context.Context, id string) error {
 	// （镜像里有对应显示模块的名字，#149），显卡 / Vulkan 按 ro.hardware.egl / vulkan 找，平台名只是兜底，按机型设成真机的（kalama、mt6895……）
 	if pl := boardPlatform(s.resolvedValues(*p, st)); pl != "" {
 		bootArgs = append(bootArgs, "ro.board.platform="+pl)
+		// ro.chipname：联发科真机有（如 MT6886），我们一直空着（踩坑 #157 的极小项）。只给联发科机型设（高通机本就没有）。
+		if strings.HasPrefix(pl, "mt") {
+			bootArgs = append(bootArgs, "ro.chipname="+strings.ToUpper(pl))
+		}
 	}
 	// 板子名（Build.BOARD）、bootloader、基带平台：照真机（以前 Build.BOARD 是 unknown，检测器 #154）
 	bootArgs = append(bootArgs, boardProps(s.model(p.ModelID), s.resolvedValues(*p, st))...)

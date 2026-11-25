@@ -321,3 +321,25 @@ func boardProps(m *Model, byKey map[string]any) []string {
 }
 
 func fileExists(p string) bool { _, err := os.Stat(p); return err == nil }
+
+// socVendor 把 SoC 厂商 + 平台名映射成设备树 compatible 的厂商前缀（mediatek,mt6886 / qcom,kalama……，踩坑 #157）。
+// 真机设备树里高通写 qcom、联发科写 mediatek、三星写 samsung、紫光写 sprd。认不出就用厂商名首段小写兜底。
+func socVendor(manufacturer, soc string) string {
+	mfr := strings.ToLower(manufacturer)
+	switch {
+	case strings.Contains(mfr, "medi") || strings.HasPrefix(soc, "mt"):
+		return "mediatek"
+	case strings.Contains(mfr, "qual") || strings.HasPrefix(soc, "sm") || strings.HasPrefix(soc, "msm") || strings.HasPrefix(soc, "sdm") || strings.HasPrefix(soc, "apq"):
+		return "qcom"
+	case strings.Contains(mfr, "samsung") || strings.HasPrefix(soc, "exynos") || strings.HasPrefix(soc, "s5e"):
+		return "samsung"
+	case strings.Contains(mfr, "unisoc") || strings.Contains(mfr, "spreadtrum") || strings.HasPrefix(soc, "ums") || strings.HasPrefix(soc, "sc"):
+		return "sprd"
+	case strings.Contains(mfr, "google") || strings.HasPrefix(soc, "gs"):
+		return "google"
+	}
+	if f := strings.Fields(mfr); len(f) > 0 && boardPropVal.MatchString(f[0]) {
+		return f[0]
+	}
+	return "arm"
+}

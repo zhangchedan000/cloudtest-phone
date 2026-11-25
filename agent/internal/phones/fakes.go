@@ -120,6 +120,14 @@ func (s *Service) prepareFakes(p store.Phone, st store.State) (bool, error) {
 	// 宿主机核数比机型少时（开发机 4 核，手机 8 核），只写宿主机有的核，
 	// 否则 cpuinfo 里 8 个核、/sys/devices/system/cpu/online 只有 0-3，自相矛盾。
 	spec.CPUParts, spec.CPUMaxFreqKHz = fitCPUs(spec.CPUParts, spec.CPUMaxFreqKHz, s.hostCPUs())
+	// 设备树 model / compatible：盖住宿主机真板子名（Linux Q1 / rockchip,rk3588，踩坑 #157）。
+	spec.DeviceTreeModel = str(byKey["marketName"])
+	if spec.DeviceTreeModel == "" {
+		spec.DeviceTreeModel = str(byKey["model"])
+	}
+	if soc := strings.ToLower(strings.TrimSpace(str(byKey["boardPlatform"]))); hwNameRe.MatchString(soc) && !strings.HasPrefix(soc, "rk3") {
+		spec.DeviceTreeCompatible = socVendor(str(byKey["socManufacturer"]), soc) + "," + soc
+	}
 	files, err := fakefs.Build(spec)
 	if err != nil {
 		return false, err
