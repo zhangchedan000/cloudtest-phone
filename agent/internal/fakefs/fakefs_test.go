@@ -82,3 +82,50 @@ func TestBootID(t *testing.T) {
 	}
 	t.Fatal("没有 boot_id")
 }
+
+func TestDeviceTreeMasking(t *testing.T) {
+	// 盖住宿主机真板子的 /proc/device-tree model/compatible（Linux Q1 / rockchip,rk3588，踩坑 #157）。
+	files, err := Build(Spec{DeviceTreeModel: "Phone (2a)", DeviceTreeCompatible: "mediatek,mt6886"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]string{}
+	for _, f := range files {
+		got[f.Target] = f.Content
+	}
+	// /proc 和 /sys 两条路径都要盖（/proc/device-tree 可能是 /sys/firmware/devicetree/base 的软链）。
+	want := map[string]string{
+		"/proc/device-tree/model":                  "Phone (2a)\x00",
+		"/sys/firmware/devicetree/base/model":      "Phone (2a)\x00",
+		"/proc/device-tree/compatible":             "mediatek,mt6886\x00",
+		"/sys/firmware/devicetree/base/compatible": "mediatek,mt6886\x00",
+	}
+	for target, content := range want {
+		if got[target] != content {
+			t.Errorf("%s = %q，要 %q", target, got[target], content)
+		}
+	}
+	for _, f := range files {
+		if strings.Contains(f.Content, "rockchip") || strings.Contains(f.Content, "Q1") {
+			t.Errorf("%s 还露着宿主机板子：%q", f.Target, f.Content)
+		}
+	}
+	// 文件名要唯一（写进同一个目录，重名会互相覆盖）。
+	names := map[string]bool{}
+	for _, f := range files {
+		if f.Name == "" {
+			continue
+		}
+		if names[f.Name] {
+			t.Errorf("文件名重复：%s", f.Name)
+		}
+		names[f.Name] = true
+	}
+	// 留空就不生成（别造半真文件）。
+	files2, _ := Build(Spec{})
+	for _, f := range files2 {
+		if strings.Contains(f.Target, "device-tree") || strings.Contains(f.Target, "devicetree") {
+			t.Errorf("空 Spec 不该生成 device-tree 文件：%s", f.Target)
+		}
+	}
+}
