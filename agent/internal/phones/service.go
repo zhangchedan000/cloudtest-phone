@@ -697,22 +697,23 @@ func withBuildProps(base []string, bp map[string]string) []string {
 	return out
 }
 
-// redroidBuildID 各安卓版本的 Redroid 镜像自带的 buildId / incremental（真实值，
-// 从镜像 /system/build.prop 读出来：docker create <镜像> + docker cp /system/build.prop）。
-// 换镜像版本要重新读、更新这里；host/check-tells.sh 会暴露不一致。
-// incremental 是 eng.* 的工程编译痕迹，没有真机真实值之前先沿用（不编造）。
+// redroidBuildID 各安卓版本「没有真机真实指纹时」兜底用的 buildId / incremental。
+// buildId 从镜像 /system/build.prop 读的真实 AOSP 版本号；incremental 原来沿用镜像的 eng.* 工程字样，
+// 但 release-keys 指纹里带 eng.（eng.root / eng.frank）是自相矛盾的强破绽——一句 grep eng. 就露（踩坑 #158，
+// 多开实测 xiaomi-13t 跑没录真指纹的 A16 时漏 eng.root）。改成和 buildId 同代的合理 AOSP 数字版本号
+// （release 构建本就是数字，不是 eng.*；这只是兜底，机型录了真指纹就用真的）。换镜像版本要重读 buildId 更新这里。
 var redroidBuildID = map[int]struct{ buildID, incremental string }{
 	13: {"TQ3A.230901.001", "9820097"}, // 板子 lineage-20 是安卓13：没这条就一进兜底 return nil、镜像 redroid 值全漏（踩坑 #104）
-	14: {"UD2A.240505.001.W1", "eng.frank.20240527.152423"},
-	15: {"BP1A.250505.005.D1", "eng.root"},
-	16: {"BP2A.250605.031.A3", "eng.root"}, // 没这条：机型没有安卓 16 真指纹时整套分区指纹不覆盖，redroid / test-keys / userdebug 全漏（2026-11-22 多开实测）
+	14: {"UD2A.240505.001.W1", "11675534"},
+	15: {"BP1A.250505.005.D1", "13030747"},
+	16: {"BP2A.250605.031.A3", "13606211"}, // 没这条：机型没有安卓 16 真指纹时整套分区指纹不覆盖，redroid / test-keys / userdebug 全漏（2026-11-22 多开实测）
 }
 
 // fingerprintProps 把各分区指纹和相关 build 字段（含 ro.product.name）统一覆盖成一致的值，
 // 擦掉 Redroid 默认里的 redroid / redroid_arm64_only / userdebug / test-keys / eng.* / frank / build1。
 // 指纹格式：brand/product/device:release/id/incremental:type/tags。
 //   - 机型档案填了真实 stock 指纹（fingerprint 字段，从设备树/固件抠）就用真的，各字段从里面拆；
-//   - 没填就用 Redroid 镜像的真实 buildId/incremental 兜底拼一个一致的（incremental 仍是 eng.*）。
+//   - 没填就用 Redroid 镜像的真实 buildId + 同代合理数字 incremental 兜底拼一个一致的（不带 eng.*，踩坑 #158）。
 //
 // 注意：不设带空格的值（启动参数遇空格会截断）——ro.build.description 带空格，留作残留（很少被读）。
 func fingerprintProps(byKey map[string]any, realFP string, androidVer int) []string {

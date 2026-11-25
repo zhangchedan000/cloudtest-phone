@@ -303,9 +303,13 @@ func TestFingerprintFallbackWhenNoProfileValue(t *testing.T) {
 	m.Fingerprints, m.BuildProps = nil, nil // 模拟没有真机数据的机型
 	p, _ := svc.Create(CreateRequest{Name: "A", ModelID: "xiaomi-12t", AndroidVersion: 14, ProxyID: DirectDevProxyID})
 	joined := strings.Join(svc.BootArgs(*mustPhone(t, svc, p.ID), svc.store.Snapshot()), " ")
-	wantFP := "Xiaomi/plato/plato:14/UD2A.240505.001.W1/eng.frank.20240527.152423:user/release-keys"
+	wantFP := "Xiaomi/plato/plato:14/UD2A.240505.001.W1/11675534:user/release-keys"
 	if !strings.Contains(joined, "ro.build.fingerprint="+wantFP) || !strings.Contains(joined, "ro.vendor.build.fingerprint="+wantFP) {
 		t.Fatalf("兜底指纹不对：\n%s", joined)
+	}
+	// release-keys 指纹里绝不能有 eng.* 工程字样（踩坑 #158）。
+	if strings.Contains(joined, "eng.") {
+		t.Fatalf("兜底指纹里有 eng.* 工程字样：\n%s", joined)
 	}
 }
 
