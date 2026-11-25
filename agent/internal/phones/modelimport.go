@@ -53,8 +53,16 @@ func (s *Service) ImportModels(ctx context.Context, pkgs map[string][]byte) (Imp
 	}
 	for name, data := range pkgs {
 		base := safePkgName.ReplaceAllString(filepath.Base(name), "_")
-		if !strings.HasSuffix(strings.ToLower(base), ".zip") {
-			return ImportResult{}, fmt.Errorf("%w：%s 不是 zip", ErrInvalid, name)
+		// zip = 完整机型包（严格解析）；单文件 json / build.prop 转储 = 兜底导入（import-model.py 自动按 loose 处理，缺字段补板子默认）。
+		okExt := false
+		for _, e := range []string{".zip", ".json", ".prop", ".properties", ".txt", ".getprop", ".log"} {
+			if strings.HasSuffix(strings.ToLower(base), e) {
+				okExt = true
+				break
+			}
+		}
+		if !okExt {
+			return ImportResult{}, fmt.Errorf("%w：%s 认不出格式（支持 .zip 机型包，或单个 device_info.json / 机型档 .json / build.prop 转储）", ErrInvalid, name)
 		}
 		p := filepath.Join(pkgDir, base)
 		if err := os.WriteFile(p, data, 0o644); err != nil {

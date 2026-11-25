@@ -155,9 +155,10 @@ export function ModelsPage() {
           <div>· 魔云腾机型包：魔云腾客户端下载的机型 zip</div>
           <div>显卡是 {[...gpus].join(' / ') || '板子显卡'} 的进「一致档」，其他的进「伪装档」。同一款再导一次会覆盖。</div>
         </>} />
-        <Upload.Dragger multiple accept=".zip" fileList={files} beforeUpload={() => false} onChange={({ fileList }) => setFiles(fileList)}>
+        <Upload.Dragger multiple accept=".zip,.json,.prop,.properties,.txt" fileList={files} beforeUpload={() => false} onChange={({ fileList }) => setFiles(fileList)}>
           <p className="ant-upload-drag-icon"><InboxOutlined /></p>
           <p>把机型包（.zip）拖到这里，或点这里选，可以一次多个</p>
+          <p style={{ color: '#888', fontSize: 12 }}>也支持兜底导入：单个 device_info.json、机型档 .json、或 build.prop / getprop 转储——缺的字段按板子默认补上</p>
         </Upload.Dragger>
         {output.length > 0 && <pre className="pp-log-text" style={{ marginTop: 12, maxHeight: 260, overflow: 'auto' }}>{output.join('\n')}</pre>}
       </Modal>

@@ -47,7 +47,22 @@ def parse_props(text):
 class Pkg:
     """把包里的文件读成 {相对路径: bytes}，链接 {相对路径: 目标}（魔云腾的包剥掉外层和机型目录前缀）。"""
     def __init__(self, path):
-        self.files, self.links, self.kind, self.cfg = {}, {}, "", {}
+        self.files, self.links, self.kind, self.cfg, self.model_json = {}, {}, "", {}, None
+        # 兜底导入（冗余）：不是 zip 包、而是单个文件时，尽量认出来；缺的字段后面 convert 按板子默认补。
+        ext = path.lower().rsplit(".", 1)[-1] if ("." in os.path.basename(path) and os.path.isfile(path)) else ""
+        if ext == "json":
+            raw = open(path, "rb").read()
+            try:
+                j = json.loads(raw.decode("utf-8", "replace"))
+            except Exception:
+                j = None
+            # 已经是我们的机型档（有 values / gpuFamily）→ 直接存，不用再解析
+            if isinstance(j, dict) and ("values" in j or "gpuFamily" in j):
+                self.kind = "model-json"; self.model_json = j; return
+            # 否则当成魔云腾 device_info.json（convert 大量读它）
+            self.kind = "loose"; self.files["device_info.json"] = raw; return
+        if ext in ("prop", "properties", "txt", "getprop", "log"):   # build.prop / getprop 转储
+            self.kind = "loose"; self.files["props.txt"] = open(path, "rb").read(); return
         if os.path.isdir(path):                       # 已经解开的目录（例如板子上 /mmc/phoneModel/<包>/<型号>）
             self.kind = "ours" if os.path.exists(os.path.join(path, "meta.json")) else "mytos"
             cfg = os.path.join(os.path.dirname(path.rstrip("/")), "cfg.json")
@@ -470,8 +485,34 @@ def slug(s):
     return re.sub(r"[^a-z0-9]+", "-", s.lower()).strip("-")
 
 
-def convert(path, tac_db, host_gpu, host_cpus):
+def normalize_model_json(j, host_gpu, src):
+    """兜底导入：已经是机型档的 JSON，补齐必要字段直接用（缺的按板子默认）。"""
+    v = j.get("values") or {}
+    brand = v.get("brand") or j.get("brand") or ""
+    model = v.get("model") or j.get("model") or ""
+    mid = j.get("id") or slug(f"{brand}-{model}") or slug(os.path.basename(src)) or "imported-model"
+    j.setdefault("values", v)
+    j["id"] = mid
+    j["schema"] = j.get("schema") or 1
+    j["local"] = True
+    j["source"] = j.get("source") or "imported-json"
+    j["verified"] = bool(j.get("verified"))
+    # 显卡家族缺 → 按板子（不伪装显卡，App 看到板子 Mali；一致档）
+    if not j.get("gpuFamily"):
+        j["gpuFamily"] = host_gpu
+        j["tier"] = "consistent"
+        j["verifyNote"] = (j.get("verifyNote") or "") + "；⚠兜底：缺显卡数据，按板子显卡处理"
+    j.setdefault("tier", "consistent" if j.get("gpuFamily") == host_gpu else "disguised")
+    j.setdefault("verifyNote", f"兜底导入自 {os.path.basename(src)}")
+    j.setdefault("market", "GLOBAL")
+    return j
+
+
+def convert(path, tac_db, host_gpu, host_cpus, loose=False):
     pkg = Pkg(path)
+    if pkg.kind == "model-json":
+        return normalize_model_json(pkg.model_json, host_gpu, path), None
+    loose = loose or pkg.kind == "loose"
     props = parse_props(pkg.text("props.txt") or pkg.text("adb_debug.prop"))
     di = pkg.text("device_info.json")
     for k in ("ro.product.brand", "ro.product.model", "ro.product.manufacturer", "ro.product.device", "ro.build.fingerprint",
@@ -515,7 +556,11 @@ def convert(path, tac_db, host_gpu, host_cpus):
     }
     gi = gpu_info(pkg, props)
     if prof["tier"] == "disguised" and not gi:
-        raise SystemExit(f"{path}：伪装档要真机的显卡字符串（显卡名 / 版本 / 扩展列表），这个包没录（魔云腾旧格式包），不导入")
+        if loose:   # 兜底导入：没有真机显卡字符串 → 不伪装显卡，按板子 Mali 当一致档，面板标注
+            prof["tier"] = "consistent"; prof["gpuFamily"] = host_gpu
+            prof["verifyNote"] += "；⚠兜底：缺真机显卡字符串，显卡按板子处理（App 看到的是板子 Mali）"
+        else:
+            raise SystemExit(f"{path}：伪装档要真机的显卡字符串（显卡名 / 版本 / 扩展列表），这个包没录（魔云腾旧格式包），不导入")
     if gi:
         prof["gpu"] = gi
     if props.get("ro.hardware"):
@@ -567,18 +612,21 @@ def main():
     ap.add_argument("--host-gpu", default="Mali-G610")
     ap.add_argument("--host-cpus", type=int, default=os.cpu_count() or 8)
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--loose", action="store_true", help="兜底导入：缺字段按板子默认补、尽量成一个能用的机型档，不轻易拒绝")
     a = ap.parse_args()
     tp = a.tac or next((p for p in (os.path.join(os.path.dirname(a.out.rstrip("/")), "tac_by_model.json"), "/mmc/mytTemp/resource/imei/tac_by_model.json") if os.path.exists(p)), "")
     tac = json.load(open(tp)) if tp else {}
     for p in a.pkgs:
         try:
-            prof, cpu = convert(p, tac, a.host_gpu, a.host_cpus)
+            prof, cpu = convert(p, tac, a.host_gpu, a.host_cpus, a.loose)
         except (SystemExit, zipfile.BadZipFile, KeyError, ValueError) as e:
             print(f"✗ {os.path.basename(p.rstrip('/'))}：{e}"); continue
         bp = next(iter(prof.get("buildProps", {}).values()), {})
-        print(f"{'✓' if prof['tier'] == 'consistent' else '·'} {prof['id']:<26} {prof['values'].get('marketName', '')[:22]:<22} 安卓{prof['androidVersions']}"
-              f" {prof['gpuFamily']:<22} {prof['tier']:<10} CPU目录={'有' if cpu else '无'} TAC={len(prof.get('imeiTacs', []))} 分区属性={len(bp)}"
-              + (" ⚠CPU不同代" if prof.get("cpuMismatch") else ""))
+        mkt = (prof.get("values") or {}).get("marketName", "") or (prof.get("values") or {}).get("model", "")
+        fallback = "⚠兜底" if "兜底" in prof.get("verifyNote", "") else ""
+        print(f"{'✓' if prof.get('tier') == 'consistent' else '·'} {prof['id']:<26} {mkt[:22]:<22} 安卓{prof.get('androidVersions', [])}"
+              f" {prof.get('gpuFamily', '?'):<22} {prof.get('tier', '?'):<10} CPU目录={'有' if cpu else '无'} TAC={len(prof.get('imeiTacs', []))} 分区属性={len(bp)}"
+              + (" ⚠CPU不同代" if prof.get("cpuMismatch") else "") + (" " + fallback if fallback else ""))
         if a.dry_run:
             continue
         os.makedirs(os.path.join(a.out, "models"), exist_ok=True)
