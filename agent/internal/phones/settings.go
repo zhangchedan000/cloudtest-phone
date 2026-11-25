@@ -196,6 +196,16 @@ func (s *Service) applySettings(ctx context.Context, id string) {
 	s.applyAdb(ctx, id)
 	// /dev 里服务器的硬件节点删掉（devclean.go，踩坑 #74）
 	s.cleanDev(ctx, id)
+	// Play Integrity（Tier A，过 BASIC）：机型标了 PlayIntegrity 的（Pixel 等认证指纹），开机后清一次 gms 数据，
+	// 让它用这台最终的指纹重新评估（照魔云腾 extservice2 的做法）。只清一次（marker 防重复）。DEVICE 判定要硬件
+	// keybox，不做（见 docs/调研/机型扩充计划.md）。指纹本身由机型的 fingerprints/buildProps 决定（build.prop 已改好）。
+	if m := s.model(p.ModelID); m != nil && m.PlayIntegrity {
+		const marker = "/data/local/tmp/.pp_pi_seeded"
+		if out, _ := s.run.Run(ctx, "docker", "exec", name, "sh", "-c", "[ -f "+marker+" ] && echo y"); strings.TrimSpace(out) != "y" {
+			_, _ = s.run.Run(ctx, "docker", "exec", name, "pm", "clear", "com.google.android.gms")
+			_, _ = s.run.Run(ctx, "docker", "exec", name, "sh", "-c", "touch "+marker)
+		}
+	}
 	// 蓝牙：这台有模拟的蓝牙芯片（bluetooth.go）就不管，开关随用户；没有就关掉——安卓默认 bluetooth_on=1，
 	// 开机自动开蓝牙，没芯片时蓝牙 HAL 和 com.android.bluetooth 会连崩几次才放弃（踩坑 #48）。
 	if cur, _ := s.run.Run(ctx, "docker", "exec", name, "settings", "get", "global", "bluetooth_on"); strings.TrimSpace(cur) != "0" && !s.btRunning(ctx, id) {

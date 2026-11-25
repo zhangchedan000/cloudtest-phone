@@ -66,6 +66,9 @@ type Model struct {
 	Tier string `json:"tier,omitempty"`
 	// Local 来自本地机型库（导入的，<数据目录>/models），不是程序里内置的
 	Local bool `json:"local,omitempty"`
+	// PlayIntegrity 这个机型是用来过 Play Integrity BASIC 判定的（认证指纹，比如 Pixel）：开机后清一次 gms 让它
+	// 用这台最终的指纹重新评估（Tier A，照魔云腾 extservice2 的做法）。DEVICE 判定要硬件 keybox，不做。
+	PlayIntegrity bool `json:"playIntegrity,omitempty"`
 	// GPU 真机显卡字符串（伪装档用，见 disguise.go）；Hardware 真机 ro.hardware（qcom、mt6989……）
 	GPU      *GPUInfo `json:"gpu,omitempty"`
 	Hardware string   `json:"hardware,omitempty"`
