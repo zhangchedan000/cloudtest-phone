@@ -23,9 +23,10 @@ export function NewPhoneModal({ open, onClose, presetHostId }: { open: boolean; 
   const model = ws.models.find((m) => m.id === modelId)
   const gpuWarn = host && model && host.gpuFamily !== 'software' && host.gpuFamily !== model.gpuFamily
 
-  // 右边坑位图：这台机器已有的手机占满前面的坑，接下来 count 个高亮成「新建」
+  // 右边坑位图：这台机器已有的手机占满前面的坑，接下来 count 个高亮成「新建」。
+  // 不按「同时最多」限制坑位数量——想建多少建多少；格子最少排 8 个、最多排 40 个好看。
   const occupied = host ? ws.phones.filter((p) => p.hostId === host.id).length : 0
-  const slotCount = host ? Math.max(host.maxRunning, occupied + count) : 0
+  const slotCount = host ? Math.min(Math.max(occupied + count, 8), 40) : 0
 
   const create = (v: Values) => {
     for (let i = 0; i < v.count; i++) {
@@ -90,7 +91,7 @@ export function NewPhoneModal({ open, onClose, presetHostId }: { open: boolean; 
                   <span><i style={{ background: 'var(--fb-chip)' }} />已用</span>
                   <span><i style={{ background: 'var(--fb-surface-muted)', border: '1px solid var(--fb-line)' }} />空坑位</span>
                 </div>
-                <div className="pp-muted pp-small" style={{ marginTop: 10 }}>这台机器已有 {occupied} 台，同时最多跑 {host.maxRunning} 台。</div>
+                <div className="pp-muted pp-small" style={{ marginTop: 10 }}>这台机器已有 {occupied} 台，想建多少建多少。</div>
               </>
             )}
           </aside>

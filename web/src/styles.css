@@ -33,7 +33,9 @@ body { background: var(--fb-bg); color: var(--fb-text); font-family: Inter, ui-s
 /* 云手机页：左侧设备列表 + 右侧坑位网格（照魔云腾管家布局） */
 .pp-phones-layout { display: flex; gap: 16px; align-items: flex-start; }
 .pp-hostlist { width: 220px; flex: none; position: sticky; top: 0; display: flex; flex-direction: column; gap: 10px; background: var(--fb-surface); border: 1px solid var(--fb-line); border-radius: 12px; padding: 12px; }
-.pp-hostlist-head { display: flex; align-items: center; justify-content: space-between; }
+.pp-hostlist-head { display: flex; align-items: center; gap: 2px; }
+.pp-hostlist-title { white-space: nowrap; }
+.pp-hostlist-stat { margin-left: 6px; margin-right: auto; white-space: nowrap; font-size: 11px; }
 .pp-hostlist-items { display: flex; flex-direction: column; gap: 4px; max-height: 60vh; overflow: auto; }
 .pp-host-item { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; border: 0; border-radius: 8px; padding: 8px 10px; background: transparent; color: var(--fb-text); cursor: pointer; }
 .pp-host-item:hover { background: var(--fb-surface-muted); }
@@ -46,6 +48,25 @@ body { background: var(--fb-bg); color: var(--fb-text); font-family: Inter, ui-s
 .pp-host-section { display: flex; flex-direction: column; gap: 12px; }
 .pp-host-section-head { display: flex; align-items: center; gap: 8px; padding-bottom: 8px; border-bottom: 1px solid var(--fb-line); }
 .pp-host-section-toggle { margin-left: auto; }
+
+/* 所有弹窗都能拖右下角改大小（原生 resize；Select/下拉是 portal 到 body 的，不会被裁） */
+.ant-modal-content { resize: both; overflow: auto; min-width: 300px; max-width: 96vw; max-height: 90vh; }
+
+/* 代理页：tab、状态点 */
+.pp-proxy-tabs { display: flex; gap: 22px; border-bottom: 1px solid var(--fb-line); }
+.pp-proxy-tab { border: 0; background: transparent; padding: 8px 2px; font-size: 15px; color: var(--fb-text-muted); cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+.pp-proxy-tab:hover { color: var(--fb-text); }
+.pp-proxy-tab-active { color: var(--fb-accent); border-bottom-color: var(--fb-accent); font-weight: 600; }
+.pp-proxy-dot { font-size: 13px; white-space: nowrap; }
+.pp-dot-ok { color: var(--fb-success); }
+.pp-dot-bad { color: var(--fb-danger); }
+.pp-dot-idle { color: var(--fb-text-muted); }
+.pp-ellip { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; display: block; }
+
+/* 通用表格：表头可拖动调序、右边界可拖动调列宽 */
+.ant-table-thead th { user-select: none; }
+.pp-col-resize { position: absolute; top: 0; right: 0; width: 7px; height: 100%; cursor: col-resize; z-index: 2; }
+.pp-col-resize:hover { background: var(--fb-accent); opacity: .5; }
 
 /* 新建云手机弹窗：左边两栏表单 + 右边坑位图（照魔云腾创建云机） */
 .pp-newphone { display: flex; gap: 20px; align-items: flex-start; }
@@ -61,7 +82,7 @@ body { background: var(--fb-bg); color: var(--fb-text); font-family: Inter, ui-s
 .pp-newslot-legend { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 12px; font-size: 12px; color: var(--fb-text-muted); }
 .pp-newslot-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 4px; vertical-align: middle; }
 
-.pp-slot-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; min-height: calc(min(var(--screen-w, 120px), var(--slot-w, 210px) - 28px) * 2 + 56px); border: 1px dashed var(--fb-line); border-radius: 12px; background: var(--fb-surface-muted); cursor: pointer; transition: border-color .15s, background .15s; }
+.pp-slot-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; aspect-ratio: 1 / 1.6; border: 1px dashed var(--fb-line); border-radius: 12px; background: var(--fb-surface-muted); cursor: pointer; transition: border-color .15s, background .15s; }
 .pp-slot-empty:hover { border-color: var(--fb-accent); background: var(--fb-chip); }
 .pp-slot-plus { font-size: 26px; color: var(--fb-text-muted); }
 
@@ -69,7 +90,8 @@ body { background: var(--fb-bg); color: var(--fb-text); font-family: Inter, ui-s
 .pp-card-selected { outline: 2px solid var(--fb-accent); }
 .pp-card-top { display: flex; align-items: center; gap: 8px; }
 .pp-card-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pp-card-screen { cursor: pointer; display: flex; justify-content: center; }
+.pp-card-screen { cursor: pointer; width: 100%; }
+.pp-card-screen .pp-phone { width: 100%; }
 .pp-card-meta { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--fb-text-secondary); }
 .pp-card-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; justify-content: space-between; }
 .pp-card-actions { display: flex; gap: 8px; }
@@ -83,7 +105,7 @@ body { background: var(--fb-bg); color: var(--fb-text); font-family: Inter, ui-s
 /* 手机画面 */
 .pp-phone { display: flex; flex-direction: column; align-items: center; gap: 8px; }
 .pp-phone-screen { position: relative; overflow: hidden; background: #12151d; border: 6px solid #2a3142; border-radius: 22px; }
-.pp-phone-thumb .pp-phone-screen { width: var(--pp-sw); height: calc(var(--pp-sw) * 2); border-width: 4px; border-radius: 16px; --pp-sw: min(var(--screen-w, 120px), var(--slot-w, 210px) - 28px); }
+.pp-phone-thumb .pp-phone-screen { width: var(--screen-pct, 82%); max-width: 100%; height: auto; aspect-ratio: 1 / 2; margin: 0 auto; border-width: 4px; border-radius: 16px; }
 .pp-phone-large .pp-phone-screen { width: 300px; height: 640px; }
 .pp-phone-status { display: flex; justify-content: space-between; padding: 6px 10px; font-size: 10px; color: var(--fb-on-accent); }
 .pp-phone-large .pp-phone-status { font-size: 13px; padding: 10px 16px; }

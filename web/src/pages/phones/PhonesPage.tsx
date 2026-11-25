@@ -2,6 +2,7 @@ import { AppstoreAddOutlined, AppstoreOutlined, DeleteOutlined, DownOutlined, Ed
 import { Alert, App, Button, Card, Checkbox, Dropdown, Empty, Input, Modal, Segmented, Select, Slider, Space, Table, Tag, Tooltip } from 'antd'
 import { useMemo, useRef, useState } from 'react'
 import { batchUpload, type BatchResult } from '@/data/api'
+import { DataTable } from '@/components/DataTable'
 import { PhoneScreen } from '@/components/PhoneScreen'
 import { IssueBadge, ProxyCell, StatusDot } from '@/components/bits'
 import { blocksStart } from '@/data/consistency'
@@ -25,7 +26,10 @@ export function PhonesPage() {
   const [managingGroups, setManagingGroups] = useState(false)
   const [hideEmpty, setHideEmpty] = useState(false)
   const [slotW, setSlotW] = useState(210)
-  const [screenW, setScreenW] = useState(120)
+  // 投屏大小 = 手机画面占卡片宽度的百分比（55~100）；画面始终竖屏 1:2，放大就整体按竖版变大
+  const [screenPct, setScreenPct] = useState(82)
+  // 每台机器固定给几个「空坑位」快捷创建入口（不按同时并发数限制，想建多少建多少）
+  const EMPTY_SLOTS = 8
   const [open, setOpen] = useState<Phone>()
   const [openMode, setOpenMode] = useState<'view' | 'edit'>('view')
   // 打开手机：单独弹一个窗口（可以同时开好几台）；浏览器拦了弹窗就在页面里打开
@@ -157,10 +161,9 @@ export function PhonesPage() {
   const renderHostSection = (h: Host) => {
     const mine = list.filter((p) => p.hostId === h.id)
     const total = ws.phones.filter((p) => p.hostId === h.id).length
-    const empties = Math.max(0, h.maxRunning - total)
+    const empties = EMPTY_SLOTS
     const ids = mine.map((p) => p.id)
     const sel = ids.filter((id) => selected.includes(id))
-    if (mine.length === 0 && empties === 0 && hostId === 'all') return null
     return (
       <section key={h.id} className="pp-host-section">
         <div className="pp-host-section-head">
@@ -171,13 +174,13 @@ export function PhonesPage() {
           />
           <StatusDot status={h.online ? 'running' : 'stopped'} />
           <b>{h.name}</b>
-          <span className="pp-muted pp-small">{total} 个实例 · 运行 {ws.phones.filter((p) => p.hostId === h.id && p.status === 'running').length} · 同时最多 {h.maxRunning}</span>
-          {empties > 0 && <Button size="small" type="text" className="pp-host-section-toggle" onClick={() => setHideEmpty((v) => !v)}>{hideEmpty ? '显示空坑位' : `隐藏空坑位(${empties})`}</Button>}
+          <span className="pp-muted pp-small">{total} 个实例 · 运行 {ws.phones.filter((p) => p.hostId === h.id && p.status === 'running').length}</span>
+          <Button size="small" type="text" className="pp-host-section-toggle" onClick={() => setHideEmpty((v) => !v)}>{hideEmpty ? '显示空坑位' : `隐藏空坑位(${empties})`}</Button>
         </div>
-        {mine.length === 0 && (hideEmpty || empties === 0) ? (
+        {mine.length === 0 && hideEmpty ? (
           <Empty description="这台机器还没有云手机" image={Empty.PRESENTED_IMAGE_SIMPLE}><Button type="primary" icon={<PlusOutlined />} onClick={() => addPhoneOn(h.id)}>创建</Button></Empty>
         ) : (
-          <div className="pp-grid" style={{ ['--slot-w' as string]: `${slotW}px`, ['--screen-w' as string]: `${screenW}px` }}>
+          <div className="pp-grid" style={{ ['--slot-w' as string]: `${slotW}px`, ['--screen-pct' as string]: `${screenPct}%` }}>
             {mine.map(renderPhoneCard)}
             {!hideEmpty && Array.from({ length: empties }, (_, i) => renderEmptySlot(h, i))}
           </div>
@@ -213,12 +216,12 @@ export function PhonesPage() {
       <div className="pp-phones-layout">
         <aside className="pp-hostlist">
           <div className="pp-hostlist-head">
-            <b>设备列表</b>
+            <b className="pp-hostlist-title">设备列表</b>
+            <span className="pp-muted pp-small pp-hostlist-stat">在线 {onlineHosts} · 总 {ws.hosts.length}</span>
             <Tooltip title="添加设备（以后上新盒子都在这儿加）">
               <Button size="small" type="text" icon={<PlusOutlined />} disabled={ws.mode !== 'live'} onClick={() => setAddingDevice(true)} />
             </Tooltip>
           </div>
-          <div className="pp-hostlist-stat pp-muted pp-small">在线 {onlineHosts} · 离线 {ws.hosts.length - onlineHosts} · 总 {ws.hosts.length}</div>
           <Input allowClear size="small" prefix={<SearchOutlined />} placeholder="找设备" value={hostQuery} onChange={(e) => setHostQuery(e.target.value)} />
           <div className="pp-hostlist-items">
             <button className={`pp-host-item ${hostId === 'all' ? 'pp-host-item-active' : ''}`} onClick={() => setHostId('all')}>
@@ -248,8 +251,8 @@ export function PhonesPage() {
               <Select style={{ width: 150 }} value={groupId} onChange={setGroupId} options={[{ value: 'all', label: '全部分组' }, ...ws.groups.map((g) => ({ value: `${g.serverId ?? 'local'}|${g.id}`, label: ws.servers.length ? `${g.name}（${ws.serverName(g.serverId)}）` : g.name }))]} />
               <Button onClick={() => setManagingGroups(true)}>分组管理</Button>
               <Input allowClear prefix={<SearchOutlined />} placeholder="名称 / 机型" value={query} onChange={(e) => setQuery(e.target.value)} style={{ width: 180 }} />
-              {view === 'cards' && <span className="pp-slot-slider"><span className="pp-muted pp-small">窗口大小</span><Slider min={170} max={340} value={slotW} onChange={setSlotW} style={{ width: 96 }} tooltip={{ open: false }} /></span>}
-              {view === 'cards' && <span className="pp-slot-slider"><span className="pp-muted pp-small">投屏大小</span><Slider min={90} max={200} value={screenW} onChange={setScreenW} style={{ width: 96 }} tooltip={{ open: false }} /></span>}
+              {view === 'cards' && <span className="pp-slot-slider"><span className="pp-muted pp-small">窗口大小</span><Slider min={170} max={360} value={slotW} onChange={setSlotW} style={{ width: 96 }} tooltip={{ open: false }} /></span>}
+              {view === 'cards' && <span className="pp-slot-slider"><span className="pp-muted pp-small">投屏大小</span><Slider min={55} max={100} value={screenPct} onChange={setScreenPct} style={{ width: 96 }} tooltip={{ open: false }} /></span>}
             </Space>
             <Space wrap>
               {selected.length > 0 && <span className="pp-muted">已选 {selected.length} 台</span>}
@@ -263,25 +266,27 @@ export function PhonesPage() {
 
           {view === 'list' ? (
             list.length === 0 ? <Empty description="没有符合条件的云手机" /> : (
-              <Table
+              <DataTable<Phone>
+                tableId="phones"
                 rowKey="id"
                 dataSource={list}
                 pagination={false}
+                scroll={{ x: 1450 }}
                 rowSelection={{ selectedRowKeys: selected, onChange: (keys) => setSelected(keys as string[]) }}
                 onRow={(p) => ({ onDoubleClick: () => view_(p) })}
                 columns={[
-                  { title: '名称', dataIndex: 'name', render: (name: string, p) => <a onClick={() => view_(p)}>{name}</a> },
-                  { title: '状态', render: (_, p) => <StatusDot status={p.status} /> },
-                  { title: '机型', render: (_, p) => <Space size={4}>{String(ws.modelOf(p)?.values.marketName ?? '—')}{p.gapps && <Tag color="blue" className="pp-small">谷歌</Tag>}</Space> },
-                  { title: '安卓', render: (_, p) => `Android ${p.androidVersion}` },
-                  { title: '代理', render: (_, p) => <ProxyCell proxy={ws.proxyOf(p)} /> },
-                  { title: '出口 IP', render: (_, p) => { const ip = ws.proxyOf(p)?.check?.exitIp; return ip ? <span className="pp-small">{ip}</span> : <span className="pp-muted">—</span> } },
-                  { title: '上网', render: (_, p) => (p.status !== 'running' ? <span className="pp-muted">—</span> : !p.net ? <span className="pp-muted">—</span> : p.net.ok ? <Tag color="success" className="pp-small">正常</Tag> : <Tooltip title={p.net.error}><Tag color="error" className="pp-small">上不了网</Tag></Tooltip>) },
-                  { title: '分组', render: (_, p) => ws.groupOf(p)?.name ?? '未分组' },
-                  { title: '占用', render: (_, p) => (p.usage ? usageText(p.usage) : '—') },
-                  { title: '机器', render: (_, p) => ws.hostOf(p)?.name },
-                  { title: '检查', render: (_, p) => <IssueBadge issues={ws.issuesOf(p)} /> },
-                  { title: '', render: (_, p) => <Space size={4}>{p.status === 'running' || p.status === 'starting' ? <><Button size="small" onClick={() => view_(p)}>打开</Button><Button size="small" onClick={() => ws.setStatus([p.id], 'stopped')}>关机</Button></> : <Button size="small" type="primary" disabled={blocksStart(ws.issuesOf(p))} onClick={() => start([p.id])}>开机</Button>}<Button size="small" onClick={() => edit(p)}>编辑</Button></Space> }
+                  { key: 'name', title: '名称', dataIndex: 'name', width: 150, render: (name: string, p) => <a onClick={() => view_(p)}>{name}</a> },
+                  { key: 'status', title: '状态', width: 90, sortValue: (p) => p.status, render: (_, p) => <StatusDot status={p.status} /> },
+                  { key: 'model', title: '机型', width: 160, sortValue: (p) => String(ws.modelOf(p)?.values.marketName ?? ''), render: (_, p) => <Space size={4}>{String(ws.modelOf(p)?.values.marketName ?? '—')}{p.gapps && <Tag color="blue" className="pp-small">谷歌</Tag>}</Space> },
+                  { key: 'android', title: '安卓', width: 90, sortValue: (p) => p.androidVersion, render: (_, p) => `Android ${p.androidVersion}` },
+                  { key: 'proxy', title: '代理', width: 150, sortValue: (p) => ws.proxyOf(p)?.name ?? '', render: (_, p) => <ProxyCell proxy={ws.proxyOf(p)} /> },
+                  { key: 'exitip', title: '出口 IP', width: 130, sortValue: (p) => ws.proxyOf(p)?.check?.exitIp ?? '', render: (_, p) => { const ip = ws.proxyOf(p)?.check?.exitIp; return ip ? <span className="pp-small">{ip}</span> : <span className="pp-muted">—</span> } },
+                  { key: 'net', title: '上网', width: 90, sortValue: (p) => (p.status !== 'running' || !p.net ? -1 : p.net.ok ? 1 : 0), render: (_, p) => (p.status !== 'running' ? <span className="pp-muted">—</span> : !p.net ? <span className="pp-muted">—</span> : p.net.ok ? <Tag color="success" className="pp-small">正常</Tag> : <Tooltip title={p.net.error}><Tag color="error" className="pp-small">上不了网</Tag></Tooltip>) },
+                  { key: 'group', title: '分组', width: 110, sortValue: (p) => ws.groupOf(p)?.name ?? '', render: (_, p) => ws.groupOf(p)?.name ?? '未分组' },
+                  { key: 'usage', title: '占用', width: 150, sortValue: (p) => p.usage?.cpuPercent ?? -1, render: (_, p) => (p.usage ? usageText(p.usage) : '—') },
+                  { key: 'host', title: '机器', width: 140, sortValue: (p) => ws.hostOf(p)?.name ?? '', render: (_, p) => ws.hostOf(p)?.name },
+                  { key: 'check', title: '检查', width: 90, sortValue: (p) => ws.issuesOf(p).length, render: (_, p) => <IssueBadge issues={ws.issuesOf(p)} /> },
+                  { key: 'actions', title: '', width: 150, resizable: false, reorderable: false, render: (_, p) => <Space size={4}>{p.status === 'running' || p.status === 'starting' ? <><Button size="small" onClick={() => view_(p)}>打开</Button><Button size="small" onClick={() => ws.setStatus([p.id], 'stopped')}>关机</Button></> : <Button size="small" type="primary" disabled={blocksStart(ws.issuesOf(p))} onClick={() => start([p.id])}>开机</Button>}<Button size="small" onClick={() => edit(p)}>编辑</Button></Space> }
                 ]}
               />
             )

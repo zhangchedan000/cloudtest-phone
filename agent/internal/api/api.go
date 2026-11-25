@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -38,6 +39,26 @@ type Server struct {
 	checkMu  sync.Mutex // cachedCheck 的缓存
 	checkRep selfcheck.Report
 	checkAt  time.Time
+
+	// 本机显示名的自定义覆盖（用户在管理页改的名），存在 DataDir/host-name，启动时读回。
+	hostNameMu       sync.RWMutex
+	hostNameOverride string
+}
+
+// hostNameFile 本机自定义显示名的存放文件。
+func (s *Server) hostNameFile() string { return filepath.Join(s.svc.Config().DataDir, "host-name") }
+
+// hostName 当前本机显示名：有自定义就用自定义，否则用启动配置里的名。
+func (s *Server) hostName() string {
+	s.hostNameMu.RLock()
+	defer s.hostNameMu.RUnlock()
+	if s.hostNameOverride != "" {
+		return s.hostNameOverride
+	}
+	if s.svc == nil {
+		return ""
+	}
+	return s.svc.Config().HostName
 }
 
 // SetNetworkHealth 接上网络模块的健康检查。
@@ -49,13 +70,21 @@ func (s *Server) SetNetworkCheck(fn func(ctx context.Context, st store.State, px
 }
 
 func New(svc *phones.Service, st *store.Store, web fs.FS, token string, check func() selfcheck.Report) *Server {
-	return &Server{svc: svc, store: st, web: web, token: token, check: check}
+	s := &Server{svc: svc, store: st, web: web, token: token, check: check}
+	// 读回上次在管理页改的本机名（存不存在都不影响启动；测试里 svc 可能为空）。
+	if svc != nil {
+		if b, err := os.ReadFile(s.hostNameFile()); err == nil {
+			s.hostNameOverride = strings.TrimSpace(string(b))
+		}
+	}
+	return s
 }
 
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/health", s.health)
 	mux.HandleFunc("GET /api/host", s.host)
+	mux.HandleFunc("PUT /api/host", s.setHostName)
 	mux.HandleFunc("GET /api/fields", s.fields)
 	mux.HandleFunc("GET /api/models", s.models)
 	mux.HandleFunc("POST /api/models/reload", s.reloadModels)
@@ -225,7 +254,7 @@ func (s *Server) host(w http.ResponseWriter, _ *http.Request) {
 	cfg := s.svc.Config()
 	rep := s.cachedCheck()
 	out := map[string]any{
-		"id": cfg.HostID, "name": cfg.HostName, "gpuFamily": cfg.GPUFamily, "devHost": cfg.DevHost,
+		"id": cfg.HostID, "name": s.hostName(), "gpuFamily": cfg.GPUFamily, "devHost": cfg.DevHost,
 		"maxRunning": cfg.MaxRunning, "androidVersions": versions(cfg.Images), "system": rep.System,
 		"network": s.svc.NetworkEnabled(), "gappsVersions": versions(cfg.GappsImages),
 	}
@@ -241,6 +270,30 @@ func (s *Server) host(w http.ResponseWriter, _ *http.Request) {
 		}
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+// setHostName 改本机显示名，存到 DataDir/host-name，重启后仍在。
+func (s *Server) setHostName(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Name string `json:"name"`
+	}
+	if err := decode(r, &in); err != nil {
+		fail(w, err)
+		return
+	}
+	name := strings.TrimSpace(in.Name)
+	if name == "" || len([]rune(name)) > 40 {
+		writeErr(w, http.StatusBadRequest, "名字要 1 到 40 个字")
+		return
+	}
+	if err := os.WriteFile(s.hostNameFile(), []byte(name), 0o644); err != nil {
+		writeErr(w, http.StatusInternalServerError, "名字没存下来："+err.Error())
+		return
+	}
+	s.hostNameMu.Lock()
+	s.hostNameOverride = name
+	s.hostNameMu.Unlock()
+	writeJSON(w, http.StatusOK, map[string]any{"name": name})
 }
 
 func versions(images map[int]string) []int {

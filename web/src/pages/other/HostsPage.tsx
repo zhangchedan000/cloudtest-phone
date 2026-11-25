@@ -16,12 +16,19 @@ export function HostsPage() {
   const [adding, setAdding] = useState(false)
   const live = ws.mode === 'live'
 
-  const rename = (sid: string, old: string) => {
+  // 改名：本机（LOCAL）存到那台管家自己身上（PUT /api/host），别的服务器改这个页面里的显示名。
+  const rename = (sid: string, old: string, remote: boolean) => {
     let name = old
     Modal.confirm({
-      title: '服务器改名',
-      content: <Input defaultValue={old} onChange={(e) => { name = e.target.value }} />,
-      onOk: async () => { await api.updateServer(sid, { name }); await ws.refresh() }
+      title: '机器改名',
+      content: <Input defaultValue={old} maxLength={40} onChange={(e) => { name = e.target.value }} />,
+      onOk: async () => {
+        const n = name.trim()
+        if (!n) return
+        if (remote) await api.updateServer(sid, { name: n })
+        else await api.renameHost(n, sid)
+        await ws.refresh()
+      }
     })
   }
   const remove = (sid: string, name: string) => Modal.confirm({
@@ -50,7 +57,7 @@ export function HostsPage() {
               title={<Space><CloudServerOutlined />{h.name}{!remote && ws.servers.length > 0 && <Tag>本机</Tag>}</Space>}
               extra={<Space size={4}>
                 {h.online ? <Tag color="green">在线</Tag> : <Tag color="red">连不上</Tag>}
-                {remote && <Button size="small" type="text" icon={<EditOutlined />} title="改名" onClick={() => rename(sid, h.name)} />}
+                <Button size="small" type="text" icon={<EditOutlined />} title="改名" disabled={!live || (!remote && !h.online)} onClick={() => rename(sid, h.name, remote)} />
                 {remote && <Button size="small" type="text" danger icon={<DeleteOutlined />} title="从列表去掉" onClick={() => remove(sid, h.name)} />}
               </Space>}
             >

@@ -103,6 +103,7 @@ export interface InputRequest { kind: 'tap' | 'swipe' | 'text' | 'key' | 'rotate
 
 export const api = {
   host: (sid?: string) => call<HostInfo>('GET', '/host', undefined, sid),
+  renameHost: (name: string, sid?: string) => call<{ name: string }>('PUT', '/host', { name }, sid),
   /** 开/关这台机器正面的小屏（魔云腾 Q1 盒子）。on=true 点亮，false 熄屏。 */
   setOled: (on: boolean, sid?: string) => call<{ on: boolean }>('POST', '/oled', { on }, sid),
   phones: (sid?: string) => call<PhoneView[]>('GET', '/phones', undefined, sid),

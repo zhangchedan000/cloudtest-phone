@@ -1,7 +1,8 @@
 import { ImportOutlined, InboxOutlined, ReloadOutlined, SearchOutlined } from '@ant-design/icons'
-import { Alert, App, Button, Descriptions, Input, Modal, Select, Space, Table, Tag, Tooltip, Upload, type UploadFile } from 'antd'
+import { Alert, App, Button, Descriptions, Input, Modal, Select, Space, Tag, Tooltip, Upload, type UploadFile } from 'antd'
 import { useMemo, useState } from 'react'
 import { api, importModels, LOCAL } from '@/data/api'
+import { DataTable } from '@/components/DataTable'
 import { fieldByKey, formatValue } from '@/data/catalog'
 import { useWorkspace } from '@/data/store'
 import type { DeviceModel } from '@/data/types'
@@ -93,29 +94,31 @@ export function ModelsPage() {
         </Space>
       </div>
 
-      <Table<DeviceModel>
+      <DataTable<DeviceModel>
+        tableId="models"
         rowKey="id"
         size="small"
         dataSource={list}
+        scroll={{ x: 1050 }}
         pagination={{ pageSize: 50, hideOnSinglePage: true }}
         expandable={{ expandedRowRender: (m) => <ModelDetail model={m} /> }}
         columns={[
           {
-            title: '机型', key: 'name', sorter: (a, b) => str(a.values.marketName).localeCompare(str(b.values.marketName)),
+            title: '机型', key: 'name', width: 220, sortValue: (m) => str(m.values.marketName),
             render: (_, m) => <div><div>{str(m.values.marketName) || m.id}</div><div className="pp-muted pp-small pp-mono">{str(m.values.model)}{m.values.device ? ` · ${str(m.values.device)}` : ''}</div></div>
           },
           {
-            title: '芯片 / 显卡', key: 'soc',
+            title: '芯片 / 显卡', key: 'soc', width: 150, sortValue: (m) => str(m.values.socModel),
             render: (_, m) => <div><div className="pp-small">{str(m.values.socModel) || '—'}</div><Tag color={gpus.has(m.gpuFamily) ? 'blue' : 'default'}>{m.gpuFamily}</Tag></div>
           },
           {
-            title: '档位', key: 'tier', filters: undefined,
+            title: '档位', key: 'tier', width: 100, sortValue: (m) => tierOf(m),
             render: (_, m) => tierOf(m) === 'consistent'
               ? <Tooltip title="真机显卡就是板子的，显卡测试、跑分都对得上"><Tag color="green">一致档</Tag></Tooltip>
               : <Tooltip title={`真机显卡是 ${m.gpu?.renderer ?? m.gpuFamily}，板子不是：App 问到的显卡名 / 版本 / 扩展列表照真机回答，Vulkan、OpenCL、渲染结果、跑分还是板子的，深度检测会露馅`}><Tag color="orange">伪装档</Tag></Tooltip>
           },
           {
-            title: 'CPU', key: 'cpu',
+            title: 'CPU', key: 'cpu', width: 120, sortValue: (m) => (m.cpuMismatch ? 2 : m.cpuTree ? 1 : 0),
             render: (_, m) => m.cpuMismatch
               ? <Tooltip title={m.cpuMismatch}><Tag color="red">指令集不同</Tag></Tooltip>
               : m.cpuTree
@@ -123,20 +126,20 @@ export function ModelsPage() {
                 : <Tooltip title="还没有这款的真机 CPU 目录：/sys/devices/system/cpu 是板子的（RK3588）"><Tag>板子的</Tag></Tooltip>
           },
           {
-            title: '安卓', key: 'android',
+            title: '安卓', key: 'android', width: 130, sortValue: (m) => Math.max(0, ...m.androidVersions),
             render: (_, m) => <Space size={2} wrap>{m.androidVersions.map((v) => (
               <Tooltip key={v} title={m.fingerprints?.[String(v)] ? `真机指纹：${m.fingerprints[String(v)]}` : '这个版本没有真机指纹：开机后指纹带 eng.* 字样'}>
                 <Tag color={m.fingerprints?.[String(v)] ? 'default' : 'warning'}>{v}</Tag>
               </Tooltip>
             ))}</Space>
           },
-          { title: '地区', key: 'market', render: (_, m) => (m.market === 'CN' ? '国行' : m.market ? '海外版' : '—') },
+          { title: '地区', key: 'market', width: 90, sortValue: (m) => m.market ?? '', render: (_, m) => (m.market === 'CN' ? '国行' : m.market ? '海外版' : '—') },
           {
-            title: '来源', key: 'source',
+            title: '来源', key: 'source', width: 120, sortValue: (m) => (m.local ? `1${m.source ?? ''}` : '0'),
             render: (_, m) => (m.local ? <Tag color="purple">导入 · {SOURCE[m.source ?? ''] ?? '本地'}</Tag> : <Tag>内置</Tag>)
           },
-          { title: '核实', key: 'verified', render: (_, m) => (m.verified ? <Tag color="green">已核实</Tag> : <Tooltip title={m.verifyNote}><Tag color="orange">待核实</Tag></Tooltip>) },
-          { title: '在用', key: 'use', align: 'right', sorter: (a, b) => inUse(a) - inUse(b), render: (_, m) => inUse(m) || <span className="pp-muted">0</span> }
+          { title: '核实', key: 'verified', width: 90, sortValue: (m) => (m.verified ? 1 : 0), render: (_, m) => (m.verified ? <Tag color="green">已核实</Tag> : <Tooltip title={m.verifyNote}><Tag color="orange">待核实</Tag></Tooltip>) },
+          { title: '在用', key: 'use', width: 90, align: 'right', sortValue: (m) => inUse(m), render: (_, m) => inUse(m) || <span className="pp-muted">0</span> }
         ]}
       />
 
