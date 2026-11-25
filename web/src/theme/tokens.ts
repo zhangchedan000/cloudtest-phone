@@ -101,14 +101,14 @@ const LIGHT: Omit<ThemeTokens, 'accent' | 'accentSoft' | 'accentSoftBorder' | 'a
   star: '#e5a100',
   special: '#6a4cff',
   idle: '#c5cad6',
-  sidebarBg: '#141a2e',
-  sidebarText: '#c9d1e4',
-  sidebarMuted: '#7f8aa8',
-  sidebarTitle: '#6b7694',
-  sidebarDisabled: '#59627d',
-  sidebarHover: 'rgba(255, 255, 255, .06)',
-  sidebarCard: '#1d2540',
-  sidebarCardHover: '#242d4d',
+  sidebarBg: '#ffffff',
+  sidebarText: '#3c4560',
+  sidebarMuted: '#8a93a8',
+  sidebarTitle: '#5d6782',
+  sidebarDisabled: '#aeb6c6',
+  sidebarHover: 'rgba(29, 35, 55, .05)',
+  sidebarCard: '#eef1f6',
+  sidebarCardHover: '#e4e8f0',
   shadow: 'rgba(29, 35, 55, .04)'
 }
 

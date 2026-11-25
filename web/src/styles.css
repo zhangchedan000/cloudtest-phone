@@ -4,11 +4,12 @@ html, body, #root, #root > .ant-app { margin: 0; height: 100%; }
 body { background: var(--fb-bg); color: var(--fb-text); font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif; }
 
 .pp-shell { display: flex; height: 100%; }
-.pp-sidebar { width: 200px; flex: none; background: var(--fb-sidebar-bg); color: var(--fb-sidebar-text); display: flex; flex-direction: column; padding: 16px 10px; }
+.pp-sidebar { width: 200px; flex: none; background: var(--fb-sidebar-bg); color: var(--fb-sidebar-text); display: flex; flex-direction: column; padding: 16px 10px; border-right: 1px solid var(--fb-line); }
+.pp-brand .anticon { color: var(--fb-accent); }
 .pp-brand { font-weight: 700; font-size: 17px; padding: 6px 12px 18px; display: flex; gap: 8px; align-items: center; }
 .pp-nav { width: 100%; display: flex; gap: 10px; align-items: center; padding: 10px 12px; border: 0; border-radius: 8px; background: transparent; color: var(--fb-sidebar-text); font-size: 14px; cursor: pointer; text-align: left; }
 .pp-nav:hover { background: var(--fb-sidebar-hover); }
-.pp-nav-active { background: var(--fb-sidebar-card); color: var(--fb-on-accent); font-weight: 600; }
+.pp-nav-active { background: var(--fb-accent-soft); color: var(--fb-accent-text); font-weight: 600; }
 .pp-sidebar-foot { margin-top: auto; padding: 8px 12px; font-size: 12px; color: var(--fb-sidebar-muted); }
 
 .pp-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
@@ -67,7 +68,7 @@ body { background: var(--fb-bg); color: var(--fb-text); font-family: Inter, ui-s
 
 /* 手机画面 */
 .pp-phone { display: flex; flex-direction: column; align-items: center; gap: 8px; }
-.pp-phone-screen { position: relative; overflow: hidden; background: var(--fb-sidebar-bg); border: 6px solid var(--fb-sidebar-card); border-radius: 22px; }
+.pp-phone-screen { position: relative; overflow: hidden; background: #12151d; border: 6px solid #2a3142; border-radius: 22px; }
 .pp-phone-thumb .pp-phone-screen { width: var(--pp-sw); height: calc(var(--pp-sw) * 2); border-width: 4px; border-radius: 16px; --pp-sw: min(var(--screen-w, 120px), var(--slot-w, 210px) - 28px); }
 .pp-phone-large .pp-phone-screen { width: 300px; height: 640px; }
 .pp-phone-status { display: flex; justify-content: space-between; padding: 6px 10px; font-size: 10px; color: var(--fb-on-accent); }
@@ -142,7 +143,7 @@ body { background: var(--fb-bg); color: var(--fb-text); font-family: Inter, ui-s
 .pp-live .pp-phone-off { position: absolute; inset: 0; }
 .pp-login { max-width: 360px; margin: 120px auto; display: flex; flex-direction: column; gap: 12px; }
 .pp-logs { display: flex; flex-direction: column; gap: 10px; }
-.pp-log-text { max-height: 560px; overflow: auto; margin: 0; padding: 10px; border-radius: 8px; background: var(--fb-sidebar-bg); color: #d6dde8; font: 11px/1.5 ui-monospace, Consolas, monospace; white-space: pre-wrap; word-break: break-all; }
+.pp-log-text { max-height: 560px; overflow: auto; margin: 0; padding: 10px; border-radius: 8px; background: #12151d; color: #d6dde8; font: 11px/1.5 ui-monospace, Consolas, monospace; white-space: pre-wrap; word-break: break-all; }
 .pp-live-quality { position: absolute; top: 6px; right: 6px; display: flex; gap: 2px; padding: 2px; border-radius: 6px; background: rgba(0,0,0,.55); opacity: .35; transition: opacity .2s; }
 .pp-live:hover .pp-live-quality { opacity: 1; }
 .pp-live-quality button { border: 0; background: transparent; color: #fff; font-size: 11px; padding: 1px 6px; border-radius: 4px; cursor: pointer; }
