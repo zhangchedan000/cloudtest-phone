@@ -25,8 +25,30 @@ body { background: var(--fb-bg); color: var(--fb-text); font-family: Inter, ui-s
 .pp-stat-danger b { color: var(--fb-danger); }
 
 .pp-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
-.pp-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 14px; }
+.pp-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(var(--slot-w, 210px), 1fr)); gap: 14px; }
 .pp-grid-wide { grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); }
+.pp-slot-slider { display: inline-flex; align-items: center; gap: 8px; }
+
+/* 云手机页：左侧设备列表 + 右侧坑位网格（照魔云腾管家布局） */
+.pp-phones-layout { display: flex; gap: 16px; align-items: flex-start; }
+.pp-hostlist { width: 220px; flex: none; position: sticky; top: 0; display: flex; flex-direction: column; gap: 10px; background: var(--fb-surface); border: 1px solid var(--fb-line); border-radius: 12px; padding: 12px; }
+.pp-hostlist-head { display: flex; align-items: center; justify-content: space-between; }
+.pp-hostlist-items { display: flex; flex-direction: column; gap: 4px; max-height: 60vh; overflow: auto; }
+.pp-host-item { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; border: 0; border-radius: 8px; padding: 8px 10px; background: transparent; color: var(--fb-text); cursor: pointer; }
+.pp-host-item:hover { background: var(--fb-surface-muted); }
+.pp-host-item-active { background: var(--fb-chip); font-weight: 600; outline: 1px solid var(--fb-accent); }
+.pp-host-item-main { min-width: 0; flex: 1; }
+.pp-host-item-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pp-phones-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 16px; }
+
+.pp-host-sections { display: flex; flex-direction: column; gap: 20px; }
+.pp-host-section { display: flex; flex-direction: column; gap: 12px; }
+.pp-host-section-head { display: flex; align-items: center; gap: 8px; padding-bottom: 8px; border-bottom: 1px solid var(--fb-line); }
+.pp-host-section-toggle { margin-left: auto; }
+
+.pp-slot-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; min-height: 280px; border: 1px dashed var(--fb-line); border-radius: 12px; background: var(--fb-surface-muted); cursor: pointer; transition: border-color .15s, background .15s; }
+.pp-slot-empty:hover { border-color: var(--fb-accent); background: var(--fb-chip); }
+.pp-slot-plus { font-size: 26px; color: var(--fb-text-muted); }
 
 .pp-card .ant-card-body { display: flex; flex-direction: column; gap: 10px; }
 .pp-card-selected { outline: 2px solid var(--fb-accent); }
@@ -105,6 +127,10 @@ body { background: var(--fb-bg); color: var(--fb-text); font-family: Inter, ui-s
   .pp-nav { width: auto; white-space: nowrap; }
   .pp-content { padding: 14px 16px; }
   .pp-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .pp-phones-layout { flex-direction: column; }
+  .pp-hostlist { width: 100%; position: static; }
+  .pp-hostlist-items { flex-direction: row; max-height: none; overflow-x: auto; }
+  .pp-host-item { width: auto; white-space: nowrap; }
   .pp-detail { flex-direction: column; align-items: center; }
   .pp-detail-screen { position: static; }
   .pp-field-row { grid-template-columns: 1fr; gap: 4px; }

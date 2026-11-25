@@ -21,9 +21,9 @@ const out = process.argv[2] || 'e2e/shots'
   await page.locator('.pp-card').nth(1).getByText('编辑').click(); await page.waitForSelector('.pp-field-row'); await page.waitForTimeout(900); await page.waitForTimeout(900)
   await page.screenshot({ path: `${out}/3-detail-issues.png` })
   await page.keyboard.press('Escape'); await page.waitForTimeout(400)
-  await page.getByText('列表').click(); await page.waitForSelector('.ant-table-row')
+  await page.getByText('列表', { exact: true }).click(); await page.waitForSelector('.ant-table-row')
   await page.screenshot({ path: `${out}/4-list.png` })
-  for (const [hash, sel, n] of [['proxies', '.ant-table-row', 5], ['models', '.ant-card', 6], ['hosts', '.ant-card', 7]]) {
+  for (const [hash, sel, n] of [['proxies', '.ant-table-row', 5], ['models', '.ant-table-row', 6], ['hosts', '.ant-card', 7]]) {
     await page.goto(base + '#' + hash); await page.reload(); await page.waitForSelector(sel)
     await page.screenshot({ path: `${out}/${n}-${hash}.png` })
   }

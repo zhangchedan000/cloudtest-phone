@@ -1,12 +1,13 @@
 import { AppstoreAddOutlined, AppstoreOutlined, DeleteOutlined, DownOutlined, EditOutlined, PlusOutlined, PoweroffOutlined, ReloadOutlined, SearchOutlined, UnorderedListOutlined, UploadOutlined } from '@ant-design/icons'
-import { Alert, App, Button, Card, Checkbox, Dropdown, Empty, Input, Modal, Segmented, Select, Space, Table, Tag, Tooltip } from 'antd'
+import { Alert, App, Button, Card, Checkbox, Dropdown, Empty, Input, Modal, Segmented, Select, Slider, Space, Table, Tag, Tooltip } from 'antd'
 import { useMemo, useRef, useState } from 'react'
 import { batchUpload, type BatchResult } from '@/data/api'
 import { PhoneScreen } from '@/components/PhoneScreen'
 import { IssueBadge, ProxyCell, StatusDot } from '@/components/bits'
 import { blocksStart } from '@/data/consistency'
 import { useWorkspace } from '@/data/store'
-import type { Phone } from '@/data/types'
+import type { Host, Phone } from '@/data/types'
+import { AddServerModal } from '../other/AddServerModal'
 import { GroupsModal } from './GroupsModal'
 import { NewPhoneModal } from './NewPhoneModal'
 import { PhoneDrawer } from './PhoneDrawer'
@@ -19,8 +20,11 @@ export function PhonesPage() {
   const [groupId, setGroupId] = useState<string>('all')
   const [hostId, setHostId] = useState<string>('all')
   const [query, setQuery] = useState('')
+  const [hostQuery, setHostQuery] = useState('')
   const [selected, setSelected] = useState<string[]>([])
   const [managingGroups, setManagingGroups] = useState(false)
+  const [hideEmpty, setHideEmpty] = useState(false)
+  const [slotW, setSlotW] = useState(210)
   const [open, setOpen] = useState<Phone>()
   const [openMode, setOpenMode] = useState<'view' | 'edit'>('view')
   // 打开手机：单独弹一个窗口（可以同时开好几台）；浏览器拦了弹窗就在页面里打开
@@ -40,6 +44,9 @@ export function PhonesPage() {
     } else view_(p)
   }
   const [creating, setCreating] = useState(false)
+  const [presetHost, setPresetHost] = useState<string>()
+  const addPhoneOn = (hid?: string) => { setPresetHost(hid); setCreating(true) }
+  const [addingDevice, setAddingDevice] = useState(false)
   // 批量装 App / 传文件：文件只上传一次，服务器分发到选中的每台
   const apkInput = useRef<HTMLInputElement>(null)
   const fileInput = useRef<HTMLInputElement>(null)
@@ -55,6 +62,9 @@ export function PhonesPage() {
   const withErrors = ws.phones.filter((p) => blocksStart(ws.issuesOf(p))).length
   // 上网健康检查：运行中但连不上外网的手机（管家程序每 2 分钟查一次）
   const offline = ws.phones.filter((p) => p.status === 'running' && p.net && !p.net.ok)
+  // 左侧设备列表：在线的排前面
+  const onlineHosts = ws.hosts.filter((h) => h.online).length
+  const hostHits = ws.hosts.filter((h) => !hostQuery || h.name.toLowerCase().includes(hostQuery.toLowerCase()))
 
   const start = (ids: string[]) => {
     const ok = ids.filter((id) => !blocksStart(ws.issuesOf(ws.phones.find((p) => p.id === id)!)))
@@ -103,13 +113,87 @@ export function PhonesPage() {
 
   const toggle = (id: string, on: boolean) => setSelected((s) => (on ? [...s, id] : s.filter((x) => x !== id)))
 
+  // 坑位网格里渲染一台已创建的手机
+  const renderPhoneCard = (p: Phone) => {
+    const issues = ws.issuesOf(p)
+    return (
+      <Card key={p.id} className={`pp-card ${selected.includes(p.id) ? 'pp-card-selected' : ''}`} size="small" variant="outlined">
+        <div className="pp-card-top">
+          <Checkbox checked={selected.includes(p.id)} onChange={(e) => toggle(p.id, e.target.checked)} />
+          <b className="pp-card-name">{p.name}</b>
+          <StatusDot status={p.status} />
+        </div>
+        <Tooltip title={p.status === 'running' ? '点击放大' : p.status === 'stopped' || p.status === 'error' ? '点击开机' : ''}>
+          <div className="pp-card-screen" onClick={() => clickScreen(p)} role="button" tabIndex={0}>
+            <PhoneScreen id={p.id} status={p.status} name={p.name} seed={p.name.length + p.id.charCodeAt(5)} startHint startBlocked={blocksStart(issues)} />
+          </div>
+        </Tooltip>
+        <div className="pp-card-meta">
+          <div>{String(ws.modelOf(p)?.values.marketName ?? '未选机型')} · A{p.androidVersion}</div>
+          <div><ProxyCell proxy={ws.proxyOf(p)} /></div>
+          <div className="pp-card-row"><span className="pp-chip" style={{ borderColor: ws.groupOf(p)?.color }}>{ws.groupOf(p)?.name ?? '未分组'}</span><IssueBadge issues={issues} /></div>
+          {p.usage && <div className="pp-card-row pp-small pp-muted">{usageText(p.usage)}</div>}
+          {p.status === 'running' && p.net && !p.net.ok && <Tooltip title={p.net.error}><Tag color="error" className="pp-small">上不了网</Tag></Tooltip>}
+        </div>
+        <div className="pp-card-actions">
+          {(p.status === 'running' || p.status === 'starting') && <Button size="small" onClick={() => ws.setStatus([p.id], 'stopped')}>关机</Button>}
+          <Button size="small" icon={<EditOutlined />} onClick={() => edit(p)}>编辑</Button>
+        </div>
+      </Card>
+    )
+  }
+
+  // 坑位网格里渲染一个空坑位（点「创建」在这台机器上新建）
+  const renderEmptySlot = (h: Host, i: number) => (
+    <div key={`empty-${h.id}-${i}`} className="pp-card pp-slot-empty" onClick={() => addPhoneOn(h.id)} role="button" tabIndex={0}>
+      <PlusOutlined className="pp-slot-plus" />
+      <span className="pp-muted">空坑位</span>
+      <Button size="small" type="primary" ghost icon={<PlusOutlined />}>创建</Button>
+    </div>
+  )
+
+  // 一台机器的坑位区：已创建的手机 + 空坑位（空坑位数 = 同时最多 − 这台机器上的手机数）
+  const renderHostSection = (h: Host) => {
+    const mine = list.filter((p) => p.hostId === h.id)
+    const total = ws.phones.filter((p) => p.hostId === h.id).length
+    const empties = Math.max(0, h.maxRunning - total)
+    const ids = mine.map((p) => p.id)
+    const sel = ids.filter((id) => selected.includes(id))
+    if (mine.length === 0 && empties === 0 && hostId === 'all') return null
+    return (
+      <section key={h.id} className="pp-host-section">
+        <div className="pp-host-section-head">
+          <Checkbox
+            checked={ids.length > 0 && sel.length === ids.length}
+            indeterminate={sel.length > 0 && sel.length < ids.length}
+            onChange={(e) => setSelected((s) => (e.target.checked ? [...new Set([...s, ...ids])] : s.filter((x) => !ids.includes(x))))}
+          />
+          <StatusDot status={h.online ? 'running' : 'stopped'} />
+          <b>{h.name}</b>
+          <span className="pp-muted pp-small">{total} 个实例 · 运行 {ws.phones.filter((p) => p.hostId === h.id && p.status === 'running').length} · 同时最多 {h.maxRunning}</span>
+          {empties > 0 && <Button size="small" type="text" className="pp-host-section-toggle" onClick={() => setHideEmpty((v) => !v)}>{hideEmpty ? '显示空坑位' : `隐藏空坑位(${empties})`}</Button>}
+        </div>
+        {mine.length === 0 && (hideEmpty || empties === 0) ? (
+          <Empty description="这台机器还没有云手机" image={Empty.PRESENTED_IMAGE_SIMPLE}><Button type="primary" icon={<PlusOutlined />} onClick={() => addPhoneOn(h.id)}>创建</Button></Empty>
+        ) : (
+          <div className="pp-grid" style={{ ['--slot-w' as string]: `${slotW}px` }}>
+            {mine.map(renderPhoneCard)}
+            {!hideEmpty && Array.from({ length: empties }, (_, i) => renderEmptySlot(h, i))}
+          </div>
+        )}
+      </section>
+    )
+  }
+
+  const shownHosts = hostId === 'all' ? ws.hosts.filter((h) => h.online) : ws.hosts.filter((h) => h.id === hostId)
+
   return (
     <div className="pp-page">
       <div className="pp-stats">
         <Stat label="云手机" value={ws.phones.length} />
         <Stat label="运行中" value={running} tone="success" />
         <Stat label="有错误（禁止开机）" value={withErrors} tone={withErrors ? 'danger' : undefined} />
-        <Stat label="机器在线" value={`${ws.hosts.filter((h) => h.online).length} / ${ws.hosts.length}`} />
+        <Stat label="机器在线" value={`${onlineHosts} / ${ws.hosts.length}`} />
       </div>
 
       {ws.mode === 'live' && ws.hosts.filter((h) => h.netHealth && !h.netHealth.ok).map((h) => (
@@ -124,78 +208,88 @@ export function PhonesPage() {
       {ws.mode === 'live' && ws.hosts[0] && !ws.hosts[0].networkEnabled && (
         <Alert type="warning" showIcon className="pp-alert" title="网络模块没开：云手机直接用服务器自己的网络，只适合开发测试。正式使用前在服务器上运行 host/network.sh，并给管家程序加 -mihomo-api 参数。" />
       )}
-      <div className="pp-toolbar">
-        <Space wrap>
-          <Segmented value={view} onChange={(v) => setView(v as 'cards' | 'list')} options={[{ value: 'cards', icon: <AppstoreOutlined />, label: '画面' }, { value: 'list', icon: <UnorderedListOutlined />, label: '列表' }]} />
-          <Select style={{ width: 150 }} value={groupId} onChange={setGroupId} options={[{ value: 'all', label: '全部分组' }, ...ws.groups.map((g) => ({ value: `${g.serverId ?? 'local'}|${g.id}`, label: ws.servers.length ? `${g.name}（${ws.serverName(g.serverId)}）` : g.name }))]} />
-          <Button onClick={() => setManagingGroups(true)}>分组管理</Button>
-          <Select style={{ width: 150 }} value={hostId} onChange={setHostId} options={[{ value: 'all', label: '全部机器' }, ...ws.hosts.map((h) => ({ value: h.id, label: h.online ? h.name : `${h.name}（离线）` }))]} />
-          <Input allowClear prefix={<SearchOutlined />} placeholder="名称 / 机型" value={query} onChange={(e) => setQuery(e.target.value)} style={{ width: 200 }} />
-        </Space>
-        <Space wrap>
-          {selected.length > 0 && <span className="pp-muted">已选 {selected.length} 台</span>}
-          <Dropdown disabled={!selected.length || !!batchBusy} menu={{ items: batch }}><Button loading={!!batchBusy}>批量操作 <DownOutlined /></Button></Dropdown>
-          {batchBusy && <span className="pp-muted">{batchBusy}</span>}
-          <input ref={apkInput} type="file" accept=".apk" hidden onChange={(e) => { void runBatch('apk', e.target.files?.[0]); e.target.value = '' }} />
-          <input ref={fileInput} type="file" hidden onChange={(e) => { void runBatch('file', e.target.files?.[0]); e.target.value = '' }} />
-          <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreating(true)}>新建云手机</Button>
-        </Space>
-      </div>
 
-      {list.length === 0 ? <Empty description="没有符合条件的云手机" /> : view === 'cards' ? (
-        <div className="pp-grid">
-          {list.map((p) => {
-            const issues = ws.issuesOf(p)
-            return (
-              <Card key={p.id} className={`pp-card ${selected.includes(p.id) ? 'pp-card-selected' : ''}`} size="small" variant="outlined">
-                <div className="pp-card-top">
-                  <Checkbox checked={selected.includes(p.id)} onChange={(e) => toggle(p.id, e.target.checked)} />
-                  <b className="pp-card-name">{p.name}</b>
-                  <StatusDot status={p.status} />
-                </div>
-                <Tooltip title={p.status === 'running' ? '点击放大' : p.status === 'stopped' || p.status === 'error' ? '点击开机' : ''}>
-                <div className="pp-card-screen" onClick={() => clickScreen(p)} role="button" tabIndex={0}>
-                  <PhoneScreen id={p.id} status={p.status} name={p.name} seed={p.name.length + p.id.charCodeAt(5)} startHint startBlocked={blocksStart(issues)} />
-                </div>
-                </Tooltip>
-                <div className="pp-card-meta">
-                  <div>{String(ws.modelOf(p)?.values.marketName ?? '未选机型')} · A{p.androidVersion}</div>
-                  <div><ProxyCell proxy={ws.proxyOf(p)} /></div>
-                  <div className="pp-card-row"><span className="pp-chip" style={{ borderColor: ws.groupOf(p)?.color }}>{ws.groupOf(p)?.name ?? '未分组'}</span><IssueBadge issues={issues} /></div>
-                  {p.usage && <div className="pp-card-row pp-small pp-muted">{usageText(p.usage)}</div>}
-                  {p.status === 'running' && p.net && !p.net.ok && <Tooltip title={p.net.error}><Tag color="error" className="pp-small">上不了网</Tag></Tooltip>}
-                </div>
-                <div className="pp-card-actions">
-                  {(p.status === 'running' || p.status === 'starting') && <Button size="small" onClick={() => ws.setStatus([p.id], 'stopped')}>关机</Button>}
-                  <Button size="small" icon={<EditOutlined />} onClick={() => edit(p)}>编辑</Button>
-                </div>
-              </Card>
+      <div className="pp-phones-layout">
+        <aside className="pp-hostlist">
+          <div className="pp-hostlist-head">
+            <b>设备列表</b>
+            <Tooltip title="添加设备（以后上新盒子都在这儿加）">
+              <Button size="small" type="text" icon={<PlusOutlined />} disabled={ws.mode !== 'live'} onClick={() => setAddingDevice(true)} />
+            </Tooltip>
+          </div>
+          <div className="pp-hostlist-stat pp-muted pp-small">在线 {onlineHosts} · 离线 {ws.hosts.length - onlineHosts} · 总 {ws.hosts.length}</div>
+          <Input allowClear size="small" prefix={<SearchOutlined />} placeholder="找设备" value={hostQuery} onChange={(e) => setHostQuery(e.target.value)} />
+          <div className="pp-hostlist-items">
+            <button className={`pp-host-item ${hostId === 'all' ? 'pp-host-item-active' : ''}`} onClick={() => setHostId('all')}>
+              <AppstoreOutlined />
+              <div className="pp-host-item-main"><div className="pp-host-item-name">全部设备</div><div className="pp-muted pp-small">{ws.phones.length} 台云手机</div></div>
+            </button>
+            {hostHits.map((h) => {
+              const total = ws.phones.filter((p) => p.hostId === h.id).length
+              const run = ws.phones.filter((p) => p.hostId === h.id && p.status === 'running').length
+              return (
+                <button key={h.id} className={`pp-host-item ${hostId === h.id ? 'pp-host-item-active' : ''}`} onClick={() => setHostId(h.id)}>
+                  <StatusDot status={h.online ? 'running' : 'stopped'} />
+                  <div className="pp-host-item-main">
+                    <div className="pp-host-item-name">{h.name}</div>
+                    <div className="pp-muted pp-small">{total} 台 · 运行 {run}{h.diskGb ? ` · ${h.diskUsedGb}/${h.diskGb}GB` : ''}</div>
+                  </div>
+                </button>
+              )
+            })}
+          </div>
+        </aside>
+
+        <div className="pp-phones-main">
+          <div className="pp-toolbar">
+            <Space wrap>
+              <Segmented value={view} onChange={(v) => setView(v as 'cards' | 'list')} options={[{ value: 'cards', icon: <AppstoreOutlined />, label: '画面' }, { value: 'list', icon: <UnorderedListOutlined />, label: '列表' }]} />
+              <Select style={{ width: 150 }} value={groupId} onChange={setGroupId} options={[{ value: 'all', label: '全部分组' }, ...ws.groups.map((g) => ({ value: `${g.serverId ?? 'local'}|${g.id}`, label: ws.servers.length ? `${g.name}（${ws.serverName(g.serverId)}）` : g.name }))]} />
+              <Button onClick={() => setManagingGroups(true)}>分组管理</Button>
+              <Input allowClear prefix={<SearchOutlined />} placeholder="名称 / 机型" value={query} onChange={(e) => setQuery(e.target.value)} style={{ width: 180 }} />
+              {view === 'cards' && <span className="pp-slot-slider"><span className="pp-muted pp-small">坑位大小</span><Slider min={160} max={300} value={slotW} onChange={setSlotW} style={{ width: 110 }} tooltip={{ open: false }} /></span>}
+            </Space>
+            <Space wrap>
+              {selected.length > 0 && <span className="pp-muted">已选 {selected.length} 台</span>}
+              <Dropdown disabled={!selected.length || !!batchBusy} menu={{ items: batch }}><Button loading={!!batchBusy}>批量操作 <DownOutlined /></Button></Dropdown>
+              {batchBusy && <span className="pp-muted">{batchBusy}</span>}
+              <input ref={apkInput} type="file" accept=".apk" hidden onChange={(e) => { void runBatch('apk', e.target.files?.[0]); e.target.value = '' }} />
+              <input ref={fileInput} type="file" hidden onChange={(e) => { void runBatch('file', e.target.files?.[0]); e.target.value = '' }} />
+              <Button type="primary" icon={<PlusOutlined />} onClick={() => addPhoneOn(hostId === 'all' ? undefined : hostId)}>新建云手机</Button>
+            </Space>
+          </div>
+
+          {view === 'list' ? (
+            list.length === 0 ? <Empty description="没有符合条件的云手机" /> : (
+              <Table
+                rowKey="id"
+                dataSource={list}
+                pagination={false}
+                rowSelection={{ selectedRowKeys: selected, onChange: (keys) => setSelected(keys as string[]) }}
+                onRow={(p) => ({ onDoubleClick: () => view_(p) })}
+                columns={[
+                  { title: '名称', dataIndex: 'name', render: (name: string, p) => <a onClick={() => view_(p)}>{name}</a> },
+                  { title: '状态', render: (_, p) => <StatusDot status={p.status} /> },
+                  { title: '机型', render: (_, p) => <Space size={4}>{String(ws.modelOf(p)?.values.marketName ?? '—')}{p.gapps && <Tag color="blue" className="pp-small">谷歌</Tag>}</Space> },
+                  { title: '安卓', render: (_, p) => `Android ${p.androidVersion}` },
+                  { title: '代理', render: (_, p) => <ProxyCell proxy={ws.proxyOf(p)} /> },
+                  { title: '出口 IP', render: (_, p) => { const ip = ws.proxyOf(p)?.check?.exitIp; return ip ? <span className="pp-small">{ip}</span> : <span className="pp-muted">—</span> } },
+                  { title: '上网', render: (_, p) => (p.status !== 'running' ? <span className="pp-muted">—</span> : !p.net ? <span className="pp-muted">—</span> : p.net.ok ? <Tag color="success" className="pp-small">正常</Tag> : <Tooltip title={p.net.error}><Tag color="error" className="pp-small">上不了网</Tag></Tooltip>) },
+                  { title: '分组', render: (_, p) => ws.groupOf(p)?.name ?? '未分组' },
+                  { title: '占用', render: (_, p) => (p.usage ? usageText(p.usage) : '—') },
+                  { title: '机器', render: (_, p) => ws.hostOf(p)?.name },
+                  { title: '检查', render: (_, p) => <IssueBadge issues={ws.issuesOf(p)} /> },
+                  { title: '', render: (_, p) => <Space size={4}>{p.status === 'running' || p.status === 'starting' ? <><Button size="small" onClick={() => view_(p)}>打开</Button><Button size="small" onClick={() => ws.setStatus([p.id], 'stopped')}>关机</Button></> : <Button size="small" type="primary" disabled={blocksStart(ws.issuesOf(p))} onClick={() => start([p.id])}>开机</Button>}<Button size="small" onClick={() => edit(p)}>编辑</Button></Space> }
+                ]}
+              />
             )
-          })}
+          ) : shownHosts.length === 0 ? (
+            <Empty description="没有在线的机器" />
+          ) : (
+            <div className="pp-host-sections">{shownHosts.map(renderHostSection)}</div>
+          )}
         </div>
-      ) : (
-        <Table
-          rowKey="id"
-          dataSource={list}
-          pagination={false}
-          rowSelection={{ selectedRowKeys: selected, onChange: (keys) => setSelected(keys as string[]) }}
-          onRow={(p) => ({ onDoubleClick: () => view_(p) })}
-          columns={[
-            { title: '名称', dataIndex: 'name', render: (name: string, p) => <a onClick={() => view_(p)}>{name}</a> },
-            { title: '状态', render: (_, p) => <StatusDot status={p.status} /> },
-            { title: '机型', render: (_, p) => <Space size={4}>{String(ws.modelOf(p)?.values.marketName ?? '—')}{p.gapps && <Tag color="blue" className="pp-small">谷歌</Tag>}</Space> },
-            { title: '安卓', render: (_, p) => `Android ${p.androidVersion}` },
-            { title: '代理', render: (_, p) => <ProxyCell proxy={ws.proxyOf(p)} /> },
-            { title: '出口 IP', render: (_, p) => { const ip = ws.proxyOf(p)?.check?.exitIp; return ip ? <span className="pp-small">{ip}</span> : <span className="pp-muted">—</span> } },
-            { title: '上网', render: (_, p) => (p.status !== 'running' ? <span className="pp-muted">—</span> : !p.net ? <span className="pp-muted">—</span> : p.net.ok ? <Tag color="success" className="pp-small">正常</Tag> : <Tooltip title={p.net.error}><Tag color="error" className="pp-small">上不了网</Tag></Tooltip>) },
-            { title: '分组', render: (_, p) => ws.groupOf(p)?.name ?? '未分组' },
-            { title: '占用', render: (_, p) => (p.usage ? usageText(p.usage) : '—') },
-            { title: '机器', render: (_, p) => ws.hostOf(p)?.name },
-            { title: '检查', render: (_, p) => <IssueBadge issues={ws.issuesOf(p)} /> },
-            { title: '', render: (_, p) => <Space size={4}>{p.status === 'running' || p.status === 'starting' ? <><Button size="small" onClick={() => view_(p)}>打开</Button><Button size="small" onClick={() => ws.setStatus([p.id], 'stopped')}>关机</Button></> : <Button size="small" type="primary" disabled={blocksStart(ws.issuesOf(p))} onClick={() => start([p.id])}>开机</Button>}<Button size="small" onClick={() => edit(p)}>编辑</Button></Space> }
-          ]}
-        />
-      )}
+      </div>
 
       <Modal open={!!batchDone} title={batchDone?.title} footer={null} onCancel={() => setBatchDone(undefined)}>
         <Table size="small" pagination={false} rowKey="id" dataSource={batchDone?.results ?? []} columns={[
@@ -206,7 +300,8 @@ export function PhonesPage() {
       </Modal>
       <PhoneDrawer phone={open} mode={openMode} onEdit={() => setOpenMode('edit')} onClose={() => setOpen(undefined)} />
       <GroupsModal open={managingGroups} onClose={() => setManagingGroups(false)} />
-      <NewPhoneModal open={creating} onClose={() => setCreating(false)} />
+      <NewPhoneModal open={creating} presetHostId={presetHost} onClose={() => setCreating(false)} />
+      <AddServerModal open={addingDevice} onClose={() => setAddingDevice(false)} />
     </div>
   )
 }

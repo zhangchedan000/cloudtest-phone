@@ -1,8 +1,9 @@
 import { CloudServerOutlined, DeleteOutlined, EditOutlined, PlusOutlined } from '@ant-design/icons'
-import { Alert, App, Button, Card, Descriptions, Form, Input, Modal, Progress, Space, Switch, Tag } from 'antd'
+import { Alert, App, Button, Card, Descriptions, Input, Modal, Progress, Space, Switch, Tag } from 'antd'
 import { useState, Fragment } from 'react'
 import { api, LOCAL } from '@/data/api'
 import { useWorkspace } from '@/data/store'
+import { AddServerModal } from './AddServerModal'
 import { TrashCard } from './TrashCard'
 import { BackupsCard } from './BackupsCard'
 
@@ -12,26 +13,9 @@ import { BackupsCard } from './BackupsCard'
  */
 export function HostsPage() {
   const ws = useWorkspace()
-  const { message } = App.useApp()
   const [adding, setAdding] = useState(false)
-  const [busy, setBusy] = useState(false)
-  const [form] = Form.useForm<{ name?: string; url: string; token: string }>()
   const live = ws.mode === 'live'
 
-  const add = async (v: { name?: string; url: string; token: string }) => {
-    setBusy(true)
-    try {
-      const sv = await api.addServer(v)
-      message.success(`已添加「${sv.name}」`)
-      setAdding(false)
-      form.resetFields()
-      await ws.refresh()
-    } catch (error) {
-      message.error((error as Error).message)
-    } finally {
-      setBusy(false)
-    }
-  }
   const rename = (sid: string, old: string) => {
     let name = old
     Modal.confirm({
@@ -51,7 +35,7 @@ export function HostsPage() {
     <div className="pp-page">
       <div className="pp-toolbar">
         <span className="pp-muted">一台机器（服务器）上跑一个管家程序。添加别的服务器后，它的手机、代理、分组都会出现在这个页面里，画面和操作直接连那台，不经过这台中转。</span>
-        <Button type="primary" icon={<PlusOutlined />} disabled={!live} onClick={() => setAdding(true)}>添加服务器</Button>
+        <Button type="primary" icon={<PlusOutlined />} disabled={!live} onClick={() => setAdding(true)}>添加设备</Button>
       </div>
       <div className="pp-grid pp-grid-wide">
         {ws.hosts.map((h) => {
@@ -95,20 +79,7 @@ export function HostsPage() {
         </Fragment>
       ))}
 
-      <Modal open={adding} title="添加服务器" okText="连接并添加" confirmLoading={busy} onOk={() => form.submit()} onCancel={() => setAdding(false)} destroyOnHidden>
-        <Form form={form} layout="vertical" onFinish={(v) => void add(v)}>
-          <Form.Item label="地址" name="url" rules={[{ required: true, message: '填那台服务器管理页的地址' }]} extra="那台服务器管理页的网址，例如 https://phone2.example.com（要用 HTTPS 域名，和这台一样经反代打开）">
-            <Input placeholder="https://" />
-          </Form.Item>
-          <Form.Item label="口令" name="token" rules={[{ required: true, message: '填那台的口令' }]} extra="那台服务器 /etc/prism-phone/agent.env 里的 PP_TOKEN；没设口令的服务器不能添加（不安全）">
-            <Input.Password />
-          </Form.Item>
-          <Form.Item label="名称（可不填）" name="name" extra="不填就用那台服务器自己的机器名">
-            <Input placeholder="例如：美国板子 1" />
-          </Form.Item>
-        </Form>
-        <p className="pp-muted pp-small">添加时会先用口令连一下那台，地址或口令不对会直接提示。</p>
-      </Modal>
+      <AddServerModal open={adding} onClose={() => setAdding(false)} />
     </div>
   )
 }
