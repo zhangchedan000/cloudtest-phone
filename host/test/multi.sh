@@ -289,8 +289,10 @@ for r in rows:
     parts = r.get("cpu_parts", "").split(); midrs = r.get("cpu_midrs", "").split()
     if parts and midrs and [p.lower() for p in parts] != ["0x%03x" % ((int(m, 16) >> 4) & 0xfff) for m in midrs]:
         bad.append(f"{i} cpuinfo 的核心型号 {' '.join(parts)} 和 midr 文件 {' '.join(midrs)} 对不上")
-    # Vulkan（踩坑 #148）：要能枚举到 Mali 显卡；驱动目录里只能有 Mali 的入口模块（redroid 的开源驱动是痕迹）
-    if not r.get("vk_device", "").startswith("Mali"): bad.append(f"{i} Vulkan 枚举不到显卡（{r.get('vk_device') or '0 个设备'}）")
+    # Vulkan（踩坑 #148）：要能枚举到真显卡——一致档是 Mali，伪装档是真机名（Adreno…）。
+    # 空 = 枚举不到；llvmpipe/swiftshader/lavapipe/软件渲染 = redroid 的开源软件驱动（痕迹）。都不是才算正常。
+    vd = r.get("vk_device", "")
+    if (not vd) or vd.lower().startswith(("llvmpipe", "swiftshader", "lavapipe", "softpipe", "virtio")): bad.append(f"{i} Vulkan 枚举不到真显卡（{vd or '0 个设备'}）")
     # 只能有一个入口模块：一致档 vulkan.mali.so；伪装档是真机的名字（vulkan.adreno.so），镜像自带的 mali 那个开机时删掉
     if len(r.get("vk_drivers", "").split()) > 1: bad.append(f"{i} /vendor/lib64/hw 里有不止一个 Vulkan 驱动：{r.get('vk_drivers')}")
     mm = models.get(r.get("spec_model", "")) or {}
