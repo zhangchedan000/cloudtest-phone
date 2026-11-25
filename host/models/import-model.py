@@ -239,6 +239,28 @@ def display_of(pkg):
     return {}
 
 
+BUILD_MAP = {  # 魔云腾 device_info.json 的 prop.Build.* / VERSION.* → ro.* 属性（兜底单文件导入用）
+    "Build.MODEL": "ro.product.model", "Build.BRAND": "ro.product.brand", "Build.MANUFACTURER": "ro.product.manufacturer",
+    "Build.DEVICE": "ro.product.device", "Build.PRODUCT": "ro.product.name", "Build.FINGERPRINT": "ro.build.fingerprint",
+    "Build.HARDWARE": "ro.hardware", "Build.BOARD": "ro.board.platform", "Build.ID": "ro.build.id",
+    "Build.TYPE": "ro.build.type", "Build.TAGS": "ro.build.tags", "Build.DISPLAY": "ro.build.display.id",
+    "Build.MARKETNAME": "ro.product.marketname", "Build.ODM_MARKETNAME": "ro.product.marketname",
+    "VERSION.RELEASE": "ro.build.version.release", "VERSION.INCREMENTAL": "ro.build.version.incremental",
+    "VERSION.SECURITY_PATCH": "ro.build.version.security_patch",
+}
+
+
+def di_build_props(pkg):
+    """从 device_info.json 的 prop.Build.* 抽出 ro.* 属性（兜底单文件导入用，zip 包里有 props.txt 就用不着）。"""
+    b = (device_info(pkg).get("prop") or {}).get("Build") or {}
+    out = {}
+    for k, ro in BUILD_MAP.items():
+        v = b.get(k)
+        if isinstance(v, str) and v and v != "unknown":
+            out[ro] = v.replace("\\/", "/")
+    return out
+
+
 def device_info(pkg):
     """魔云腾新格式的 device_info.json（解析不了返回 {}）。"""
     try:
@@ -514,6 +536,9 @@ def convert(path, tac_db, host_gpu, host_cpus, loose=False):
         return normalize_model_json(pkg.model_json, host_gpu, path), None
     loose = loose or pkg.kind == "loose"
     props = parse_props(pkg.text("props.txt") or pkg.text("adb_debug.prop"))
+    if not props.get("ro.product.model"):   # 没有 props.txt（兜底单文件）→ 从 device_info.json 的 prop.Build.* 抽
+        for k, v in di_build_props(pkg).items():
+            props.setdefault(k, v)
     di = pkg.text("device_info.json")
     for k in ("ro.product.brand", "ro.product.model", "ro.product.manufacturer", "ro.product.device", "ro.build.fingerprint",
               "ro.build.version.release", "ro.soc.model", "ro.soc.manufacturer", "ro.board.platform", "ro.product.marketname"):
