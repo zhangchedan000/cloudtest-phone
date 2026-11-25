@@ -126,6 +126,35 @@ public class Main extends Activity {
             put("id.soc_serial", trim(read("/sys/devices/soc0/serial_number", 100)));
             put("id.dt_serial", trim(read("/proc/device-tree/serial-number", 100)));
         } });
+        // ---------- 音频设备（App 用 AudioManager 枚举得到的；对比 dobox 的 audio.json）----------
+        probe("audio", new P() { public void run() throws Exception {
+            android.media.AudioManager am = (android.media.AudioManager) ctx.getSystemService(Context.AUDIO_SERVICE);
+            JSONArray ins = new JSONArray(), outs = new JSONArray();
+            boolean hasMic = false;
+            for (android.media.AudioDeviceInfo d : am.getDevices(android.media.AudioManager.GET_DEVICES_INPUTS)) {
+                ins.put(d.getType() + ":" + d.getProductName());
+                if (d.getType() == android.media.AudioDeviceInfo.TYPE_BUILTIN_MIC) hasMic = true;
+            }
+            for (android.media.AudioDeviceInfo d : am.getDevices(android.media.AudioManager.GET_DEVICES_OUTPUTS))
+                outs.put(d.getType() + ":" + d.getProductName());
+            put("audio.inputs", ins);
+            put("audio.outputs", outs);
+            JSONArray mics = new JSONArray();
+            try {
+                for (android.media.MicrophoneInfo m : am.getMicrophones()) {
+                    JSONObject o = new JSONObject();
+                    o.put("desc", m.getDescription());
+                    o.put("location", m.getLocation());
+                    o.put("maxSpl", m.getMaxSpl());
+                    o.put("minSpl", m.getMinSpl());
+                    o.put("sensitivity", m.getSensitivity());
+                    mics.put(o);
+                }
+            } catch (Throwable t) { put("audio.micerr", t.getClass().getSimpleName() + ": " + t.getMessage()); }
+            put("audio.microphones", mics);
+            if (!hasMic) tell("audio-nomic", "声明了麦克风特性，却枚举不到内置麦克风设备（真机有，风控可交叉验 feature↔device）");
+            if (mics.length() == 0) tell("audio-nomicinfo", "getMicrophones() 返回空（真机有麦克风声压级/灵敏度等特征，dobox 造了）");
+        } });
         probe("gsf", new P() { public void run() {
             Cursor c = getContentResolver().query(Uri.parse("content://com.google.android.gsf.gservices"), null, null, new String[]{"android_id"}, null);
             if (c != null) { if (c.moveToFirst() && c.getColumnCount() >= 2) put("id.gsf_id", c.getString(1)); c.close(); }
