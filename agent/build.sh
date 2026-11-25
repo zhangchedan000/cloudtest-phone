@@ -13,6 +13,8 @@ if sh "$root/host/image/glshim/build.sh" >/dev/null 2>&1; then cp "$root/host/im
 else echo "警告：显卡转接库没编出来（要 clang + lld），伪装档机型开机时显卡名不会改" >&2; fi
 if sh "$root/host/image/sensorshim/build.sh" >/dev/null 2>&1; then cp "$root/host/image/sensorshim/out/arm64/libsensors_pp.so" internal/assets/tools/
 else echo "警告：传感器转接库没编出来（要 clang + lld），传感器清单不会照真机" >&2; fi
+if sh "$root/host/image/vkshim/build.sh" >/dev/null 2>&1; then cp "$root/host/image/vkshim/out/arm64/libvulkan_pp.so" internal/assets/tools/
+else echo "警告：Vulkan 转接库没编出来（要 clang + lld），伪装档机型的 Vulkan 显卡名不会改" >&2; fi
 if [ -d "$root/web/dist" ]; then cp -r "$root/web/dist" internal/assets/web; else mkdir -p internal/assets/web && echo '<p>管理页没有编译（web/dist 不存在）</p>' > internal/assets/web/index.html; fi
 ver=$(git -C "$root" describe --always --dirty 2>/dev/null || echo dev)
 out=${1:-bin/prism-phone-agent}

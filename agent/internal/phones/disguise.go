@@ -132,15 +132,81 @@ func (s *Service) disguiseBinds(ctx context.Context, id, image string, m *Model,
 			}
 		}
 	}
-	// 3. Vulkan 入口模块的名字（ro.hardware.vulkan）：真机是 adreno 等，镜像里只有 vulkan.mali.so，挂一份成真机的名字。
-	// 显卡名还是 Mali（Vulkan 不伪装），只是属性和文件名跟真机一致；标签由小助手补成 same_process_hal_file（phonecmd/label.go）
+	// 3. Vulkan（超越魔云腾——它的 Vulkan 没伪装）：转接库挂成真机的 vulkan 名字，ro.hardware.vulkan 指过去。
+	// 转接库 dlopen 真 Mali 驱动做实际渲染，只拦 vkGetPhysicalDeviceProperties(2) 把 deviceName/vendorID 换成真机的。
+	// 有真机显卡字符串（伪装档）才上转接库；没有就退回「只改名字、不伪装显卡名」（和以前一样）。标签由小助手补 same_process_hal_file（phonecmd/label.go）
 	if vk := shimVulkanName(m); vk != "" && vk != "mali" {
-		if mods, err := s.hwModules(ctx, image, map[string]string{"lib64/hw/vulkan": "/vendor/lib64/hw/vulkan.mali.so"}); err == nil {
-			binds = append(binds, mods["lib64/hw/vulkan"]+":/vendor/lib64/hw/vulkan."+vk+".so:ro")
-			props = append(props, "ro.hardware.vulkan="+vk)
+		done := false
+		if m.GPU != nil && m.GPU.Renderer != "" && s.cfg.Tools != nil {
+			// 真 Mali 驱动挂到隐藏点文件 .vkreal.so（shim dlopen 它做实际渲染；小助手会删掉可见的 vulkan.mali.so）
+			if real, err := s.hwModules(ctx, image, map[string]string{"lib64/hw/vulkan": "/vendor/lib64/hw/vulkan.mali.so"}); err == nil {
+				if lib, err := fs.ReadFile(s.cfg.Tools, "libvulkan_pp.so"); err == nil {
+					if patched, err := vkShimConfig(lib, m.GPU); err == nil {
+						dir := filepath.Join(s.phoneDir(id), "vkshim")
+						_ = os.MkdirAll(dir, 0o755)
+						p := filepath.Join(dir, "libvulkan.so")
+						if os.WriteFile(p, patched, 0o644) == nil {
+							binds = append(binds, real["lib64/hw/vulkan"]+":/vendor/lib64/hw/.vkreal.so:ro")
+							binds = append(binds, p+":/vendor/lib64/hw/vulkan."+vk+".so:ro")
+							props = append(props, "ro.hardware.vulkan="+vk)
+							done = true
+						}
+					}
+				}
+			}
+		}
+		if !done { // 退路：没转接库 / 没显卡数据，只把真驱动挂成真机的名字（显卡名还是 Mali）
+			if mods, err := s.hwModules(ctx, image, map[string]string{"lib64/hw/vulkan": "/vendor/lib64/hw/vulkan.mali.so"}); err == nil {
+				binds = append(binds, mods["lib64/hw/vulkan"]+":/vendor/lib64/hw/vulkan."+vk+".so:ro")
+				props = append(props, "ro.hardware.vulkan="+vk)
+			}
 		}
 	}
 	return binds, props, hw
+}
+
+// vkVendorID 真机显卡厂商 → Vulkan vendorID（PCI ID）。认不出返回 0（不改）。
+func vkVendorID(vendor string) uint32 {
+	switch v := strings.ToLower(vendor); {
+	case strings.Contains(v, "qualcomm"):
+		return 0x5143
+	case strings.Contains(v, "arm"):
+		return 0x13B5
+	case strings.Contains(v, "samsung"):
+		return 0x144D
+	case strings.Contains(v, "imagination") || strings.Contains(v, "powervr"):
+		return 0x1010
+	case strings.Contains(v, "nvidia"):
+		return 0x10DE
+	case strings.Contains(v, "intel"):
+		return 0x8086
+	case strings.Contains(v, "amd") || strings.Contains(v, "advanced micro"):
+		return 0x1002
+	}
+	return 0
+}
+
+// vkShimConfig 按 pp_vkshim.c 的格式改写转接库配置区：标记 "PPVKCFG1"、开关 1、deviceName(偏移 9)、vendorID(偏移 280，小端)。
+func vkShimConfig(lib []byte, g *GPUInfo) ([]byte, error) {
+	const size = 320
+	i := bytes.Index(lib, []byte("PPVKCFG1"))
+	if i < 0 || i+size > len(lib) {
+		return nil, fmt.Errorf("Vulkan 转接库里找不到配置区")
+	}
+	name := g.Renderer // Vulkan deviceName 用 GL renderer（Adreno (TM) 830 这类，和真机 Vulkan 一致）
+	if len(name) > 255 {
+		name = name[:255]
+	}
+	out := append([]byte{}, lib...)
+	area := out[i : i+size]
+	for k := 8; k < size; k++ {
+		area[k] = 0
+	}
+	area[8] = 1 // enable
+	copy(area[9:], name)
+	vid := vkVendorID(g.Vendor)
+	area[280], area[281], area[282], area[283] = byte(vid), byte(vid>>8), byte(vid>>16), byte(vid>>24)
+	return out, nil
 }
 
 // shimVulkanName 真机的 ro.hardware.vulkan；真机没设的高通机型用 adreno（总比在高通手机上写 mali 强），其余照旧 mali。
