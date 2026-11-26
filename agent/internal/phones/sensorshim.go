@@ -47,13 +47,48 @@ var (
 		sensors.Pressure: "android.hardware.sensor.barometer", sensors.Prox: "android.hardware.sensor.proximity"}
 )
 
-// sensorMask 这款机型开哪几种传感器：真机有的里我们能喂数据的（加速度总开着）；没录清单的用默认那套。
+// baseSensorFallback 兜底最小传感器集（踩坑 #166）：安卓靠 加速度 + 陀螺仪 + 磁力计 自动生成方向 / 重力 /
+// 线性加速度 / 旋转矢量 / 游戏旋转 / 地磁旋转 / 显著运动 等十几个「融合传感器」，真机就是靠这些凑到 20+ 个。
+// 个别导入机型的清单很稀（如三星 A075F 只录了 加速度 / 光线 / 距离、没陀螺仪磁力计），只注册出 3 个、像模拟器
+// （探针阈值 <10 报警）。这里把缺的基础物理传感器（加速度 / 陀螺仪 / 磁力计 / 光线 / 距离）用合理默认值补上，
+// 名字 / 厂商照机型已有传感器的来（不带模拟器字样），安卓就能生成那套融合传感器。满配机型本来就有、不受影响。
+func baseSensorFallback(picks []SensorInfo, m *Model) []SensorInfo {
+	has := map[int]bool{}
+	for _, x := range picks {
+		has[x.Type] = true
+	}
+	vendor := "QTI Sensors"
+	if m != nil {
+		for _, x := range m.Sensors {
+			if strings.TrimSpace(x.Vendor) != "" {
+				vendor = x.Vendor
+				break
+			}
+		}
+	}
+	// 类型 加速度(1) 陀螺仪(4) 磁力计(2) 光线(5) 距离(8)：量程 / 精度 / 功耗照常见真机传感器填。
+	for _, d := range []SensorInfo{
+		{Type: 1, Name: "Accelerometer", Vendor: vendor, Version: 1, MaxRange: 39.2266, Resolution: 0.0023956, Power: 0.15, MinDelay: 2404, MaxDelay: 200000},
+		{Type: 4, Name: "Gyroscope", Vendor: vendor, Version: 1, MaxRange: 34.906586, Resolution: 0.0010681, Power: 0.5, MinDelay: 2404, MaxDelay: 200000},
+		{Type: 2, Name: "Magnetometer", Vendor: vendor, Version: 1, MaxRange: 4912, Resolution: 0.0625, Power: 0.5, MinDelay: 10000, MaxDelay: 200000},
+		{Type: 5, Name: "Light", Vendor: vendor, Version: 1, MaxRange: 60000, Resolution: 1, Power: 0.15},
+		{Type: 8, Name: "Proximity", Vendor: vendor, Version: 1, MaxRange: 5, Resolution: 1, Power: 0.15, Flags: 3},
+	} {
+		if !has[d.Type] {
+			picks = append(picks, d)
+		}
+	}
+	return picks
+}
+
+// sensorMask 这款机型开哪几种传感器（喂数据的掩码）：真机录的里我们能喂数据的 + 兜底最小集（加速度 / 陀螺仪 /
+// 磁力计 / 光线 / 距离，让安卓生成融合传感器，踩坑 #166）。没录清单的用默认那套。
 func sensorMask(m *Model) uint32 {
 	if m == nil || len(m.Sensors) == 0 {
 		return sensors.DefaultMask
 	}
-	mask := uint32(1) << sensors.Accel
-	for _, x := range m.Sensors {
+	var mask uint32
+	for _, x := range baseSensorFallback(pickSensors(m.Sensors), m) {
 		if b, ok := sensorTypeBit[x.Type]; ok {
 			mask |= 1 << b
 		}
@@ -161,7 +196,7 @@ func (s *Service) sensorShimBinds(ctx context.Context, id, image string, m *Mode
 	if err != nil {
 		return nil
 	}
-	out, err := sensorShimFile(shim, inner, pickSensors(m.Sensors))
+	out, err := sensorShimFile(shim, inner, baseSensorFallback(pickSensors(m.Sensors), m))
 	if err != nil {
 		log.Printf("手机 %s：%v", id, err)
 		return nil

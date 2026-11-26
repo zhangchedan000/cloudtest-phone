@@ -9,18 +9,42 @@ import (
 )
 
 func TestSensorMaskFollowsModel(t *testing.T) {
+	// 录了 加速度/磁力计/距离/气压计/计步：气压计保留，计步(19)给不了丢掉；兜底补上缺的 陀螺仪+光线（#166）。
 	m := &Model{Sensors: []SensorInfo{{Type: 1}, {Type: 2}, {Type: 8}, {Type: 6}, {Type: 19}}}
 	mask := sensorMask(m)
-	want := uint32(1<<sensors.Accel | 1<<sensors.Mag | 1<<sensors.Prox | 1<<sensors.Pressure)
+	want := uint32(1<<sensors.Accel | 1<<sensors.Mag | 1<<sensors.Prox | 1<<sensors.Pressure | 1<<sensors.Gyro | 1<<sensors.Light)
 	if mask != want {
-		t.Fatalf("掩码 %b，应 %b（没有陀螺仪、光线、未校准版；计步 19 我们给不了）", mask, want)
+		t.Fatalf("掩码 %b，应 %b（气压计保留、计步给不了；兜底补 陀螺仪+光线）", mask, want)
 	}
 	if sensorMask(&Model{}) != sensors.DefaultMask {
 		t.Fatal("没录清单用默认")
 	}
 	f := sensorFeatures(mask)
-	if !f["android.hardware.sensor.barometer"] || f["android.hardware.sensor.gyroscope"] {
+	// 兜底后一定有基础五件套 + 录了的气压计。
+	if !f["android.hardware.sensor.barometer"] || !f["android.hardware.sensor.gyroscope"] || !f["android.hardware.sensor.compass"] {
 		t.Fatalf("特性不对：%v", f)
+	}
+}
+
+func TestBaseSensorFallback(t *testing.T) {
+	// 稀档（只有 加速度/光线/距离）：补上 陀螺仪+磁力计，凑够让安卓生成融合传感器的基础集。
+	m := &Model{Sensors: []SensorInfo{{Type: 1, Vendor: "MiraMEMS"}, {Type: 5}, {Type: 8}}}
+	got := map[int]string{}
+	for _, x := range baseSensorFallback(pickSensors(m.Sensors), m) {
+		got[x.Type] = x.Vendor
+	}
+	for _, typ := range []int{1, 2, 4, 5, 8} { // 加速度/磁力计/陀螺仪/光线/距离 都得有
+		if _, ok := got[typ]; !ok {
+			t.Fatalf("兜底后缺类型 %d：%v", typ, got)
+		}
+	}
+	if got[4] != "MiraMEMS" { // 补的用机型已有传感器的厂商
+		t.Fatalf("补的陀螺仪厂商应照机型来：%q", got[4])
+	}
+	// 满配机型不加重复：录了全套就原样。
+	full := &Model{Sensors: []SensorInfo{{Type: 1}, {Type: 2}, {Type: 4}, {Type: 5}, {Type: 8}}}
+	if n := len(baseSensorFallback(pickSensors(full.Sensors), full)); n != 5 {
+		t.Fatalf("满配不该加重复，应 5 个，得 %d", n)
 	}
 }
 
