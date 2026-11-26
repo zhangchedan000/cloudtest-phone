@@ -2,9 +2,7 @@ package phones
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"os/exec"
 	"regexp"
 	"sort"
 	"strings"
@@ -22,13 +20,10 @@ type AppInfo struct {
 	User    bool   `json:"user"` // 用户自己装的（非系统预装）
 }
 
-// phoneOut 在手机里跑命令并取标准输出（走命令小助手 / nsenter，带手机 SELinux 身份）。
+// phoneOut 在手机里跑命令并取输出。s.run 已被 phoneExecRunner 包过：开了真 SELinux 的手机会把
+// docker exec 自动改走命令小助手（带手机身份），和剪贴板 / input 一个路子（踩坑 #135）。
 func (s *Service) phoneOut(ctx context.Context, id string, args ...string) (string, error) {
-	out, err := s.phoneCommand(ctx, id, args...).Output()
-	if ee := (*exec.ExitError)(nil); errors.As(err, &ee) && len(ee.Stderr) > 0 {
-		return string(out), fmt.Errorf("%s", strings.TrimSpace(string(ee.Stderr)))
-	}
-	return string(out), err
+	return s.run.Run(ctx, "docker", append([]string{"exec", containerName(id)}, args...)...)
 }
 
 // Apps 列出手机里有桌面图标的应用（可启动的），用户自己装的排前面。
