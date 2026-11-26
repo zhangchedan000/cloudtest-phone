@@ -1,9 +1,34 @@
 package phones
 
 import (
+	"context"
 	"strings"
 	"testing"
 )
+
+func TestFakeGPUNodeOnlyAdreno(t *testing.T) {
+	r := &fakeRunner{}
+	s := &Service{run: r}
+	// 高通 Adreno 伪装档：造 /dev/kgsl-3d0（踩坑 #165）。
+	s.fakeGPUNode(context.Background(), "abc", &Model{GPU: &GPUInfo{Renderer: "Adreno (TM) 650"}})
+	if !strings.Contains(strings.Join(r.calls, "\n"), "mknod /dev/kgsl-3d0") {
+		t.Fatalf("高通档应造 kgsl 节点：\n%s", strings.Join(r.calls, "\n"))
+	}
+	// 非高通（别的 Mali、三星 Xclipse、空、无 GPU）都不造——那些机型不该有 kgsl。
+	for _, m := range []*Model{
+		{GPU: &GPUInfo{Renderer: "Mali-G720-Immortalis MC12"}},
+		{GPU: &GPUInfo{Renderer: "Samsung Xclipse 950"}},
+		{GPU: &GPUInfo{Renderer: ""}},
+		{},
+		nil,
+	} {
+		r.calls = nil
+		s.fakeGPUNode(context.Background(), "abc", m)
+		if len(r.calls) != 0 {
+			t.Fatalf("非高通 %+v 不该造 kgsl：\n%s", m, strings.Join(r.calls, "\n"))
+		}
+	}
+}
 
 func TestHostDevList(t *testing.T) {
 	ls := "__properties__ binder binderfs dri fuse input kmsg loop-control loop0 loop12 loop6p2 sda sda1 sg0 kvm vhost-net vsock vmci zfs tty tty0 tty1 tty63 ttyS0 ttyS1 ttyS3 ttyS4 ttyS31 ttyAMA0 ttyC0 vcs vcsa1 uinput uhid null zero rtc0 rfkill hidraw0 mem full port vhci goldfish_pipe mali0 mpp_service rga"

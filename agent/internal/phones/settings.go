@@ -196,6 +196,8 @@ func (s *Service) applySettings(ctx context.Context, id string) {
 	s.applyAdb(ctx, id)
 	// /dev 里服务器的硬件节点删掉（devclean.go，踩坑 #74）
 	s.cleanDev(ctx, id)
+	// 高通 Adreno 伪装档：补一个 /dev/kgsl-3d0 空壳，消掉「是高通却有 mali0、没 kgsl」的破绽（devclean.go，踩坑 #165）
+	s.fakeGPUNode(ctx, id, s.model(p.ModelID))
 	// Play Integrity（Tier A，过 BASIC）：机型标了 PlayIntegrity 的（Pixel 等认证指纹），开机后清一次 gms 数据，
 	// 让它用这台最终的指纹重新评估（照魔云腾 extservice2 的做法）。只清一次（marker 防重复）。DEVICE 判定要硬件
 	// keybox，不做（见 docs/调研/机型扩充计划.md）。指纹本身由机型的 fingerprints/buildProps 决定（build.prop 已改好）。

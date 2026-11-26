@@ -30,6 +30,30 @@ func hostDevList(ls string) []string {
 	return out
 }
 
+// fakeGPUNode 给声称高通 Adreno 的伪装档补一个 /dev/kgsl-3d0 空壳节点（开机后设置里调用，踩坑 #165）。
+// 板子真 GPU 是 Mali（设备节点 /dev/mali0），高通真机是 Adreno（/dev/kgsl-3d0）。App 不能 ls /dev（SELinux 挡），
+// 但能 stat 具体路径——「ro.hardware=qcom 却有 /dev/mali0、没有 /dev/kgsl-3d0」是常见识别点（我们自己的探针就查这个）。
+// mali0 删不掉（每个要画界面的 App 自己都要 open 它做 GPU 渲染，删了就黑屏），所以这步只补上 kgsl 节点、
+// 消掉「有 mali 没 kgsl」的组合破绽。复用 mali0 的主次设备号（指向真 Mali 驱动，App open 也能成功、更像），
+// 打 gpu_device 标签让 App 能访问。深层（kgsl 的 ioctl 行为、Adreno 专属 GL 扩展、跑分）仍是 Mali，属跨架构伪装的天花板。
+func (s *Service) fakeGPUNode(ctx context.Context, id string, m *Model) {
+	if m == nil || m.GPU == nil || !strings.Contains(strings.ToLower(m.GPU.Renderer), "adreno") {
+		return
+	}
+	name := containerName(id)
+	// mali0 在、kgsl 还没有才造；用 mali0 的设备号 mknod，chmod 666 + 打 gpu_device 标签。
+	const script = `[ -e /dev/mali0 ] || exit 0
+[ -e /dev/kgsl-3d0 ] && exit 0
+set -- $(ls -l /dev/mali0); maj=${5%,}; min=$6
+case "$maj$min" in ""|*[!0-9]*) exit 0;; esac
+mknod /dev/kgsl-3d0 c "$maj" "$min" || exit 0
+chmod 666 /dev/kgsl-3d0
+chcon u:object_r:gpu_device:s0 /dev/kgsl-3d0 2>/dev/null`
+	if out, err := s.run.Run(ctx, "docker", "exec", name, "sh", "-c", script); err != nil {
+		log.Printf("手机 %s：造 /dev/kgsl-3d0 失败：%v %s", id, err, strings.TrimSpace(out))
+	}
+}
+
 // cleanDev 删掉这台手机 /dev 里服务器硬件的节点（开机后设置里调用，失败只记日志）。
 func (s *Service) cleanDev(ctx context.Context, id string) {
 	name := containerName(id)
