@@ -44,6 +44,10 @@ type Spec struct {
 	// /sys/class/misc/mali0/device/gpuinfo——板子真内核在这里写 "Mali-G610 4 cores r0p0 0xA867"，
 	// 和伪装档声称的显卡名（GL/Vulkan 已改）对不上就露馅（踩坑 #164）。非 Mali / 空则不盖。
 	GPURenderer string
+	// GPUCoresFallback 板子真实的显卡核心数（读板子 gpuinfo 得来，Mali-G610 = 4）。renderer 里没有 MCn
+	// 核心数标注的机型（Pixel 的 Mali-G715/G78、三星 Mali-G720-Immortalis 等）用它兜底：至少把 gpuinfo
+	// 型号名盖成声称的、核心数用板子真实的（反正性能就是板子那几个核），免得只因缺 MCn 就还露「Mali-G610」。
+	GPUCoresFallback int
 }
 
 // File 一个伪造文件：容器里的路径 → 内容。
@@ -134,7 +138,7 @@ func Build(s Spec) ([]File, error) {
 	// 显卡 gpuinfo：盖住板子真内核报的 "Mali-G610 4 cores r0p0 0xA867"（踩坑 #164）。
 	// /sys/class/misc/mali0/device 是软链，bind 到这条稳定路径即盖住真实 inode（/sys/devices/platform/<地址>.gpu/gpuinfo），
 	// 两条读法都生效；标签 sysfs（App 可读）由小助手照新挂 sysfs 同路径补（label.go）。
-	if gi := MaliGPUInfo(s.GPURenderer); gi != "" {
+	if gi := MaliGPUInfo(s.GPURenderer, s.GPUCoresFallback); gi != "" {
 		files = append(files, File{Target: "/sys/class/misc/mali0/device/gpuinfo", Name: "gpuinfo", Content: gi})
 	}
 	return files, nil
@@ -152,24 +156,24 @@ var (
 )
 
 // MaliGPUInfo 按机型声称的显卡名（GL renderer）生成 /sys/.../mali0/device/gpuinfo 内容，盖掉板子真实值。
-// 格式照板子内核 kbase 驱动："Mali-<型号> <核心数> cores [r0p0 0x<产品ID>]"。核心数从 renderer 的 MCn/MPn 取
-// （天玑机型的 renderer 都带，如 "Mali-G720-Immortalis MC12" → 12 核）；产品 ID 只对认得的同代 Valhall 写
-// （认不出就省掉 ID 尾巴，真机不同内核版本格式本就有出入，比写错 ID 稳）。renderer 不是 Mali（高通 Adreno 等）
-// 返回空——那种机型压根不该有 mali0 节点，是另一层更深的问题，不在这造 Mali 内容。核心数解析不出也返回空
-// （只改型号、核心数还露板子的 4，反而更矛盾）。
-func MaliGPUInfo(renderer string) string {
+// 格式照板子内核 kbase 驱动："Mali-<型号> <核心数> cores [r0p0 0x<产品ID>]"。核心数先从 renderer 的 MCn/MPn 取
+// （天玑机型的 renderer 都带，如 "Mali-G720-Immortalis MC12" → 12 核）；没带的（Pixel 的 Mali-G715/G78、
+// 三星 Mali-G720-Immortalis 等）用 fallbackCores（板子真实核心数）兜底——至少把型号名盖对，别因缺 MCn 还露板子
+// 的「Mali-G610」。产品 ID 只对认得的同代 Valhall 写（认不出就省掉，真机不同内核版本格式本就有出入，比写错 ID 稳）。
+// renderer 不是 Mali（高通 Adreno 等）返回空——那种机型压根不该有 mali0 节点，是另一层更深的问题，不在这造 Mali 内容。
+// 核心数既解析不出、也没 fallback 返回空（只改型号、核心数空着格式不对）。
+func MaliGPUInfo(renderer string, fallbackCores int) string {
 	if !strings.Contains(renderer, "Mali-") {
 		return ""
 	}
-	cm := reMaliCores.FindStringSubmatch(renderer)
-	if cm == nil {
-		return ""
+	cores := fallbackCores
+	if cm := reMaliCores.FindStringSubmatch(renderer); cm != nil {
+		cores, _ = strconv.Atoi(cm[1])
 	}
-	cores, _ := strconv.Atoi(cm[1])
 	if cores <= 0 {
 		return ""
 	}
-	name := strings.TrimSpace(reMaliSuffix.ReplaceAllString(renderer, "")) // 去掉 " MC12" 后缀 → "Mali-G720-Immortalis"
+	name := strings.TrimSpace(reMaliSuffix.ReplaceAllString(renderer, "")) // 去掉 " MC12" 后缀 → "Mali-G720-Immortalis"（没 MCn 的原样留）
 	line := fmt.Sprintf("%s %d cores", name, cores)
 	if mm := reMaliModel.FindStringSubmatch(name); mm != nil {
 		if id, ok := maliGPUID[mm[1]]; ok {

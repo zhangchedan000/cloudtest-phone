@@ -85,18 +85,25 @@ func TestBootID(t *testing.T) {
 
 func TestMaliGPUInfo(t *testing.T) {
 	// 盖掉板子真实 "Mali-G610 4 cores r0p0 0xA867"：型号+核心数从 renderer 解析，同代 Valhall 带产品 ID（踩坑 #164）。
-	cases := []struct{ renderer, want string }{
-		{"Mali-G720-Immortalis MC12", "Mali-G720-Immortalis 12 cores\n"}, // G720 第五代无可靠 ID，只写型号+核心数
-		{"Mali-G610 MC6", "Mali-G610 6 cores r0p0 0xA867\n"},             // 一致档：核心数按声称 6（板子物理 4）
-		{"Mali-G52 MC2", "Mali-G52 2 cores\n"},
-		{"Mali-G710 MC10", "Mali-G710 10 cores r0p0 0xA862\n"},
-		{"Adreno (TM) 830", ""}, // 非 Mali 不造（不该有 mali0 节点，是更深的问题）
-		{"Mali-G68", ""},        // 没 MCn、核心数未知，不造（免得只改名字、核心数还露 4）
-		{"", ""},
+	cases := []struct {
+		renderer string
+		fallback int
+		want     string
+	}{
+		{"Mali-G720-Immortalis MC12", 4, "Mali-G720-Immortalis 12 cores\n"}, // 有 MCn，用 12（不用 fallback）；G720 第五代无可靠 ID
+		{"Mali-G610 MC6", 4, "Mali-G610 6 cores r0p0 0xA867\n"},             // 一致档：核心数按声称 6（板子物理 4）
+		{"Mali-G52 MC2", 4, "Mali-G52 2 cores\n"},
+		{"Mali-G710 MC10", 4, "Mali-G710 10 cores r0p0 0xA862\n"},
+		{"Mali-G715", 4, "Mali-G715 4 cores\n"},                       // 无 MCn：至少盖对型号名，核心数用板子真实的 4（Pixel 8）
+		{"Mali-G78", 4, "Mali-G78 4 cores\n"},                         // 无 MCn：Pixel 6
+		{"Mali-G720-Immortalis", 4, "Mali-G720-Immortalis 4 cores\n"}, // 无 MCn 的三星 G720
+		{"Adreno (TM) 830", 4, ""},                                    // 非 Mali 不造（不该有 mali0 节点，是更深的问题）
+		{"Mali-G68", 0, ""},                                           // 无 MCn 且无 fallback（开发机没板子 gpuinfo）：不造
+		{"", 4, ""},
 	}
 	for _, c := range cases {
-		if got := MaliGPUInfo(c.renderer); got != c.want {
-			t.Errorf("MaliGPUInfo(%q) = %q，要 %q", c.renderer, got, c.want)
+		if got := MaliGPUInfo(c.renderer, c.fallback); got != c.want {
+			t.Errorf("MaliGPUInfo(%q,%d) = %q，要 %q", c.renderer, c.fallback, got, c.want)
 		}
 	}
 	// Build 里按 GPURenderer 生成，盖到 /sys/class/misc/mali0/device/gpuinfo。

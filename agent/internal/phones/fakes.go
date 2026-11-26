@@ -9,7 +9,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -129,8 +131,10 @@ func (s *Service) prepareFakes(p store.Phone, st store.State) (bool, error) {
 		spec.DeviceTreeCompatible = socVendor(str(byKey["socManufacturer"]), soc) + "," + soc
 	}
 	// 显卡 gpuinfo：机型声称的显卡名（和 GL/Vulkan 转接库同一份 renderer），盖住板子真实的 Mali-G610 4 核（踩坑 #164）。
+	// renderer 没带 MCn 核心数的机型，用板子真实核心数兜底（读板子 gpuinfo 的「N cores」；开发机没这文件就是 0、不兜底）。
 	if m := s.model(p.ModelID); m != nil && m.GPU != nil {
 		spec.GPURenderer = m.GPU.Renderer
+		spec.GPUCoresFallback = boardGPUCores(readHost("/sys/class/misc/mali0/device/gpuinfo"))
 	}
 	files, err := fakefs.Build(spec)
 	if err != nil {
@@ -149,6 +153,15 @@ func (s *Service) prepareFakes(p store.Phone, st store.State) (bool, error) {
 	}
 	raw, _ := json.MarshalIndent(manifest, "", "  ")
 	return true, os.WriteFile(filepath.Join(s.fakeDir(p.ID), "..", "fake-targets.json"), raw, 0o644)
+}
+
+// boardGPUCores 从板子真实 gpuinfo（"Mali-G610 4 cores r0p0 0xA867"）里取核心数。取不到返回 0。
+func boardGPUCores(gpuinfo string) int {
+	if m := regexp.MustCompile(`(\d+)\s+cores`).FindStringSubmatch(gpuinfo); m != nil {
+		n, _ := strconv.Atoi(m[1])
+		return n
+	}
+	return 0
 }
 
 func (s *Service) hostCPUs() int {
