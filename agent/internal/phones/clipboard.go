@@ -28,11 +28,18 @@ import (
 var clipDex []byte
 
 // clipWrapper 在容器里补上 app_process 需要的环境变量再运行小程序。
+//
+// 踩坑 #171：开了真 SELinux 的手机，命令走命令小助手（pp-cmdc），而小助手是开机很早（pp-timens 加载完规则、
+// 安卓还没起来时）拉起的，卡在安卓的「bootstrap」挂载命名空间里——ART 这些 apex 是开机后期才挂的，它看不到，
+// app_process 链接 libnativeloader.so 直接失败（剪贴板、中文输入全废）。所以先用 nsenter 切到 1 号进程（init 当前）
+// 的「正式」挂载视图再跑 app_process；有 nsenter 才切，没有就直接跑（非 SELinux 手机走 docker exec，本来就在正式视图里）。
 const clipWrapper = `for f in /init.environ.rc /data/system/environ/classpath; do
   while read -r k n v; do [ "$k" = export ] && export "$n=$v"; done < "$f"
 done
 export CLASSPATH="$PP_CLIP_DEX"
-exec app_process / Clip "$@"
+NS=
+command -v nsenter >/dev/null 2>&1 && NS="nsenter --mount=/proc/1/ns/mnt --"
+exec $NS app_process / Clip "$@"
 `
 
 // MaxClipboard 一次最多传多少字节的文字。

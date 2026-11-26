@@ -2,7 +2,7 @@ import {
   AppstoreAddOutlined, AppstoreOutlined, ArrowLeftOutlined, BorderOutlined, CameraOutlined, CodeOutlined, CopyOutlined, DeleteOutlined, EditOutlined, HomeOutlined, MoreOutlined,
   PoweroffOutlined, RedoOutlined, ReloadOutlined, RotateRightOutlined, SoundOutlined, UploadOutlined, VideoCameraOutlined
 } from '@ant-design/icons'
-import { App, Button, Descriptions, Drawer, Dropdown, Empty, Input, List, Modal, Popover, Select, Space, Spin, Switch, Tabs, Tag, Tooltip } from 'antd'
+import { App, Avatar, Button, Descriptions, Drawer, Dropdown, Empty, Input, List, Modal, Popover, Select, Space, Spin, Switch, Tabs, Tag, Tooltip } from 'antd'
 import { api, getClipboard, openRawScreenshot, serverUrl, setClipboard, upload, type InputRequest } from '@/data/api'
 import { useEffect, useRef, useState } from 'react'
 import { PhoneScreen } from '@/components/PhoneScreen'
@@ -322,45 +322,52 @@ const APP_NAMES: Record<string, string> = {
   'com.instagram.android': 'Instagram', 'com.zhiliaoapp.musically': 'TikTok', 'com.ss.android.ugc.trill': 'TikTok',
   'com.twitter.android': 'X (Twitter)', 'com.google.android.googlequicksearchbox': 'Google', 'com.android.soundrecorder': '录音机'
 }
-function appName(pkg: string): string {
+type AppItem = { package: string; name: string; activity?: string; user: boolean; icon?: string }
+/** 显示名：常见 App 用友好中文名，否则用手机里真正的标签，再兜底包名末段。 */
+function appName(a: AppItem | string): string {
+  const pkg = typeof a === 'string' ? a : a.package
   if (APP_NAMES[pkg]) return APP_NAMES[pkg]
+  if (typeof a !== 'string' && a.name && a.name !== pkg) return a.name
   const seg = pkg.split('.').filter((s) => !['android', 'com', 'app', 'apps', 'google'].includes(s)).pop() ?? pkg
   return seg.charAt(0).toUpperCase() + seg.slice(1)
 }
 
-/** 应用列表：列出手机里有桌面图标的 App，一键打开 / 卸载（2026-11-26 用户要求，对齐魔云腾）。 */
+/** 应用列表：列出手机里有桌面图标的 App，图标 + 名字，一键打开 / 卸载（2026-11-26 用户要求，对齐魔云腾）。 */
 function AppsDialog({ open, phoneId, onClose }: { open: boolean; phoneId: string; onClose: () => void }) {
   const { message, modal } = App.useApp()
-  const [apps, setApps] = useState<{ package: string; user: boolean }[] | null>(null)
+  const [apps, setApps] = useState<AppItem[] | null>(null)
   const [busy, setBusy] = useState('')
   const load = () => {
     setApps(null)
     void api.apps(phoneId).then((r) => setApps(r.apps ?? [])).catch((e: Error) => { message.error(e.message); setApps([]) })
   }
   useEffect(() => { if (open) load() }, [open, phoneId]) // eslint-disable-line react-hooks/exhaustive-deps
-  const act = async (action: 'launch' | 'uninstall', pkg: string) => {
-    setBusy(action + pkg)
+  const act = async (action: 'launch' | 'uninstall', a: AppItem) => {
+    setBusy(action + a.package)
     try {
-      await api.appAction(phoneId, action, pkg)
-      if (action === 'launch') { message.success(`已打开 ${appName(pkg)}`); onClose() } else { message.success('已卸载'); load() }
+      await api.appAction(phoneId, action, a.package, a.activity)
+      if (action === 'launch') { message.success(`已打开 ${appName(a)}`); onClose() } else { message.success('已卸载'); load() }
     } catch (e) { message.error((e as Error).message) } finally { setBusy('') }
   }
   return (
     <Modal open={open} onCancel={onClose} footer={null} destroyOnHidden width={440}
       title={<Space>应用列表<Button size="small" icon={<ReloadOutlined />} onClick={load}>刷新</Button></Space>}>
-      {apps === null ? <div className="pp-center" style={{ padding: 40 }}><Spin /></div>
+      {apps === null ? <div className="pp-center" style={{ padding: 40 }}><Spin tip="读取应用中…"><div style={{ padding: 20 }} /></Spin></div>
         : apps.length === 0 ? <Empty description="没拿到应用列表（手机刚开机或没装 App）" />
           : <List size="small" dataSource={apps} style={{ maxHeight: '60vh', overflow: 'auto' }}
             renderItem={(a) => (
               <List.Item actions={[
-                <Button key="o" size="small" type="link" loading={busy === 'launch' + a.package} onClick={() => void act('launch', a.package)}>打开</Button>,
+                <Button key="o" size="small" type="link" loading={busy === 'launch' + a.package} onClick={() => void act('launch', a)}>打开</Button>,
                 <Button key="u" size="small" type="link" danger icon={<DeleteOutlined />} loading={busy === 'uninstall' + a.package}
-                  onClick={() => modal.confirm({ title: `卸载 ${appName(a.package)}？`, content: a.package, okButtonProps: { danger: true }, onOk: () => act('uninstall', a.package) })} />
+                  onClick={() => modal.confirm({ title: `卸载 ${appName(a)}？`, content: a.package, okButtonProps: { danger: true }, onOk: () => act('uninstall', a) })} />
               ]}>
-                <List.Item.Meta title={<Space>{appName(a.package)}{a.user && <Tag color="blue">装的</Tag>}</Space>} description={<span className="pp-muted pp-small">{a.package}</span>} />
+                <List.Item.Meta
+                  avatar={<Avatar shape="square" size={40} src={a.icon} style={a.icon ? undefined : { background: '#1677ff' }}>{appName(a).charAt(0)}</Avatar>}
+                  title={<Space size={6}>{appName(a)}{a.user && <Tag color="blue">装的</Tag>}</Space>}
+                  description={<span className="pp-muted pp-small">{a.package}</span>} />
               </List.Item>
             )} />}
-      <p className="pp-muted pp-small" style={{ marginTop: 8 }}>蓝色「装的」= 你自己安装的；其余系统自带。名字 / 图标后续优化（暂取不到 APK 里的中文名和图标）。</p>
+      <p className="pp-muted pp-small" style={{ marginTop: 8 }}>蓝色「装的」= 你自己安装的；其余系统自带。</p>
     </Modal>
   )
 }

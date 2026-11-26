@@ -588,7 +588,8 @@ func (s *Server) setClipboard(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) listApps(w http.ResponseWriter, r *http.Request) {
-	apps, err := s.svc.Apps(r.Context(), r.PathValue("id"))
+	// 默认带图标；?icons=0 可以只要名字（快）。
+	apps, err := s.svc.Apps(r.Context(), r.PathValue("id"), r.URL.Query().Get("icons") != "0")
 	if err != nil {
 		fail(w, err)
 		return
@@ -598,8 +599,9 @@ func (s *Server) listApps(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) appAction(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Action  string `json:"action"`
-		Package string `json:"package"`
+		Action   string `json:"action"`
+		Package  string `json:"package"`
+		Activity string `json:"activity"`
 	}
 	if err := decode(r, &req); err != nil {
 		fail(w, err)
@@ -609,7 +611,7 @@ func (s *Server) appAction(w http.ResponseWriter, r *http.Request) {
 	var err error
 	switch req.Action {
 	case "launch":
-		err = s.svc.LaunchApp(r.Context(), id, req.Package)
+		err = s.svc.LaunchApp(r.Context(), id, req.Package, req.Activity)
 	case "uninstall":
 		err = s.svc.UninstallApp(r.Context(), id, req.Package)
 	default:
