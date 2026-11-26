@@ -83,6 +83,42 @@ func TestBootID(t *testing.T) {
 	t.Fatal("没有 boot_id")
 }
 
+func TestMaliGPUInfo(t *testing.T) {
+	// 盖掉板子真实 "Mali-G610 4 cores r0p0 0xA867"：型号+核心数从 renderer 解析，同代 Valhall 带产品 ID（踩坑 #164）。
+	cases := []struct{ renderer, want string }{
+		{"Mali-G720-Immortalis MC12", "Mali-G720-Immortalis 12 cores\n"}, // G720 第五代无可靠 ID，只写型号+核心数
+		{"Mali-G610 MC6", "Mali-G610 6 cores r0p0 0xA867\n"},             // 一致档：核心数按声称 6（板子物理 4）
+		{"Mali-G52 MC2", "Mali-G52 2 cores\n"},
+		{"Mali-G710 MC10", "Mali-G710 10 cores r0p0 0xA862\n"},
+		{"Adreno (TM) 830", ""}, // 非 Mali 不造（不该有 mali0 节点，是更深的问题）
+		{"Mali-G68", ""},        // 没 MCn、核心数未知，不造（免得只改名字、核心数还露 4）
+		{"", ""},
+	}
+	for _, c := range cases {
+		if got := MaliGPUInfo(c.renderer); got != c.want {
+			t.Errorf("MaliGPUInfo(%q) = %q，要 %q", c.renderer, got, c.want)
+		}
+	}
+	// Build 里按 GPURenderer 生成，盖到 /sys/class/misc/mali0/device/gpuinfo。
+	files, _ := Build(Spec{GPURenderer: "Mali-G720-Immortalis MC12"})
+	var got string
+	for _, f := range files {
+		if f.Target == "/sys/class/misc/mali0/device/gpuinfo" {
+			got = f.Content
+		}
+	}
+	if got != "Mali-G720-Immortalis 12 cores\n" {
+		t.Fatalf("gpuinfo 文件没生成对：%q", got)
+	}
+	// 非 Mali 不生成 gpuinfo 文件。
+	files2, _ := Build(Spec{GPURenderer: "Adreno (TM) 830"})
+	for _, f := range files2 {
+		if strings.Contains(f.Target, "gpuinfo") {
+			t.Errorf("高通机型不该生成 gpuinfo：%s", f.Target)
+		}
+	}
+}
+
 func TestDeviceTreeMasking(t *testing.T) {
 	// 盖住宿主机真板子的 /proc/device-tree model/compatible（Linux Q1 / rockchip,rk3588，踩坑 #157）。
 	files, err := Build(Spec{DeviceTreeModel: "Phone (2a)", DeviceTreeCompatible: "mediatek,mt6886"})

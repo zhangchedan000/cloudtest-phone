@@ -128,6 +128,10 @@ func (s *Service) prepareFakes(p store.Phone, st store.State) (bool, error) {
 	if soc := strings.ToLower(strings.TrimSpace(str(byKey["boardPlatform"]))); hwNameRe.MatchString(soc) && !strings.HasPrefix(soc, "rk3") {
 		spec.DeviceTreeCompatible = socVendor(str(byKey["socManufacturer"]), soc) + "," + soc
 	}
+	// 显卡 gpuinfo：机型声称的显卡名（和 GL/Vulkan 转接库同一份 renderer），盖住板子真实的 Mali-G610 4 核（踩坑 #164）。
+	if m := s.model(p.ModelID); m != nil && m.GPU != nil {
+		spec.GPURenderer = m.GPU.Renderer
+	}
 	files, err := fakefs.Build(spec)
 	if err != nil {
 		return false, err

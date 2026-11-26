@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 )
@@ -39,6 +40,10 @@ type Spec struct {
 	// 留空就不盖。值是设备树属性，按 NUL 结尾字符串写（compatible 可含多段，用 \x00 分隔）。
 	DeviceTreeModel      string
 	DeviceTreeCompatible string
+	// GPURenderer 机型声称的显卡名（GL renderer，如 "Mali-G720-Immortalis MC12"）。盖住
+	// /sys/class/misc/mali0/device/gpuinfo——板子真内核在这里写 "Mali-G610 4 cores r0p0 0xA867"，
+	// 和伪装档声称的显卡名（GL/Vulkan 已改）对不上就露馅（踩坑 #164）。非 Mali / 空则不盖。
+	GPURenderer string
 }
 
 // File 一个伪造文件：容器里的路径 → 内容。
@@ -126,7 +131,52 @@ func Build(s Spec) ([]File, error) {
 			File{Target: "/proc/device-tree/" + dt.base, Name: "dt_" + dt.base + "_proc", Content: content},
 		)
 	}
+	// 显卡 gpuinfo：盖住板子真内核报的 "Mali-G610 4 cores r0p0 0xA867"（踩坑 #164）。
+	// /sys/class/misc/mali0/device 是软链，bind 到这条稳定路径即盖住真实 inode（/sys/devices/platform/<地址>.gpu/gpuinfo），
+	// 两条读法都生效；标签 sysfs（App 可读）由小助手照新挂 sysfs 同路径补（label.go）。
+	if gi := MaliGPUInfo(s.GPURenderer); gi != "" {
+		files = append(files, File{Target: "/sys/class/misc/mali0/device/gpuinfo", Name: "gpuinfo", Content: gi})
+	}
 	return files, nil
+}
+
+// maliGPUID 和板子（RK3588 = Mali-G610 → 0xA867）同代的 Valhall 显卡产品 ID：
+// 按 Linux panthor 驱动的 GPU_PROD_ID 表推（低位 product_major：G610=7/G710=2/G510=3/G310=4，高位同板子 0xA86）。
+// 别代（G720/G925 第五代 Immortalis、老的 G52/G57/G77……）公开值不可靠，不写 ID，只写型号+核心数。
+var maliGPUID = map[string]string{"G310": "0xA864", "G510": "0xA863", "G610": "0xA867", "G710": "0xA862"}
+
+var (
+	reMaliCores  = regexp.MustCompile(`M[CP](\d+)`)     // 核心数：MC12 / MP4
+	reMaliModel  = regexp.MustCompile(`Mali-(G\d+)`)    // 基础型号：G610
+	reMaliSuffix = regexp.MustCompile(`\s*M[CP]\d+.*$`) // " MC12" 及其后缀
+)
+
+// MaliGPUInfo 按机型声称的显卡名（GL renderer）生成 /sys/.../mali0/device/gpuinfo 内容，盖掉板子真实值。
+// 格式照板子内核 kbase 驱动："Mali-<型号> <核心数> cores [r0p0 0x<产品ID>]"。核心数从 renderer 的 MCn/MPn 取
+// （天玑机型的 renderer 都带，如 "Mali-G720-Immortalis MC12" → 12 核）；产品 ID 只对认得的同代 Valhall 写
+// （认不出就省掉 ID 尾巴，真机不同内核版本格式本就有出入，比写错 ID 稳）。renderer 不是 Mali（高通 Adreno 等）
+// 返回空——那种机型压根不该有 mali0 节点，是另一层更深的问题，不在这造 Mali 内容。核心数解析不出也返回空
+// （只改型号、核心数还露板子的 4，反而更矛盾）。
+func MaliGPUInfo(renderer string) string {
+	if !strings.Contains(renderer, "Mali-") {
+		return ""
+	}
+	cm := reMaliCores.FindStringSubmatch(renderer)
+	if cm == nil {
+		return ""
+	}
+	cores, _ := strconv.Atoi(cm[1])
+	if cores <= 0 {
+		return ""
+	}
+	name := strings.TrimSpace(reMaliSuffix.ReplaceAllString(renderer, "")) // 去掉 " MC12" 后缀 → "Mali-G720-Immortalis"
+	line := fmt.Sprintf("%s %d cores", name, cores)
+	if mm := reMaliModel.FindStringSubmatch(name); mm != nil {
+		if id, ok := maliGPUID[mm[1]]; ok {
+			line += " r0p0 " + id
+		}
+	}
+	return line + "\n"
 }
 
 // ProcVersion 按安卓 GKI 内核的真实格式拼 /proc/version。编译器版本跟内核分支对应。
