@@ -296,6 +296,17 @@ type CreateRequest struct {
 
 var ErrInvalid = errors.New("参数不对")
 
+// modelMinVersion 机型出厂（最低）的安卓版本（androidVersions 里最小的），没录返回 0。
+func modelMinVersion(m *Model) int {
+	min := 0
+	for _, v := range m.AndroidVersions {
+		if v > 0 && (min == 0 || v < min) {
+			min = v
+		}
+	}
+	return min
+}
+
 func (s *Service) Create(req CreateRequest) (store.Phone, error) {
 	m := s.model(req.ModelID)
 	if m == nil {
@@ -306,6 +317,16 @@ func (s *Service) Create(req CreateRequest) (store.Phone, error) {
 	}
 	if req.Gapps && s.cfg.GappsImages[req.AndroidVersion] == "" {
 		return store.Phone{}, fmt.Errorf("%w：这台机器没装 Android %d 的谷歌服务镜像（先运行 host/build-gapps-image.sh）", ErrInvalid, req.AndroidVersion)
+	}
+	// 机型是比所选镜像更新的安卓版本的机器（如 PKB110 出厂安卓16），建成更老的版本时：真机指纹 / 分区属性套不上
+	// （机型库只录了它出厂那个版本的），而且老镜像的 libvintf / GPU 驱动把「更新的安卓版本」转内部 Level 枚举会越界
+	// → system_server 崩溃循环、开不了机（踩坑 #167）。挡住，提示用它出厂的版本或更高。
+	if min := modelMinVersion(m); min > 0 && req.AndroidVersion < min {
+		name := m.Market
+		if name == "" {
+			name = req.ModelID
+		}
+		return store.Phone{}, fmt.Errorf("%w：机型「%s」是安卓 %d 的机器，建不了更老的安卓 %d（请选安卓 %d 或更高）", ErrInvalid, name, min, req.AndroidVersion, min)
 	}
 	if strings.TrimSpace(req.Name) == "" {
 		return store.Phone{}, fmt.Errorf("%w：名称不能为空", ErrInvalid)

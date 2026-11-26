@@ -45,3 +45,15 @@ func TestHostDevList(t *testing.T) {
 		}
 	}
 }
+
+func TestModelMinVersion(t *testing.T) {
+	if got := modelMinVersion(&Model{AndroidVersions: []int{16}}); got != 16 {
+		t.Fatalf("PKB110 出厂版本应 16，得 %d", got)
+	}
+	if got := modelMinVersion(&Model{AndroidVersions: []int{14, 15, 16}}); got != 14 {
+		t.Fatalf("多版本取最小 14，得 %d", got)
+	}
+	if got := modelMinVersion(&Model{}); got != 0 {
+		t.Fatalf("没录版本返回 0，得 %d", got)
+	}
+}
