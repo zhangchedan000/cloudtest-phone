@@ -322,11 +322,7 @@ func (s *Service) Create(req CreateRequest) (store.Phone, error) {
 	// （机型库只录了它出厂那个版本的），而且老镜像的 libvintf / GPU 驱动把「更新的安卓版本」转内部 Level 枚举会越界
 	// → system_server 崩溃循环、开不了机（踩坑 #167）。挡住，提示用它出厂的版本或更高。
 	if min := modelMinVersion(m); min > 0 && req.AndroidVersion < min {
-		name := m.Market
-		if name == "" {
-			name = req.ModelID
-		}
-		return store.Phone{}, fmt.Errorf("%w：机型「%s」是安卓 %d 的机器，建不了更老的安卓 %d（请选安卓 %d 或更高）", ErrInvalid, name, min, req.AndroidVersion, min)
+		return store.Phone{}, fmt.Errorf("%w：机型 %s 是安卓 %d 的机器，建不了更老的安卓 %d（请选安卓 %d 或更高）", ErrInvalid, req.ModelID, min, req.AndroidVersion, min)
 	}
 	if strings.TrimSpace(req.Name) == "" {
 		return store.Phone{}, fmt.Errorf("%w：名称不能为空", ErrInvalid)
