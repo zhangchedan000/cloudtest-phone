@@ -79,3 +79,23 @@ func TestShimVulkanName(t *testing.T) {
 		t.Errorf("一致档 → %q", got)
 	}
 }
+
+// vkHALName：Vulkan 转接库挂成哪个文件名。联发科 / Mali 机型照旧 mali（盖在 vulkan.mali.so 上，仍改 deviceName，
+// 踩坑 #163）；高通 adreno；没显卡数据返回空。
+func TestVkHALName(t *testing.T) {
+	cases := []struct {
+		g    *GPUInfo
+		want string
+	}{
+		{&GPUInfo{Vendor: "ARM", Vulkan: "mali", Renderer: "Mali-G720-Immortalis MC12"}, "mali"}, // PHZ110：以前被跳过
+		{&GPUInfo{Vendor: "ARM", Renderer: "Mali-G52"}, "mali"},                                  // 没录 vulkan 名也盖 mali
+		{&GPUInfo{Vendor: "Qualcomm", Vulkan: "adreno", Renderer: "Adreno (TM) 830"}, "adreno"},  // 高通改名
+		{&GPUInfo{Vendor: "Qualcomm", Renderer: "Adreno (TM) 750"}, "adreno"},
+		{nil, ""},
+	}
+	for _, c := range cases {
+		if got := vkHALName(&Model{GPU: c.g}); got != c.want {
+			t.Errorf("%+v → %q，应该是 %q", c.g, got, c.want)
+		}
+	}
+}

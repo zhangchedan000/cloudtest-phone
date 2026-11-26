@@ -138,13 +138,17 @@ func (s *Service) disguiseBinds(ctx context.Context, id, image string, m *Model,
 			}
 		}
 	}
-	// 3. Vulkan（超越魔云腾——它的 Vulkan 没伪装）：转接库挂成真机的 vulkan 名字，ro.hardware.vulkan 指过去。
-	// 转接库 dlopen 真 Mali 驱动做实际渲染，只拦 vkGetPhysicalDeviceProperties(2) 把 deviceName/vendorID 换成真机的。
-	// 有真机显卡字符串（伪装档）才上转接库；没有就退回「只改名字、不伪装显卡名」（和以前一样）。标签由小助手补 same_process_hal_file（phonecmd/label.go）
-	if vk := shimVulkanName(m); vk != "" && vk != "mali" {
+	// 3. Vulkan（超越魔云腾——它的 Vulkan 没伪装）：有真机显卡串就上转接库，拦 vkGetPhysicalDeviceProperties(2)
+	// 把 deviceName / vendorID 换成真机的。转接库挂在 vulkan.<HAL名>.so 上、dlopen 真 Mali 驱动做实际渲染。
+	// 关键坑（#163）：联发科 / 别的 Mali 机型的 Vulkan HAL 名本来就是 mali（不像 GL 的 egl 会兜底成 meow），以前
+	// 「vk=="mali" 就整段跳过」→ GL 名改成了假 G720、Vulkan deviceName 却还露真 Mali-G610。其实该盖在 vulkan.mali.so
+	// 上照改 deviceName、ro.hardware.vulkan 照旧 mali（只有一个 vulkan.*.so，小助手不会误删）；只有 HAL 名真换了
+	// （高通 adreno 等）才改 prop。标签由小助手补 same_process_hal_file（phonecmd/label.go）。
+	if m.GPU != nil && m.GPU.Renderer != "" {
+		hal := vkHALName(m) // 绑定文件名：mali（联发科等 Mali 机型，不改 prop）/ adreno（高通，改 prop）……
 		done := false
-		if m.GPU != nil && m.GPU.Renderer != "" && s.cfg.Tools != nil {
-			// 真 Mali 驱动挂到隐藏点文件 .vkreal.so（shim dlopen 它做实际渲染；小助手会删掉可见的 vulkan.mali.so）
+		if s.cfg.Tools != nil {
+			// 真 Mali 驱动挂到隐藏点文件 .vkreal.so（shim dlopen 它做实际渲染）
 			if real, err := s.hwModules(ctx, image, map[string]string{"lib64/hw/vulkan": "/vendor/lib64/hw/vulkan.mali.so"}); err == nil {
 				if lib, err := fs.ReadFile(s.cfg.Tools, "libvulkan_pp.so"); err == nil {
 					if patched, err := vkShimConfig(lib, m.GPU); err == nil {
@@ -153,18 +157,20 @@ func (s *Service) disguiseBinds(ctx context.Context, id, image string, m *Model,
 						p := filepath.Join(dir, "libvulkan.so")
 						if os.WriteFile(p, patched, 0o644) == nil {
 							binds = append(binds, real["lib64/hw/vulkan"]+":/vendor/lib64/hw/.vkreal.so:ro")
-							binds = append(binds, p+":/vendor/lib64/hw/vulkan."+vk+".so:ro")
-							props = append(props, "ro.hardware.vulkan="+vk)
+							binds = append(binds, p+":/vendor/lib64/hw/vulkan."+hal+".so:ro")
+							if hal != "mali" { // HAL 名真换了才改 prop；联发科照旧 mali（镜像本来就是 mali）
+								props = append(props, "ro.hardware.vulkan="+hal)
+							}
 							done = true
 						}
 					}
 				}
 			}
 		}
-		if !done { // 退路：没转接库 / 没显卡数据，只把真驱动挂成真机的名字（显卡名还是 Mali）
+		if !done && hal != "mali" { // 退路：没转接库又要换 HAL 名，只把真驱动挂成真机的名字（显卡名还是 Mali）
 			if mods, err := s.hwModules(ctx, image, map[string]string{"lib64/hw/vulkan": "/vendor/lib64/hw/vulkan.mali.so"}); err == nil {
-				binds = append(binds, mods["lib64/hw/vulkan"]+":/vendor/lib64/hw/vulkan."+vk+".so:ro")
-				props = append(props, "ro.hardware.vulkan="+vk)
+				binds = append(binds, mods["lib64/hw/vulkan"]+":/vendor/lib64/hw/vulkan."+hal+".so:ro")
+				props = append(props, "ro.hardware.vulkan="+hal)
 			}
 		}
 	}
@@ -227,6 +233,19 @@ func shimVulkanName(m *Model) string {
 		return "adreno"
 	}
 	return ""
+}
+
+// vkHALName 转接库挂成哪个 Vulkan HAL 文件名（安卓按 ro.hardware.vulkan 找 vulkan.<名>.so）：真机录了非 mali 的名字
+// 或高通机型用它（adreno 等，同时改 ro.hardware.vulkan）；其余 Mali 机型照旧 mali——直接盖在镜像自带的 vulkan.mali.so
+// 上，deviceName 照样改，ro.hardware.vulkan 不用动（踩坑 #163）。只在有真机显卡串时用到。
+func vkHALName(m *Model) string {
+	if m == nil || m.GPU == nil {
+		return ""
+	}
+	if v := shimVulkanName(m); v != "" {
+		return v
+	}
+	return "mali"
 }
 
 // hwModules 从镜像里取几个文件（files：缓存名 → 镜像里的路径），缓存在数据目录里。返回 缓存名 → 宿主机文件（镜像里没有的不返回）。
