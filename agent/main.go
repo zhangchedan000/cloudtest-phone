@@ -68,6 +68,7 @@ func main() {
 		runSensors()
 	}
 	listen := flag.String("listen", "127.0.0.1:8099", "监听地址（默认只监听本机，外部访问走 HTTPS 反向代理或 SSH 隧道）")
+	tlsListen := flag.String("tls-listen", "", "额外的 HTTPS 监听地址（如 0.0.0.0:8443），空=不开。自签证书自动生成缓存在数据目录 tls/。浏览器用视频解码（WebCodecs）必须安全上下文=HTTPS（踩坑 #170）")
 	dataDir := flag.String("data", "/opt/prism-phone/data", "数据目录")
 	hostID := flag.String("host-id", hostname(), "机器标识")
 	hostName := flag.String("host-name", "", "机器显示名")
@@ -306,6 +307,11 @@ func main() {
 			log.Fatal(err)
 		}
 	}()
+	// 额外的 HTTPS 口（自签证书）：浏览器的视频解码 WebCodecs 只在「安全上下文」（HTTPS / localhost）才可用，
+	// 纯 http 的局域网 IP 不算安全上下文，画面只能退回每秒一张截图（踩坑 #170）。开了 HTTPS 就能播实时视频。
+	if *tlsListen != "" {
+		startTLS(*tlsListen, *dataDir, apiServer.Handler())
+	}
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
 	<-stop
