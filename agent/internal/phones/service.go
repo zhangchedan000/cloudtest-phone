@@ -1029,7 +1029,7 @@ func (s *Service) Start(ctx context.Context, id string) error {
 		hw = dhw
 	}
 	binds = append(binds, dBinds...)
-	binds = append(binds, s.featureBinds(ctx, p.ID, image, s.model(p.ModelID))...)
+	binds = append(binds, s.featureBinds(ctx, p.ID, image, s.model(p.ModelID), p.AndroidVersion)...)
 	binds = append(binds, s.sensorShimBinds(ctx, p.ID, image, s.model(p.ModelID))...)
 	binds = append(binds, s.codecBinds(ctx, p.ID, image, s.model(p.ModelID))...)
 	binds = append(binds, s.cameraBinds(ctx, p.ID, image, s.model(p.ModelID))...)

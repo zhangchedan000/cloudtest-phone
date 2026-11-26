@@ -16,7 +16,7 @@ func TestPlanFeatures(t *testing.T) {
 		"android.hardware.hardware_keystore=100", "android.hardware.consumerir", "android.software.verified_boot",
 		"android.software.virtualization_framework", "android.software.incremental_delivery=2", "com.vivo.themestore.SUPPORTED",
 		"cn.google.services", "android.sofware.nfc.beam", "android.software.opengles.deqp.level=132449025"})
-	add, remove := planFeatures(img, real, sensorFeatures(sensors.DefaultMask))
+	add, remove := planFeatures(img, real, sensorFeatures(sensors.DefaultMask), maxDeqpLevel(14))
 	for _, want := range []string{"android.hardware.bluetooth_le", "android.hardware.nfc", "android.hardware.sensor.gyroscope",
 		"android.software.verified_boot", "com.vivo.themestore.SUPPORTED", "android.software.opengles.deqp.level"} {
 		if _, ok := add[want]; !ok {
@@ -34,6 +34,26 @@ func TestPlanFeatures(t *testing.T) {
 	}
 	if strings.Join(remove, ",") != "android.hardware.ethernet" {
 		t.Errorf("只该去掉 ethernet（电话子特性、显卡、密钥库、在用的传感器不动）：%v", remove)
+	}
+}
+
+func TestDeqpLevelCapped(t *testing.T) {
+	// 机型档录了安卓15 的 deqp.level(132645633)，建在 A14 镜像上要钳到 A14 上限(132580097)，不然驱动越界崩(踩坑 #167)。
+	real := parseFeatureList([]string{"android.software.vulkan.deqp.level=132645633", "android.software.opengles.deqp.level=132645633"})
+	add, _ := planFeatures(map[string]int{}, real, map[string]bool{}, maxDeqpLevel(14))
+	if add["android.software.vulkan.deqp.level"] != 132580097 || add["android.software.opengles.deqp.level"] != 132580097 {
+		t.Fatalf("A14 应钳到 132580097：%v", add)
+	}
+	// 建在 A16 上(上限 132711169)：安卓15 的值没超、不钳。
+	add16, _ := planFeatures(map[string]int{}, real, map[string]bool{}, maxDeqpLevel(16))
+	if add16["android.software.vulkan.deqp.level"] != 132645633 {
+		t.Fatalf("A16 不该钳：%v", add16)
+	}
+	// 版本对应值：14/15/16。
+	for v, want := range map[int]int{14: 132580097, 15: 132645633, 16: 132711169} {
+		if got := maxDeqpLevel(v); got != want {
+			t.Fatalf("maxDeqpLevel(%d)=%d 应 %d", v, got, want)
+		}
 	}
 }
 

@@ -43,6 +43,20 @@ var (
 		"android.software.connectionservice": true}
 )
 
+// deqpLevelFeatures dEQP 测试套版本特性：值是「年<<16 | 月日」，描述 GPU 驱动过了哪一代的 dEQP 测试。
+var deqpLevelFeatures = map[string]bool{"android.software.opengles.deqp.level": true, "android.software.vulkan.deqp.level": true}
+
+// maxDeqpLevel 这个安卓版本的框架 Level 枚举支持到的 dEQP 上限（年份 = 2009+版本，格式 年<<16 | 0x0301，
+// 安卓14=132580097、15=132645633、16=132711169）。机型档录了更新的（安卓15/16 机型的 deqp.level），照搬到
+// 老镜像上框架的 Level 枚举越界 → system_server 崩溃循环开不了机（踩坑 #167，PKB110 建在 A14 上）。板子 GPU
+// 驱动一直是 g18p0，deqp.level 本就该跟镜像版本的框架走，把机型档的值钳到这个上限即可（不崩、也不虚报更新的能力）。
+func maxDeqpLevel(androidVersion int) int {
+	if androidVersion < 10 {
+		return 0 // 认不出版本就不钳（老流程）
+	}
+	return (2009+androidVersion)<<16 | 0x0301
+}
+
 func hasPrefixAny(s string, prefixes []string) bool {
 	for _, p := range prefixes {
 		if strings.HasPrefix(s, p) {
@@ -67,7 +81,8 @@ func parseFeatureList(list []string) map[string]int {
 }
 
 // planFeatures 比对镜像和真机的特性：要加的（名字 → 版本）、要标成没有的。
-func planFeatures(img, real map[string]int, haveSensors map[string]bool) (add map[string]int, remove []string) {
+// maxDeqp：这个安卓版本的 dEQP level 上限，机型档录的 deqp.level 超过就钳到它（踩坑 #167，0 表示不钳）。
+func planFeatures(img, real map[string]int, haveSensors map[string]bool, maxDeqp int) (add map[string]int, remove []string) {
 	add = map[string]int{}
 	for name, ver := range real {
 		if _, ok := img[name]; ok {
@@ -84,6 +99,9 @@ func planFeatures(img, real map[string]int, haveSensors map[string]bool) (add ma
 			}
 		case strings.HasPrefix(name, "android."), strings.HasPrefix(name, "com.google."), strings.HasPrefix(name, "cn.google."):
 			continue
+		}
+		if deqpLevelFeatures[name] && maxDeqp > 0 && ver > maxDeqp {
+			ver = maxDeqp // 机型比镜像新：钳到镜像版本的框架能认的 level，不然驱动越界崩（踩坑 #167）
 		}
 		add[name] = ver
 	}
@@ -201,8 +219,8 @@ func (s *Service) imageFeatures(ctx context.Context, image string) (map[string]i
 	return feats, orig, nil
 }
 
-// featureBinds 机型录了真机特性列表时，开机前挂进去的特性文件。
-func (s *Service) featureBinds(ctx context.Context, id, image string, m *Model) []string {
+// featureBinds 机型录了真机特性列表时，开机前挂进去的特性文件。androidVersion 用来钳 deqp.level（踩坑 #167）。
+func (s *Service) featureBinds(ctx context.Context, id, image string, m *Model, androidVersion int) []string {
 	if m == nil {
 		return nil
 	}
@@ -214,7 +232,7 @@ func (s *Service) featureBinds(ctx context.Context, id, image string, m *Model) 
 	var add map[string]int
 	var remove []string
 	if len(m.Features) > 0 {
-		add, remove = planFeatures(img, parseFeatureList(m.Features), sensorFeatures(sensorMask(m)))
+		add, remove = planFeatures(img, parseFeatureList(m.Features), sensorFeatures(sensorMask(m)), maxDeqpLevel(androidVersion))
 	} else if _, ok := img["android.hardware.ethernet"]; ok {
 		// 没录真机特性的（内置机型）：至少去掉「有线网口」，手机没有（检测器 #154）
 		remove = []string{"android.hardware.ethernet"}
