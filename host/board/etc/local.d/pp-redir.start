@@ -1,7 +1,7 @@
 #!/bin/sh
 # prism-phone 网络模块（REDIRECT/NAT 模式，板子 vendor 内核 tproxy 不行，踩坑 #101）。
 # 只动容器网段 pp-net，不碰板子自己的 eth0/DC。手机 TCP 经 mihomo(7893) 走各自代理，DNS 交 mihomo，
-# UDP(除DNS)拦掉逼 QUIC 回退 TCP。规则放单独的 nftables 表 prism_redir，删表即恢复。
+# QUIC(UDP443)立刻 reject 逼回退 TCP、放行 NTP(UDP123)校时、其余 UDP 拦掉。规则放单独的 nftables 表 prism_redir，删表即恢复。
 sysctl -w net.ipv4.conf.all.route_localnet=1 >/dev/null 2>&1
 nft delete table ip prism_redir 2>/dev/null
 nft -f - <<'NFT'
@@ -29,6 +29,10 @@ table ip prism_redir {
 	}
 	chain pp_forward {
 		type filter hook forward priority filter; policy accept;
+		# QUIC(UDP443)立刻拒绝，逼 Chrome/Cronet 马上回退 TCP：原来跟着下面 drop 静默黑洞，手机干等超时→谷歌登录/商店一直转圈（踩坑 #168）
+		iifname "pp-net" ip saddr 10.88.0.0/16 oifname != "pp-net" udp dport 443 reject
+		# NTP(UDP123)放行直连，让 GMS 能联网校时（板子代理不了 UDP，否则一直「拿不到网络时间」）
+		iifname "pp-net" ip saddr 10.88.0.0/16 oifname != "pp-net" udp dport 123 accept
 		iifname "pp-net" ip saddr 10.88.0.0/16 oifname != "pp-net" drop
 	}
 }
