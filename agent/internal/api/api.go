@@ -104,6 +104,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/phones/{id}/import-params", s.importParams)
 	mux.HandleFunc("GET /api/phones/{id}/clipboard", s.getClipboard)
 	mux.HandleFunc("POST /api/phones/{id}/clipboard", s.setClipboard)
+	mux.HandleFunc("GET /api/phones/{id}/apps", s.listApps)
+	mux.HandleFunc("POST /api/phones/{id}/apps", s.appAction)
 	mux.HandleFunc("POST /api/phones/{id}/adb-key", s.authorizeADB)
 	mux.HandleFunc("POST /api/phones/{id}/apk", s.installAPK)
 	mux.HandleFunc("GET /api/phones/{id}/logs", s.logs)
@@ -579,6 +581,42 @@ func (s *Server) setClipboard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.svc.SetClipboard(r.Context(), r.PathValue("id"), req.Text, req.Paste); err != nil {
+		fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func (s *Server) listApps(w http.ResponseWriter, r *http.Request) {
+	apps, err := s.svc.Apps(r.Context(), r.PathValue("id"))
+	if err != nil {
+		fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"apps": apps})
+}
+
+func (s *Server) appAction(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Action  string `json:"action"`
+		Package string `json:"package"`
+	}
+	if err := decode(r, &req); err != nil {
+		fail(w, err)
+		return
+	}
+	id := r.PathValue("id")
+	var err error
+	switch req.Action {
+	case "launch":
+		err = s.svc.LaunchApp(r.Context(), id, req.Package)
+	case "uninstall":
+		err = s.svc.UninstallApp(r.Context(), id, req.Package)
+	default:
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "action 要 launch 或 uninstall"})
+		return
+	}
+	if err != nil {
 		fail(w, err)
 		return
 	}

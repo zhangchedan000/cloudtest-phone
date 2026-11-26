@@ -1,9 +1,9 @@
 import {
-  AppstoreAddOutlined, ArrowLeftOutlined, BorderOutlined, CameraOutlined, CodeOutlined, CopyOutlined, EditOutlined, HomeOutlined, MoreOutlined,
-  PoweroffOutlined, RedoOutlined, RotateRightOutlined, SoundOutlined, UploadOutlined, VideoCameraOutlined
+  AppstoreAddOutlined, AppstoreOutlined, ArrowLeftOutlined, BorderOutlined, CameraOutlined, CodeOutlined, CopyOutlined, DeleteOutlined, EditOutlined, HomeOutlined, MoreOutlined,
+  PoweroffOutlined, RedoOutlined, ReloadOutlined, RotateRightOutlined, SoundOutlined, UploadOutlined, VideoCameraOutlined
 } from '@ant-design/icons'
-import { App, Button, Descriptions, Drawer, Dropdown, Input, Modal, Popover, Select, Space, Switch, Tabs, Tooltip } from 'antd'
-import { getClipboard, openRawScreenshot, serverUrl, setClipboard, upload, type InputRequest } from '@/data/api'
+import { App, Button, Descriptions, Drawer, Dropdown, Empty, Input, List, Modal, Popover, Select, Space, Spin, Switch, Tabs, Tag, Tooltip } from 'antd'
+import { api, getClipboard, openRawScreenshot, serverUrl, setClipboard, upload, type InputRequest } from '@/data/api'
 import { useEffect, useRef, useState } from 'react'
 import { PhoneScreen } from '@/components/PhoneScreen'
 import { KeyboardInput } from '@/components/KeyboardInput'
@@ -30,6 +30,7 @@ export function PhoneDrawer({ phone, mode = 'view', onClose, onEdit, bare = fals
   const fileInput = useRef<HTMLInputElement>(null)
   const [uploading, setUploading] = useState<string>('')
   const [clipOpen, setClipOpen] = useState(false)
+  const [appsOpen, setAppsOpen] = useState(false)
   const [adbOpen, setAdbOpen] = useState(false)
   const [dragging, setDragging] = useState(false)
   const recorder = useRef<MediaRecorder | null>(null)
@@ -113,6 +114,7 @@ export function PhoneDrawer({ phone, mode = 'view', onClose, onEdit, bare = fals
     { icon: <CameraOutlined />, tip: '截图（新窗口打开原图）', onClick: () => (liveMode ? void openRawScreenshot(live.id).catch((e: Error) => message.error(e.message)) : message.info('预览模式：接上管家程序后可用')) },
     { icon: <VideoCameraOutlined style={recording ? { color: '#ff4d4f' } : undefined} />, tip: recording ? '录屏中：点一下停止并下载' : '录屏（录浏览器里的实时画面，停止后下载成视频文件）', onClick: () => (liveMode ? toggleRecord() : message.info('预览模式：接上管家程序后可用')) },
     { icon: <UploadOutlined />, tip: '上传文件（图片、视频进相册，其他进下载目录；也可以直接把文件拖进窗口）', onClick: () => (liveMode ? fileInput.current?.click() : message.info('预览模式：接上管家程序后可用')) },
+    { icon: <AppstoreOutlined />, tip: '应用列表（打开 / 卸载手机里的 App）', onClick: () => (liveMode ? setAppsOpen(true) : message.info('预览模式：接上管家程序后可用')) },
     { icon: <AppstoreAddOutlined />, tip: '安装 APK（也可以直接把 APK 拖进窗口）', onClick: () => (liveMode ? apkInput.current?.click() : message.info('预览模式：接上管家程序后可用')) },
     { icon: <CopyOutlined />, tip: '剪贴板（电脑 ↔ 手机互相复制，支持中文）', onClick: () => (liveMode ? setClipOpen(true) : message.info('预览模式：接上管家程序后可用')) },
     { icon: <CodeOutlined />, tip: 'ADB 连接命令（复制到自己电脑上用）', onClick: () => (liveMode ? setAdbOpen(true) : message.info('预览模式：接上管家程序后可用')) }
@@ -194,6 +196,7 @@ export function PhoneDrawer({ phone, mode = 'view', onClose, onEdit, bare = fals
           {uploading && <p className="pp-small pp-center">上传：{uploading}</p>}
           <p className="pp-muted pp-small pp-center pp-screen-hint">点一下 = 点击，按住拖动 = 滑动；直接打字输入、Ctrl+V 粘贴；长文字 / 复制互通点右侧「剪贴板」</p>
           <ClipboardDialog open={clipOpen} phoneId={live.id} onClose={() => setClipOpen(false)} />
+          <AppsDialog open={appsOpen} phoneId={live.id} onClose={() => setAppsOpen(false)} />
         </div>}
         <BackupDialog phone={live} mode={backupMode} onClose={() => setBackupMode(null)} />
         <AdbDialog open={adbOpen} id={live.id} running={running} adbOn={!!live.adb} onEnable={() => ws.assign([live.id], { adb: true })} ip={live.ip} name={live.name} host={new URL(serverUrl(live.serverId)).hostname} onClose={() => setAdbOpen(false)} />
@@ -303,6 +306,61 @@ function ClipboardDialog({ open, phoneId, onClose }: { open: boolean; phoneId: s
       <p className="pp-muted pp-small" style={{ marginTop: 12 }}>
         「直接粘贴」会打进手机上当前光标所在的输入框（先在画面上点一下输入框）。手机复制的东西点「取回」拿到电脑。
       </p>
+    </Modal>
+  )
+}
+
+/** 常见 App 的友好名（APK 里的中文名 / 图标 shell 取不到，v1 先用这个 + 包名末段兜底）。 */
+const APP_NAMES: Record<string, string> = {
+  'com.android.vending': 'Play 商店', 'com.android.chrome': 'Chrome', 'com.google.android.youtube': 'YouTube',
+  'com.openai.chatgpt': 'ChatGPT', 'com.android.settings': '设置', 'com.android.camera2': '相机',
+  'com.android.gallery3d': '相册', 'com.google.android.gm': 'Gmail', 'com.google.android.apps.maps': 'Google 地图',
+  'com.android.dialer': '电话', 'com.google.android.dialer': '电话', 'com.android.contacts': '通讯录',
+  'com.android.calendar': '日历', 'com.google.android.calendar': '日历', 'com.android.deskclock': '时钟',
+  'com.android.messaging': '短信', 'com.google.android.apps.messaging': '短信', 'com.android.documentsui': '文件',
+  'com.google.android.apps.photos': 'Google 相册', 'com.whatsapp': 'WhatsApp', 'com.facebook.katana': 'Facebook',
+  'com.instagram.android': 'Instagram', 'com.zhiliaoapp.musically': 'TikTok', 'com.ss.android.ugc.trill': 'TikTok',
+  'com.twitter.android': 'X (Twitter)', 'com.google.android.googlequicksearchbox': 'Google', 'com.android.soundrecorder': '录音机'
+}
+function appName(pkg: string): string {
+  if (APP_NAMES[pkg]) return APP_NAMES[pkg]
+  const seg = pkg.split('.').filter((s) => !['android', 'com', 'app', 'apps', 'google'].includes(s)).pop() ?? pkg
+  return seg.charAt(0).toUpperCase() + seg.slice(1)
+}
+
+/** 应用列表：列出手机里有桌面图标的 App，一键打开 / 卸载（2026-11-26 用户要求，对齐魔云腾）。 */
+function AppsDialog({ open, phoneId, onClose }: { open: boolean; phoneId: string; onClose: () => void }) {
+  const { message, modal } = App.useApp()
+  const [apps, setApps] = useState<{ package: string; user: boolean }[] | null>(null)
+  const [busy, setBusy] = useState('')
+  const load = () => {
+    setApps(null)
+    void api.apps(phoneId).then((r) => setApps(r.apps ?? [])).catch((e: Error) => { message.error(e.message); setApps([]) })
+  }
+  useEffect(() => { if (open) load() }, [open, phoneId]) // eslint-disable-line react-hooks/exhaustive-deps
+  const act = async (action: 'launch' | 'uninstall', pkg: string) => {
+    setBusy(action + pkg)
+    try {
+      await api.appAction(phoneId, action, pkg)
+      if (action === 'launch') { message.success(`已打开 ${appName(pkg)}`); onClose() } else { message.success('已卸载'); load() }
+    } catch (e) { message.error((e as Error).message) } finally { setBusy('') }
+  }
+  return (
+    <Modal open={open} onCancel={onClose} footer={null} destroyOnHidden width={440}
+      title={<Space>应用列表<Button size="small" icon={<ReloadOutlined />} onClick={load}>刷新</Button></Space>}>
+      {apps === null ? <div className="pp-center" style={{ padding: 40 }}><Spin /></div>
+        : apps.length === 0 ? <Empty description="没拿到应用列表（手机刚开机或没装 App）" />
+          : <List size="small" dataSource={apps} style={{ maxHeight: '60vh', overflow: 'auto' }}
+            renderItem={(a) => (
+              <List.Item actions={[
+                <Button key="o" size="small" type="link" loading={busy === 'launch' + a.package} onClick={() => void act('launch', a.package)}>打开</Button>,
+                <Button key="u" size="small" type="link" danger icon={<DeleteOutlined />} loading={busy === 'uninstall' + a.package}
+                  onClick={() => modal.confirm({ title: `卸载 ${appName(a.package)}？`, content: a.package, okButtonProps: { danger: true }, onOk: () => act('uninstall', a.package) })} />
+              ]}>
+                <List.Item.Meta title={<Space>{appName(a.package)}{a.user && <Tag color="blue">装的</Tag>}</Space>} description={<span className="pp-muted pp-small">{a.package}</span>} />
+              </List.Item>
+            )} />}
+      <p className="pp-muted pp-small" style={{ marginTop: 8 }}>蓝色「装的」= 你自己安装的；其余系统自带。名字 / 图标后续优化（暂取不到 APK 里的中文名和图标）。</p>
     </Modal>
   )
 }
