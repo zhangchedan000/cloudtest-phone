@@ -3,6 +3,7 @@ package phones
 import (
 	"context"
 	"fmt"
+	"log"
 	"regexp"
 	"sort"
 	"strings"
@@ -32,6 +33,7 @@ func (s *Service) Apps(ctx context.Context, id string) ([]AppInfo, error) {
 		return nil, err
 	}
 	launch, err := s.phoneOut(ctx, id, "cmd", "package", "query-activities", "-a", "android.intent.action.MAIN", "-c", "android.intent.category.LAUNCHER")
+	log.Printf("DEBUG apps %s: sock=%q err=%v len=%d hasPkg=%v head=%q", id, s.cmdSock(containerName(id)), err, len(launch), strings.Contains(launch, "packageName="), strings.TrimSpace(launch[:min(120, len(launch))]))
 	if err != nil {
 		return nil, fmt.Errorf("列应用失败：%v", err)
 	}
