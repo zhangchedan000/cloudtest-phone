@@ -183,7 +183,6 @@ export function PhoneDrawer({ phone, mode = 'view', onClose, onEdit, bare = fals
             for (const f of Array.from(e.dataTransfer.files)) void sendFile(f.name.toLowerCase().endsWith('.apk') ? 'apk' : 'file', f)
           }}
         >
-          <ProxySwitcher phone={live} />
           <KeyboardInput id={live.id} enabled={running && liveMode}>
             <PhoneScreen id={live.id} status={live.status} name={`${String(model?.values.marketName ?? '')} · Android ${live.androidVersion}`} size="large" seed={live.name.length + live.id.charCodeAt(5)} />
           </KeyboardInput>
@@ -193,14 +192,7 @@ export function PhoneDrawer({ phone, mode = 'view', onClose, onEdit, bare = fals
           <input ref={apkInput} type="file" accept=".apk" hidden onChange={(e) => { void sendFile('apk', e.target.files?.[0]); e.target.value = '' }} />
           <input ref={fileInput} type="file" hidden onChange={(e) => { void sendFile('file', e.target.files?.[0]); e.target.value = '' }} />
           {uploading && <p className="pp-small pp-center">上传：{uploading}</p>}
-          <Input.Search
-            className="pp-send-text"
-            disabled={!running || !liveMode}
-            placeholder="长段文字也可以贴在这里一次发过去"
-            enterButton="发送"
-            onSearch={(text, _event, info) => { if (text && info?.source !== 'clear') void ws.input(live.id, { kind: 'text', text }) }}
-          />
-          <p className="pp-muted pp-small pp-center">在画面上点一下 = 点击，按住拖动 = 滑动；剪贴板自动互通（电脑复制的 Ctrl+V 粘进手机，手机里复制的自动到电脑）</p>
+          <p className="pp-muted pp-small pp-center pp-screen-hint">点一下 = 点击，按住拖动 = 滑动；直接打字输入、Ctrl+V 粘贴；长文字 / 复制互通点右侧「剪贴板」</p>
           <ClipboardDialog open={clipOpen} phoneId={live.id} onClose={() => setClipOpen(false)} />
         </div>}
         <BackupDialog phone={live} mode={backupMode} onClose={() => setBackupMode(null)} />
@@ -248,7 +240,10 @@ export function PhoneDrawer({ phone, mode = 'view', onClose, onEdit, bare = fals
   // 独立弹出窗口（每台手机一个，可以同时开好几个）：没有抽屉外框，铺满窗口
   if (bare) return (
     <div className="pp-window">
-      <div className="pp-window-head">{title}{extra}</div>
+      <div className="pp-window-head">
+        <Space size={10} wrap>{title}{mode === 'view' && liveMode && <ProxySwitcher phone={live} />}</Space>
+        {extra}
+      </div>
       <div className="pp-window-body">{body}</div>
     </div>
   )
