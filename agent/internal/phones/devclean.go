@@ -13,11 +13,15 @@ import (
 // 开机完成后删（安卓开机过程用不到这些；实测删 229 个后屏幕、WiFi、电话、蓝牙开关、传感器、触摸、开 App 都正常）。
 // 留下的：binder 系列、dri、dma_heap、input、uinput、uhid、fuse、snd、net/tun、ppp、rtc0、hwrng、rfkill、ttyS0~3（ttyS1 是蓝牙）、
 // ttyC0（基带）、tty、kmsg 等安卓要用的，以及我们自己的串口。
-// mpp_service / rga 是瑞芯微（RK3588 板子）专有的硬件节点（视频编解码 MPP、2D 加速 RGA）：
-// 真·联发科手机一个都没有，App 列 /dev 就露馅（2026-11-25 多开探针发现，踩坑 #160）。
-// 删在开机完成后：安卓启动时的编解码 HAL 已打开它们并留着 fd，删掉 /dev 节点只是让 App 扫不到，
-// 已打开的句柄不受影响。mali0 保留——联发科 Mali 机型本来就该有 /dev/mali0。
-var hostDevNodes = regexp.MustCompile(`^(loop[0-9]+(p[0-9]+)?|sd[a-z]+[0-9]*|sg[0-9]+|bsg|nvme.*|vfio|vhost-net|vhost-vsock|vsock|vmci|kvm|xen.*|zfs|btrfs-control|mapper|dm-user|ecryptfs|cuse|autofs|userio|psaux|vga_arbiter|ttyprintk|port|mem|kmem|core|full|ttyAMA[0-9]+|ttyS([4-9]|[1-9][0-9])|tty[1-9][0-9]*|vcs.*|hidraw[0-9]+|kmsg_debug|nvram|hpet|fd0|lp[0-9]+|parport[0-9]+|watchdog[0-9]*|tpm.*|mei[0-9]*|sev.*|udmabuf|vhci|mpp_service|rga)$`)
+// mpp_service / rga 是瑞芯微（RK3588 板子）专有的硬件节点（视频编解码 MPP、2D 加速 RGA）。
+// ⚠️ 原来 #160 把它们也删了（想消掉「联发科机型却有瑞芯微节点」的破绽），但这是错的，已回退（踩坑 #169）：
+//   - 实时画面的 screenrecord 用硬件 H.264 编码，MPP 编码器**每开一路都重新 open /dev/mpp_service**（不是开机开一次就留着 fd）。
+//     节点被删 → 每次新投屏 mpp_init 失败（err -1）→ 一帧都编不出来 → 网页端退回「每秒一张截图」→ 画面巨卡。
+//     #160 当初「验证安全」只测了 widevine（走 binder、不碰 /dev）和探针扫描，**从没验过一路全新的硬件编码**，漏了这个回归。
+//   - 竞品 dobox 在同款 RK3588 上也**保留**这俩节点（它是非特权容器，只透传需要的设备），靠 SELinux + hidemap 藏自己的软件痕迹，从不删 mpp_service。
+//   - 残留的「stat /dev/mpp_service 能认出瑞芯微」是很深很偏的检测（EACCES/存在性），绝大多数检测不查；要进一步隐藏按 dobox 思路（非特权化 / 改标签）另做，别靠删编码器要用的硬件节点。
+// mali0 同理保留——联发科 Mali 机型本来就该有 /dev/mali0。
+var hostDevNodes = regexp.MustCompile(`^(loop[0-9]+(p[0-9]+)?|sd[a-z]+[0-9]*|sg[0-9]+|bsg|nvme.*|vfio|vhost-net|vhost-vsock|vsock|vmci|kvm|xen.*|zfs|btrfs-control|mapper|dm-user|ecryptfs|cuse|autofs|userio|psaux|vga_arbiter|ttyprintk|port|mem|kmem|core|full|ttyAMA[0-9]+|ttyS([4-9]|[1-9][0-9])|tty[1-9][0-9]*|vcs.*|hidraw[0-9]+|kmsg_debug|nvram|hpet|fd0|lp[0-9]+|parport[0-9]+|watchdog[0-9]*|tpm.*|mei[0-9]*|sev.*|udmabuf|vhci)$`)
 
 // hostDevList 从 ls /dev 的输出里挑出要删的。
 func hostDevList(ls string) []string {
