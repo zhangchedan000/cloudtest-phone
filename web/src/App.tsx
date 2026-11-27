@@ -1,5 +1,5 @@
-import { ApiOutlined, BulbOutlined, CloudServerOutlined, DesktopOutlined, MobileOutlined, ProfileOutlined } from '@ant-design/icons'
-import { Button, Input, Spin, Tooltip } from 'antd'
+import { ApiOutlined, AppstoreOutlined, BulbOutlined, DesktopOutlined, MobileOutlined, ProfileOutlined, SettingOutlined } from '@ant-design/icons'
+import { Input, Spin, Tooltip } from 'antd'
 import { useEffect, useState, type ReactNode } from 'react'
 import { applyTheme, useTheme } from '@/theme'
 import { HostsPage } from '@/pages/other/HostsPage'
@@ -13,11 +13,11 @@ import { windowPhoneId } from '@/pages/phones/phoneWindow'
 
 /** 页面登记表：侧边栏和标题都从这里读（同 Prism 的 registry）。 */
 const PAGES: { key: string; label: string; icon: ReactNode; render: () => ReactNode }[] = [
-  { key: 'phones', label: '云手机', icon: <MobileOutlined />, render: () => <PhonesPage /> },
-  { key: 'console', label: '控制台', icon: <DesktopOutlined />, render: () => <ConsolePage /> },
-  { key: 'proxies', label: '代理 IP', icon: <ApiOutlined />, render: () => <ProxiesPage /> },
-  { key: 'models', label: '机型库', icon: <ProfileOutlined />, render: () => <ModelsPage /> },
-  { key: 'hosts', label: '机器', icon: <CloudServerOutlined />, render: () => <HostsPage /> }
+  { key: 'phones', label: '云机', icon: <MobileOutlined />, render: () => <PhonesPage /> },
+  { key: 'console', label: '多控', icon: <AppstoreOutlined />, render: () => <ConsolePage /> },
+  { key: 'hosts', label: '主机', icon: <DesktopOutlined />, render: () => <HostsPage /> },
+  { key: 'models', label: '机型', icon: <ProfileOutlined />, render: () => <ModelsPage /> },
+  { key: 'proxies', label: '代理', icon: <ApiOutlined />, render: () => <ProxiesPage /> }
 ]
 
 /** 单台手机的弹出窗口：只有这台的画面和操作按钮（没有侧边栏）。 */
@@ -51,23 +51,31 @@ function MainApp() {
 
   return (
     <div className="pp-shell">
-      <aside className="pp-sidebar">
-        <div className="pp-brand"><MobileOutlined /> 云测机</div>
-        <nav>
+      <aside className="pp-rail">
+        <div className="pp-rail-brand"><MobileOutlined /></div>
+        <nav className="pp-rail-nav">
           {PAGES.map((p) => (
-            <button key={p.key} className={`pp-nav ${p.key === current.key ? 'pp-nav-active' : ''}`} onClick={() => go(p.key)}>{p.icon}<span>{p.label}</span></button>
+            <button key={p.key} className={`pp-rail-item ${p.key === current.key ? 'on' : ''}`} onClick={() => go(p.key)}>
+              <span className="pp-rail-ico">{p.icon}</span>
+              <span className="pp-rail-label">{p.label}</span>
+            </button>
           ))}
         </nav>
-        <div className="pp-sidebar-foot">{ws.mode === 'live' ? `已连接 · ${ws.hosts[0]?.name ?? ''}` : ws.mode === 'demo' ? '预览模式 · 假数据' : ''}</div>
+        <div className="pp-rail-foot">
+          <Tooltip placement="right" title={theme.mode === 'dark' ? '浅色' : '深色'}>
+            <button className="pp-rail-item" onClick={() => applyTheme({ ...theme, mode: theme.mode === 'dark' ? 'light' : 'dark' })}>
+              <span className="pp-rail-ico"><BulbOutlined /></span>
+              <span className="pp-rail-label">主题</span>
+            </button>
+          </Tooltip>
+          <button className="pp-rail-item" onClick={() => go('hosts')}>
+            <span className="pp-rail-ico"><SettingOutlined /></span>
+            <span className="pp-rail-label">设置</span>
+          </button>
+        </div>
       </aside>
       <main className="pp-main">
-        <header className="pp-header">
-          <h1>{current.label}</h1>
-          <Tooltip title={theme.mode === 'dark' ? '浅色' : '深色'}>
-            <Button type="text" icon={<BulbOutlined />} onClick={() => applyTheme({ ...theme, mode: theme.mode === 'dark' ? 'light' : 'dark' })} />
-          </Tooltip>
-        </header>
-        <div className="pp-content">
+        <div className="pp-content pp-content-flush">
           {ws.mode === 'loading' && <Spin className="pp-login" />}
           {ws.mode === 'login' && (
             <div className="pp-login">

@@ -16,6 +16,19 @@ body { background: var(--fb-bg); color: var(--fb-text); font-family: Inter, ui-s
 .pp-header { display: flex; justify-content: space-between; align-items: center; padding: 14px 24px; background: var(--fb-surface); border-bottom: 1px solid var(--fb-line); }
 .pp-header h1 { margin: 0; font-size: 18px; }
 .pp-content { flex: 1; overflow: auto; padding: 20px 24px; }
+.pp-content-flush { padding: 12px 14px; }
+
+/* 魔云腾风格的左侧图标导航栏（2026-11-27 改版） */
+.pp-rail { width: 70px; flex: none; background: var(--fb-surface); border-right: 1px solid var(--fb-line); display: flex; flex-direction: column; align-items: center; padding: 10px 0; }
+.pp-rail-brand { width: 40px; height: 40px; border-radius: 11px; background: var(--fb-accent); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 21px; margin-bottom: 12px; }
+.pp-rail-nav, .pp-rail-foot { display: flex; flex-direction: column; gap: 3px; width: 100%; align-items: center; }
+.pp-rail-foot { margin-top: auto; }
+.pp-rail-item { position: relative; width: 62px; padding: 9px 0; border: 0; background: transparent; color: var(--fb-text-secondary); cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 4px; border-radius: 9px; }
+.pp-rail-item:hover { background: var(--fb-surface-muted); color: var(--fb-text); }
+.pp-rail-item.on { color: var(--fb-accent); }
+.pp-rail-item.on::before { content: ''; position: absolute; left: 0; top: 9px; bottom: 9px; width: 3px; border-radius: 0 2px 2px 0; background: var(--fb-accent); }
+.pp-rail-ico { font-size: 21px; line-height: 1; }
+.pp-rail-label { font-size: 11px; line-height: 1; }
 .pp-page { display: flex; flex-direction: column; gap: 16px; }
 
 .pp-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
