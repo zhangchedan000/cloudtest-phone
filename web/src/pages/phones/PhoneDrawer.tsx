@@ -435,6 +435,7 @@ function LocationDialog({ open, phoneId, onClose }: { open: boolean; phoneId: st
       {cur
         ? <p className="pp-small" style={{ marginTop: 10, color: '#52c41a' }}>当前已定位到：{cur.lat.toFixed(4)}, {cur.lng.toFixed(4)}（关机重开也会自动恢复）</p>
         : <p className="pp-muted pp-small" style={{ marginTop: 10 }}>当前没有设虚拟定位。</p>}
+      <p className="pp-muted pp-small" style={{ marginTop: 2 }}>换城市直接点一下就切。关闭后 App 不再更新到这个位置；个别 App 可能还缓存着上一个，重开手机彻底清掉。</p>
     </Modal>
   )
 }
