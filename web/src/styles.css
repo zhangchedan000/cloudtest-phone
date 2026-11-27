@@ -16,7 +16,18 @@ body { background: var(--fb-bg); color: var(--fb-text); font-family: Inter, ui-s
 .pp-header { display: flex; justify-content: space-between; align-items: center; padding: 14px 24px; background: var(--fb-surface); border-bottom: 1px solid var(--fb-line); }
 .pp-header h1 { margin: 0; font-size: 18px; }
 .pp-content { flex: 1; overflow: auto; padding: 20px 24px; }
-.pp-content-flush { padding: 12px 14px; }
+.pp-content-flush { padding: 0; }
+
+/* 魔云腾风格：设备列表栏贴着导航栏、整列到底；右边主区自己留边距（2026-11-27 改版） */
+.pp-page-flush { gap: 0; height: 100%; }
+.pp-page-flush .pp-phones-layout { gap: 0; height: 100%; align-items: stretch; }
+.pp-page-flush .pp-hostlist { width: 248px; position: static; height: 100%; max-height: none; border: none; border-right: 1px solid var(--fb-line); border-radius: 0; }
+.pp-page-flush .pp-phones-main { padding: 12px 16px; overflow: auto; }
+.pp-adddevice { font-weight: 600; }
+.pp-hostlist-counts { display: flex; gap: 14px; align-items: center; font-size: 12px; color: var(--fb-text-secondary); padding: 2px; }
+.pp-hostlist-counts i { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 5px; vertical-align: middle; }
+.pp-dot-on { background: #52c41a; }
+.pp-dot-off { background: #d9d9d9; }
 
 /* 魔云腾风格的左侧图标导航栏（2026-11-27 改版） */
 .pp-rail { width: 70px; flex: none; background: var(--fb-surface); border-right: 1px solid var(--fb-line); display: flex; flex-direction: column; align-items: center; padding: 10px 0; }

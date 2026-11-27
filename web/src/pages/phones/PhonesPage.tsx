@@ -1,4 +1,4 @@
-import { AppstoreAddOutlined, AppstoreOutlined, DeleteOutlined, DownOutlined, EditOutlined, PlusOutlined, PoweroffOutlined, ReloadOutlined, SearchOutlined, UnorderedListOutlined, UploadOutlined } from '@ant-design/icons'
+import { AppstoreAddOutlined, AppstoreOutlined, DeleteOutlined, DownOutlined, EditOutlined, PlusOutlined, PoweroffOutlined, ReloadOutlined, SearchOutlined, TeamOutlined, UnorderedListOutlined, UploadOutlined } from '@ant-design/icons'
 import { Alert, App, Button, Card, Checkbox, Dropdown, Empty, Input, Modal, Segmented, Select, Slider, Space, Table, Tag, Tooltip } from 'antd'
 import { useMemo, useRef, useState } from 'react'
 import { batchUpload, type BatchResult } from '@/data/api'
@@ -63,8 +63,6 @@ export function PhonesPage() {
     (!query || `${p.name} ${String(ws.modelOf(p)?.values.marketName ?? '')}`.toLowerCase().includes(query.toLowerCase()))
   ), [ws, groupId, hostId, query])
 
-  const running = ws.phones.filter((p) => p.status === 'running').length
-  const withErrors = ws.phones.filter((p) => blocksStart(ws.issuesOf(p))).length
   // 上网健康检查：运行中但连不上外网的手机（管家程序每 2 分钟查一次）
   const offline = ws.phones.filter((p) => p.status === 'running' && p.net && !p.net.ok)
   // 左侧设备列表：在线的排前面
@@ -192,14 +190,7 @@ export function PhonesPage() {
   const shownHosts = hostId === 'all' ? ws.hosts.filter((h) => h.online) : ws.hosts.filter((h) => h.id === hostId)
 
   return (
-    <div className="pp-page">
-      <div className="pp-stats">
-        <Stat label="云手机" value={ws.phones.length} />
-        <Stat label="运行中" value={running} tone="success" />
-        <Stat label="有错误（禁止开机）" value={withErrors} tone={withErrors ? 'danger' : undefined} />
-        <Stat label="机器在线" value={`${onlineHosts} / ${ws.hosts.length}`} />
-      </div>
-
+    <div className="pp-page pp-page-flush">
       {ws.mode === 'live' && ws.hosts.filter((h) => h.netHealth && !h.netHealth.ok).map((h) => (
         <Alert key={`net-${h.id}`} type="error" showIcon className="pp-alert" title={`${h.name}：网络模块有问题，这台服务器上的云手机可能都上不了网`} description={(h.netHealth?.problems ?? []).join('；')} />
       ))}
@@ -217,12 +208,15 @@ export function PhonesPage() {
         <aside className="pp-hostlist">
           <div className="pp-hostlist-head">
             <b className="pp-hostlist-title">设备列表</b>
-            <span className="pp-muted pp-small pp-hostlist-stat">在线 {onlineHosts} · 总 {ws.hosts.length}</span>
-            <Tooltip title="添加设备（以后上新盒子都在这儿加）">
-              <Button size="small" type="text" icon={<PlusOutlined />} disabled={ws.mode !== 'live'} onClick={() => setAddingDevice(true)} />
-            </Tooltip>
+            <Button size="small" type="text" icon={<TeamOutlined />} onClick={() => setManagingGroups(true)}>分组</Button>
           </div>
-          <Input allowClear size="small" prefix={<SearchOutlined />} placeholder="找设备" value={hostQuery} onChange={(e) => setHostQuery(e.target.value)} />
+          <Button block type="primary" icon={<PlusOutlined />} disabled={ws.mode !== 'live'} onClick={() => setAddingDevice(true)} className="pp-adddevice">添加设备</Button>
+          <div className="pp-hostlist-counts">
+            <span><i className="pp-dot-on" /> 在线 {onlineHosts}</span>
+            <span><i className="pp-dot-off" /> 离线 {ws.hosts.length - onlineHosts}</span>
+            <span className="pp-muted">总 {ws.hosts.length}</span>
+          </div>
+          <Input allowClear size="small" prefix={<SearchOutlined />} placeholder="搜索 IP / 备注" value={hostQuery} onChange={(e) => setHostQuery(e.target.value)} />
           <div className="pp-hostlist-items">
             <button className={`pp-host-item ${hostId === 'all' ? 'pp-host-item-active' : ''}`} onClick={() => setHostId('all')}>
               <AppstoreOutlined />
@@ -311,10 +305,6 @@ export function PhonesPage() {
       <AddServerModal open={addingDevice} onClose={() => setAddingDevice(false)} />
     </div>
   )
-}
-
-function Stat({ label, value, tone }: { label: string; value: number | string; tone?: 'success' | 'danger' }) {
-  return <div className={`pp-stat ${tone ? `pp-stat-${tone}` : ''}`}><span>{label}</span><b>{value}</b></div>
 }
 
 /** 「CPU 12% · 内存 0.9 / 3 GB」 */
