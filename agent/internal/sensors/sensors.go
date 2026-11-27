@@ -23,6 +23,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/zhangchedan000/prism-phone/agent/internal/modem"
@@ -152,9 +153,10 @@ type model struct {
 	gyroBias [3]float64
 	accBias  [3]float64
 	magHard  [3]float64 // 硬铁偏移（手机自身磁性部件）
-	spec     Spec
-	pressure float64
-	lux      float64
+	spec       Spec
+	pressure   float64
+	lux        float64
+	shakeUntil time.Time // 摇一摇：这个时刻之前，加速度计输出大幅抖动
 }
 
 func newModel(spec Spec) *model {
@@ -202,6 +204,12 @@ func (m *model) accel() [3]float64 {
 	a := m.rotate([3]float64{0, 0, -g})
 	for i := range a {
 		a[i] += m.accBias[i] + m.rnd.NormFloat64()*0.012
+	}
+	// 摇一摇：在抖动窗口内叠加大幅随机加速度，App 的摇一摇检测（看合加速度突然变大）就触发。
+	if time.Now().Before(m.shakeUntil) {
+		for i := range a {
+			a[i] += m.rnd.NormFloat64() * 22
+		}
 	}
 	return a
 }
@@ -264,6 +272,19 @@ type Feeder struct {
 
 func NewFeeder(spec Spec, w io.Writer) *Feeder {
 	return &Feeder{m: newModel(spec), w: w, enabled: map[int]bool{}, delay: 200 * time.Millisecond, Log: func(string) {}}
+}
+
+// activeFeeder 当前这台手机在跑的 Feeder（摇一摇要找到它往加速度计灌抖动）。Serve 里登记。
+var activeFeeder atomic.Pointer[Feeder]
+
+// Active 当前 Feeder（没有返回 nil）。
+func Active() *Feeder { return activeFeeder.Load() }
+
+// Shake 让加速度计抖一下（摇一摇）：dur 时间内叠加大幅随机加速度。
+func (f *Feeder) Shake(dur time.Duration) {
+	f.m.mu.Lock()
+	f.m.shakeUntil = time.Now().Add(dur)
+	f.m.mu.Unlock()
 }
 
 func (f *Feeder) send(s string) error {

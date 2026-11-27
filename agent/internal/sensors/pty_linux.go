@@ -105,6 +105,7 @@ func SetupPaths(paths []string) (master, slave *os.File, err error) {
 func Serve(spec Spec, master, slave *os.File, logf func(string)) {
 	out := make(chan string, 64)
 	f := NewFeeder(spec, chanWriter(out))
+	activeFeeder.Store(f) // 摇一摇：登记当前 Feeder
 	f.Log = logf
 	flushToHAL := func() {
 		// HAL 重启时，上一轮没被读走的数据还在从端的输入队列里，新 HAL 会把它当成 list-sensors 的回答而崩溃：清掉

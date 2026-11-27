@@ -1,5 +1,5 @@
 import {
-  AppstoreAddOutlined, AppstoreOutlined, ArrowLeftOutlined, BorderOutlined, CameraOutlined, CodeOutlined, CopyOutlined, DeleteOutlined, EditOutlined, EnvironmentOutlined, HomeOutlined, MessageOutlined, MoreOutlined,
+  AppstoreAddOutlined, AppstoreOutlined, ArrowLeftOutlined, BorderOutlined, CameraOutlined, CodeOutlined, CopyOutlined, DeleteOutlined, EditOutlined, EnvironmentOutlined, HomeOutlined, InteractionOutlined, MessageOutlined, MoreOutlined,
   PoweroffOutlined, RedoOutlined, ReloadOutlined, RotateRightOutlined, SoundOutlined, UploadOutlined, VideoCameraOutlined
 } from '@ant-design/icons'
 import { App, Avatar, Button, Descriptions, Drawer, Dropdown, Empty, Input, InputNumber, List, Modal, Popover, Select, Space, Spin, Switch, Tabs, Tag, Tooltip } from 'antd'
@@ -119,6 +119,7 @@ export function PhoneDrawer({ phone, mode = 'view', onClose, onEdit, bare = fals
     { icon: <AppstoreOutlined />, tip: '应用列表（打开 / 卸载手机里的 App）', onClick: () => (liveMode ? setAppsOpen(true) : message.info('预览模式：接上管家程序后可用')) },
     { icon: <EnvironmentOutlined />, tip: '虚拟定位（给手机设一个假的 GPS 位置）', onClick: () => (liveMode ? setLocOpen(true) : message.info('预览模式：接上管家程序后可用')) },
     { icon: <MessageOutlined />, tip: '收短信（填一条内容，手机就收到一条，进短信 App）', onClick: () => (liveMode ? setSmsOpen(true) : message.info('预览模式：接上管家程序后可用')) },
+    { icon: <InteractionOutlined />, tip: '摇一摇（让手机抖一下，触发 App 的摇一摇）', onClick: () => (liveMode ? void api.shake(live.id).then(() => message.success('摇了一下')).catch((e: Error) => message.error(e.message)) : message.info('预览模式：接上管家程序后可用')) },
     { icon: <AppstoreAddOutlined />, tip: '安装 APK（也可以直接把 APK 拖进窗口）', onClick: () => (liveMode ? apkInput.current?.click() : message.info('预览模式：接上管家程序后可用')) },
     { icon: <CopyOutlined />, tip: '剪贴板（电脑 ↔ 手机互相复制，支持中文）', onClick: () => (liveMode ? setClipOpen(true) : message.info('预览模式：接上管家程序后可用')) },
     { icon: <CodeOutlined />, tip: 'ADB 连接命令（复制到自己电脑上用）', onClick: () => (liveMode ? setAdbOpen(true) : message.info('预览模式：接上管家程序后可用')) }

@@ -100,3 +100,28 @@ func TestLuxDayNight(t *testing.T) {
 		t.Fatalf("白天 %.0f 夜里 %.0f", d, n)
 	}
 }
+
+func TestShakeSpikesAccel(t *testing.T) {
+	f := NewFeeder(Spec{Mask: DefaultMask, Seed: 3, MagWorld: MagForRegion("HK")}, &bytes.Buffer{})
+	// 静止时合加速度约等于 g（9.8）
+	calm := accelMag(f.m.accel())
+	if calm > 12 {
+		t.Fatalf("静止加速度不该这么大：%.1f", calm)
+	}
+	f.Shake(500 * time.Millisecond)
+	// 抖动窗口内，多采几次，至少有一次明显大于 g
+	big := false
+	for i := 0; i < 10; i++ {
+		if accelMag(f.m.accel()) > 20 {
+			big = true
+			break
+		}
+	}
+	if !big {
+		t.Fatal("摇一摇后加速度没有明显变大")
+	}
+}
+
+func accelMag(a [3]float64) float64 {
+	return math.Sqrt(a[0]*a[0] + a[1]*a[1] + a[2]*a[2])
+}

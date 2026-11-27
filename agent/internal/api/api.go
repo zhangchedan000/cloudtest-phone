@@ -110,6 +110,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/phones/{id}/location", s.setLocation)
 	mux.HandleFunc("DELETE /api/phones/{id}/location", s.action(func(r *http.Request, id string) error { return s.svc.ClearLocation(r.Context(), id) }))
 	mux.HandleFunc("POST /api/phones/{id}/sms", s.sendSMS)
+	mux.HandleFunc("POST /api/phones/{id}/shake", s.action(func(r *http.Request, id string) error { return s.svc.Shake(r.Context(), id) }))
 	mux.HandleFunc("POST /api/phones/{id}/adb-key", s.authorizeADB)
 	mux.HandleFunc("POST /api/phones/{id}/apk", s.installAPK)
 	mux.HandleFunc("GET /api/phones/{id}/logs", s.logs)

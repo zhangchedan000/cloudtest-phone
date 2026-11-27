@@ -165,6 +165,15 @@ var activeModem atomic.Pointer[modem.Modem]
 // helperCommand 小助手执行一条管家的命令。
 func helperCommand(dev *touch.Device, cmd string) error {
 	f := strings.Fields(cmd)
+	// 摇一摇：往加速度计灌一段抖动
+	if len(f) == 1 && f[0] == "shake" {
+		ff := sensors.Active()
+		if ff == nil {
+			return fmt.Errorf("传感器还没就绪")
+		}
+		ff.Shake(700 * time.Millisecond)
+		return nil
+	}
 	// 收短信注入：sms <base64发件号> <base64正文>
 	if len(f) == 3 && f[0] == "sms" {
 		m := activeModem.Load()
