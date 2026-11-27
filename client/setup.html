@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>连接板子</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: #0f1115; color: #e6e6e6;
+    font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .card { width: 420px; max-width: 90%; text-align: center; }
+  h1 { font-size: 22px; font-weight: 600; margin: 0 0 6px; }
+  p { color: #8b8f98; font-size: 13px; margin: 0 0 22px; }
+  input {
+    width: 100%; height: 44px; padding: 0 14px; font-size: 15px;
+    background: #1a1d24; border: 1px solid #2b2f3a; border-radius: 10px; color: #fff; outline: none;
+  }
+  input:focus { border-color: #1677ff; }
+  button {
+    width: 100%; height: 44px; margin-top: 14px; font-size: 15px; font-weight: 600;
+    background: #1677ff; border: none; border-radius: 10px; color: #fff; cursor: pointer;
+  }
+  button:hover { background: #0958d9; }
+  .hint { margin-top: 16px; color: #6b7280; font-size: 12px; line-height: 1.6; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <h1>云测机</h1>
+    <p>填一下你板子（管家）的地址，连上就能用了。</p>
+    <input id="addr" placeholder="例如 192.168.68.194" autofocus />
+    <button id="go">连接</button>
+    <div class="hint">不用加 https:// 和端口，直接填 IP 就行（默认 8443）。<br/>以后换地址：菜单「云测机 → 连接设置」。</div>
+  </div>
+  <script>
+    const params = new URLSearchParams(location.search)
+    const cur = params.get('current') || ''
+    const input = document.getElementById('addr')
+    if (cur) { try { input.value = new URL(cur).hostname } catch { input.value = cur } }
+    function go() {
+      const v = input.value.trim()
+      if (!v) { input.focus(); return }
+      // 通知主进程（main.js 的 will-navigate 拦截 app://set-server/）
+      location.href = 'app://set-server/' + encodeURIComponent(v)
+    }
+    document.getElementById('go').addEventListener('click', go)
+    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') go() })
+  </script>
+</body>
+</html>

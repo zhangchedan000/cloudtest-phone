@@ -1,0 +1,37 @@
+name: 打包客户端(Windows)
+
+# 手动触发，或推 client-v* 标签时触发。在 GitHub 的 Windows 机器上编 exe（Linux 上编 Windows 要 wine，麻烦）。
+on:
+  workflow_dispatch:
+  push:
+    tags: ['client-v*']
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: 安装依赖
+        working-directory: client
+        run: npm install --no-audit --no-fund
+      - name: 打包 Windows 安装包
+        working-directory: client
+        run: npm run dist:win
+      - name: 上传安装包（Actions 产物）
+        uses: actions/upload-artifact@v4
+        with:
+          name: yuncs-client-windows
+          path: client/dist/*.exe
+      - name: 发到 Release（固定标签 client-latest，拿稳定下载链接）
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: client-latest
+          name: 云测机客户端（最新）
+          body: 云测机 Windows 桌面客户端。下载 .exe 安装即可（第一次打开 Windows 可能拦一下，点「更多信息 → 仍要运行」）。
+          files: client/dist/*.exe

@@ -1,0 +1,33 @@
+{
+  "name": "prism-phone-client",
+  "productName": "云测机",
+  "version": "1.0.0",
+  "description": "云测机管理客户端",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist:win": "electron-builder --win --x64"
+  },
+  "author": "",
+  "license": "UNLICENSED",
+  "devDependencies": {
+    "electron": "33.2.1",
+    "electron-builder": "25.1.8"
+  },
+  "build": {
+    "appId": "com.prismphone.client",
+    "productName": "云测机",
+    "artifactName": "yuncs-client-setup-${version}.${ext}",
+    "files": ["main.js", "setup.html"],
+    "win": {
+      "target": [{ "target": "nsis", "arch": ["x64"] }]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "云测机"
+    }
+  }
+}
