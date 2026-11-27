@@ -30,6 +30,8 @@ PART_NAMES = {0xd05: "Cortex-A55", 0xd0b: "Cortex-A76", 0xd0d: "Cortex-A77", 0xd
               0xd47: "Cortex-A710", 0xd48: "Cortex-X2", 0xd4d: "Cortex-A715", 0xd4e: "Cortex-X3", 0xd80: "Cortex-A520", 0xd81: "Cortex-A720", 0xd82: "Cortex-X4"}
 LINK_NAMES = {"cpufreq", "of_node", "subsystem", "driver", "firmware_node", "device", "port"}
 SYS_CPU = "/sys/devices/system/cpu"
+# 个别机型的采集包 densityDpi 不可信（采集时开了「放大显示」，如三星 S24 录成 600=288dp，真机出厂是 450=384dp）：用出厂默认兜底
+DPI_FALLBACK = {"samsung-sm-s921b": 450}
 
 
 def parse_props(text):
@@ -368,23 +370,32 @@ def gpu_info(pkg, props):
 
 
 def display_of(pkg):
+    out = {}
     d = pkg.text("display.json")
     if d:
         try:
             j = json.loads(d)
             mode = (j.get("displayModes") or [{}])[0]
-            dens = re.search(r'"(?:densityDpi|logicalDensityDpi|dpi)"\s*:\s*(\d+)', d)
-            return {"w": int(mode.get("physicalWidth", 0)), "h": int(mode.get("physicalHeight", 0)),
-                    "refresh": round(float(mode.get("refreshRate", 60))), "dpi": int(dens.group(1)) if dens else None}
+            # densityDpi 优先在 display.json 找，没有再从 device_info.json 兜底（有的包 dpi 只在那里，如三星 S24）
+            dens = re.search(r'"(?:densityDpi|logicalDensityDpi|dpi)"\s*:\s*(\d+)', d) \
+                or re.search(r'(?:densityDpi|logicalDensityDpi)[\\"\s]*:\s*(\d+)', pkg.text("device_info.json") or "")
+            out = {"w": int(mode.get("physicalWidth", 0)), "h": int(mode.get("physicalHeight", 0)),
+                   "refresh": round(float(mode.get("refreshRate", 60))), "dpi": int(dens.group(1)) if dens else None}
         except Exception:
-            pass
-    t = pkg.text("display.txt")
-    m, dm = re.search(r"Physical size: (\d+)x(\d+)", t), re.search(r"Physical density: (\d+)", t)
-    rr = re.findall(r"fps=([\d.]+)", t)
-    if m:
-        return {"w": int(m.group(1)), "h": int(m.group(2)), "dpi": int(dm.group(1)) if dm else None,
-                "refresh": round(max(float(x) for x in rr)) if rr else 60}
-    return {}
+            out = {}
+    if not out:
+        t = pkg.text("display.txt")
+        m, dm = re.search(r"Physical size: (\d+)x(\d+)", t), re.search(r"Physical density: (\d+)", t)
+        rr = re.findall(r"fps=([\d.]+)", t)
+        if m:
+            out = {"w": int(m.group(1)), "h": int(m.group(2)), "dpi": int(dm.group(1)) if dm else None,
+                   "refresh": round(max(float(x) for x in rr)) if rr else 60}
+    # dpi 合理性护栏：真机出厂逻辑宽度都在 320~440dp，超出多半是采集时开了「放大显示」，这个 dpi 不可信，丢弃
+    if out.get("dpi") and out.get("w"):
+        dpw = out["w"] / out["dpi"] * 160
+        if not (320 <= dpw <= 440):
+            out["dpi"] = None
+    return out
 
 
 BUILD_MAP = {  # 魔云腾 device_info.json 的 prop.Build.* / VERSION.* → ro.* 属性（兜底单文件导入用）
@@ -708,6 +719,8 @@ def convert(path, tac_db, host_gpu, host_cpus, loose=False):
     krel, kbuild = kernel_of(pkg)
     sbytes, sgb = storage_of(pkg)
     mid = slug(f"{brand}-{model}")
+    if not disp.get("dpi") and mid in DPI_FALLBACK:   # 采集包 dpi 不可信（放大显示录的）时用出厂默认兜底
+        disp["dpi"] = DPI_FALLBACK[mid]
     v9 = sorted({PART_NAMES.get((m >> 4) & 0xfff, hex((m >> 4) & 0xfff)) for m in midrs if (m >> 4) & 0xfff in ARMV9_PARTS})
     tok = re.compile(r"(^|\s)" + re.escape(model.upper()) + r"($|\s)")   # TAC 库的键是「品牌 机型名 型号代码」
     tac_key = next((k for k in tac_db if tok.search(k.upper())), None)
