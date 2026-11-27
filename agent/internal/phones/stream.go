@@ -61,7 +61,10 @@ func (t *streamTracker) finish(id string, gen uint64) bool {
 var audNAL = []byte{0, 0, 0, 1, 0x09, 0xf0}
 
 // frameGap screenrecord 一帧是一口气写完的；停了这么久没新数据，就认为这一帧写完了。
-const frameGap = 15 * time.Millisecond
+// 快速滚动时一帧数据大、CPU 忙，管家读同一帧的数据可能被调度卡顿隔开——阈值太小会把一帧从中间切断、
+// 浏览器解到半帧就「撕裂」（2026-11-27 用户滚轮快滑时发现）。提到 60ms 覆盖调度卡顿；画面停住后最后一帧
+// 晚 60ms 显示、几乎无感（而且被网络延迟盖掉）。彻底免疫要按 H.264 访问单元边界补 AUD，先用这个稳住。
+const frameGap = 60 * time.Millisecond
 
 // copyWithFrameEnds 把 screenrecord 的输出原样转给浏览器，每次停顿（一帧写完）后补一个 AUD。
 //
