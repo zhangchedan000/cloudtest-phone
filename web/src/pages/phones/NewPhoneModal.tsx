@@ -35,6 +35,13 @@ export function NewPhoneModal({ open, onClose, presetHostId, presetName }: { ope
   const same = <T extends { serverId?: string }>(x: T) => (x.serverId ?? 'local') === (host?.serverId ?? 'local')
   const model = ws.models.find((m) => m.id === modelId)
   const gpuWarn = host && model && host.gpuFamily !== 'software' && host.gpuFamily !== model.gpuFamily
+  // 安卓版本和机型联动：版本可选项 = 这台机器有镜像的版本；选机型时自动默认到「机型原生且有镜像」的最高版本。
+  const availVers = host?.androidVersions?.length ? host.androidVersions : [14]
+  const bestVer = (vs: number[] | undefined) => {
+    const mv = (vs ?? []).filter((v) => availVers.includes(v))
+    return (mv.length ? mv : availVers).slice().sort((a, b) => b - a)[0]
+  }
+  const verOffModel = !!(model?.androidVersions?.length && androidVersion && !model.androidVersions.includes(androidVersion))
 
   // 右边坑位图：这台机器已有的手机占满前面的坑，接下来 count 个高亮成「新建」。
   // 不按「同时最多」限制坑位数量——想建多少建多少；格子最少排 8 个、最多排 40 个好看。
@@ -73,14 +80,17 @@ export function NewPhoneModal({ open, onClose, presetHostId, presetName }: { ope
       okText="创建"
       destroyOnHidden
     >
-      <Form form={form} layout="vertical" onFinish={create} onValuesChange={(changed) => { if ('hostId' in changed) form.setFieldsValue({ proxyId: undefined, groupId: undefined }) }} initialValues={{ name: presetName ?? '手机-', count: 1, hostId: presetHostId ?? ws.hosts.find((h) => h.online)?.id ?? ws.hosts[0]?.id, modelId: ws.models[0]?.id, androidVersion: 14, gapps: true, groupId: ws.groups.filter(same)[0]?.id }}>
+      <Form form={form} layout="vertical" onFinish={create} onValuesChange={(changed) => {
+        if ('hostId' in changed) form.setFieldsValue({ proxyId: undefined, groupId: undefined })
+        if ('modelId' in changed) { const v = bestVer(ws.models.find((m) => m.id === changed.modelId)?.androidVersions); if (v) form.setFieldValue('androidVersion', v) }
+      }} initialValues={{ name: presetName ?? '手机-', count: 1, hostId: presetHostId ?? ws.hosts.find((h) => h.online)?.id ?? ws.hosts[0]?.id, modelId: ws.models[0]?.id, androidVersion: bestVer(ws.models[0]?.androidVersions) ?? 14, gapps: true, groupId: ws.groups.filter(same)[0]?.id }}>
         <div className="pp-newphone">
           <div className="pp-newphone-form">
             <div className="pp-form-2col">
               <Form.Item label="名称" name="name" rules={[{ required: true }]}><Input placeholder="留空自动取名" /></Form.Item>
               <Form.Item label="数量" name="count"><InputNumber min={1} max={20} style={{ width: '100%' }} /></Form.Item>
               <Form.Item label="机型" name="modelId" rules={[{ required: true }]}><Select showSearch optionFilterProp="label" options={ws.models.map((m) => ({ value: m.id, label: `${String(m.values.marketName)} · ${m.gpuFamily}${m.verified ? '' : ' · 待核实'}` }))} /></Form.Item>
-              <Form.Item label="安卓版本（镜像）" name="androidVersion"><Select options={(host?.androidVersions?.length ? host.androidVersions : [14]).map((v) => ({ value: v, label: `Android ${v}` }))} /></Form.Item>
+              <Form.Item label="安卓版本（镜像）" name="androidVersion" extra={verOffModel ? `这款机型出厂是 Android ${model?.androidVersions?.join('/')}，选更高版本相当于「升级后」，部分数据用兜底，原生版最稳。` : undefined}><Select options={availVers.map((v) => ({ value: v, label: `Android ${v}${model?.androidVersions?.includes(v) ? '（机型原生）' : ''}` }))} /></Form.Item>
               <Form.Item label="代理" name="proxyId" rules={[{ required: true, message: '必须分配代理：没有代理禁止开机' }]}><Select options={ws.proxies.filter(same).map((p) => ({ value: p.id, label: p.name }))} /></Form.Item>
               <Form.Item label="分组" name="groupId"><Select allowClear options={ws.groups.filter(same).map((g) => ({ value: g.id, label: g.name }))} /></Form.Item>
               <Form.Item label="国家/地区（GPS 定位）" name="region" tooltip="选了就把这台的虚拟定位设到该地区；语言、时区本来就跟着代理走"><Select allowClear showSearch optionFilterProp="label" placeholder="跟随代理（不单独设）" options={REGIONS.map((r) => ({ value: r.v, label: r.label }))} /></Form.Item>

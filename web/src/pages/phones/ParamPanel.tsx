@@ -94,6 +94,8 @@ export function ParamPanel({ phone, onSaved }: { phone: Phone; onSaved?: (restar
         <Input.TextArea value={dumpText} onChange={(e) => setDumpText(e.target.value)} rows={12} placeholder={'[ro.product.brand]: [Redmi]\n[ro.product.model]: [23049RAD8C]\n[ro.product.device]: [sapphire]\n[ro.build.fingerprint]: [Redmi/sapphire/...:user/release-keys]\n[ro.serialno]: [...]\n...'} />
       </Modal>
 
+      <Alert type="info" showIcon className="pp-alert" message="这些参数建手机时已经自动配好、每台也都唯一，一般不用改。"
+        description="想改哪一项再动哪一项就行：「跟随机型」= 跟机型走；「按真实范围」= 每台随机生成（右边 ↻ 换一个、🔒 锁定）。改完——关机的下次开机生效，开机中的点右侧「重启生效」。" />
       {issues.filter((i) => i.level !== 'info').map((issue) => (
         <Alert key={issue.code} type={issue.level === 'error' ? 'error' : 'warning'} showIcon title={issue.message} className="pp-alert" />
       ))}
@@ -102,7 +104,7 @@ export function ParamPanel({ phone, onSaved }: { phone: Phone; onSaved?: (restar
       ))}
 
       <Collapse
-        defaultActiveKey={catalog.groups.map((g) => g.key)}
+        defaultActiveKey={[catalog.groups[0]?.key].filter(Boolean)}
         ghost
         items={catalog.groups.map((group) => ({
           key: group.key,

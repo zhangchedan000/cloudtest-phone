@@ -58,7 +58,7 @@ export function checkPhone({ phone, model, proxy, host, others = [] }: CheckInpu
       issues.push({ level: 'error', code: 'gpu-mismatch', fields: ['model', 'gpuRenderer'], message: `机型「${String(model.values.marketName ?? model.id)}」的显卡是 ${model.gpuFamily}，这台机器是 ${host.gpuFamily}。显卡名来自真实驱动改不了，会直接露馅。` })
     }
     if (!model.androidVersions.includes(phone.androidVersion)) {
-      issues.push({ level: 'warning', code: 'android-version', fields: ['androidVersion'], message: `这款机型官方系统是 Android ${model.androidVersions.join('/')}，没有 Android ${phone.androidVersion}。` })
+      issues.push({ level: 'warning', code: 'android-version', fields: ['androidVersion'], message: `这款机型出厂是 Android ${model.androidVersions.join('/')}；现在跑 Android ${phone.androidVersion} 相当于「系统升级后」——真机也会 OTA 升级，能用，但这个版本的指纹/分区数据我们还没它的真机值、用的是通用兜底，深度检测可能对不上。优先用 Android ${model.androidVersions.join('/')} 最稳。` })
     }
     // 机型库里没有这个安卓版本的真机指纹（也没手动填 / 导入指纹）：系统指纹只能用镜像的编译号拼，带 eng.* 工程版字样（2026-11-23）
     const manualFp = phone.fields.fingerprint

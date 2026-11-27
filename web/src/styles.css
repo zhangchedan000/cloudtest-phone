@@ -278,11 +278,20 @@ body { background: var(--fb-bg); color: var(--fb-text); font-family: Inter, ui-s
 .pp-dropping { outline: 2px dashed var(--ant-color-primary, #1677ff); outline-offset: 4px; border-radius: 8px; }
 
 /* 设置页（照魔云腾：存储 / 通用 / 关于） */
-.pp-settings { max-width: 860px; display: flex; flex-direction: column; gap: 16px; }
-.pp-set-card { background: var(--fb-surface); border: 1px solid var(--fb-line); border-radius: 12px; padding: 6px 18px; }
-.pp-set-card h3 { margin: 14px 2px 6px; font-size: 15px; }
-.pp-set-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 13px 2px; border-top: 1px solid var(--fb-line-soft); }
-.pp-set-card h3 + .pp-set-row { border-top: 0; }
-.pp-set-row-main { min-width: 0; }
-.pp-set-row-title { font-size: 14px; }
+.pp-settings { max-width: 760px; margin: 0 auto; padding: 8px 20px 32px; display: flex; flex-direction: column; gap: 18px; }
+.pp-settings-head { padding: 8px 2px 0; }
+.pp-settings-head h2 { margin: 0; font-size: 22px; font-weight: 650; }
+.pp-settings-head p { margin: 4px 0 0; font-size: 13px; }
+.pp-set-card { background: var(--fb-surface); border: 1px solid var(--fb-line); border-radius: 14px; padding: 4px 18px 8px; box-shadow: 0 1px 2px rgba(0,0,0,.04), 0 2px 10px rgba(0,0,0,.03); }
+.pp-set-card-head { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: var(--fb-text-muted); letter-spacing: .02em; padding: 14px 2px 10px; }
+.pp-set-card-head .anticon { color: var(--fb-accent); font-size: 15px; }
+.pp-set-row { display: flex; align-items: center; gap: 14px; padding: 12px 8px; margin: 0 -8px; border-radius: 10px; border-top: 1px solid var(--fb-line-soft); }
+.pp-set-card-head + .pp-set-row { border-top: 0; }
+.pp-set-row:hover { background: var(--fb-surface-muted); }
+.pp-set-row-ico { flex: none; width: 34px; height: 34px; border-radius: 9px; background: var(--fb-accent-soft, var(--fb-surface-muted)); color: var(--fb-accent); display: flex; align-items: center; justify-content: center; font-size: 16px; }
+.pp-set-row-main { flex: 1; min-width: 0; }
+.pp-set-row-title { font-size: 14px; font-weight: 500; }
+.pp-set-row-desc { font-size: 12.5px; color: var(--fb-text-muted); margin-top: 2px; line-height: 1.4; }
+.pp-set-row-extra { font-size: 12px; margin-top: 2px; color: var(--fb-warning-text, #c06a00); }
 .pp-set-row-right { flex: none; display: flex; align-items: center; gap: 8px; }
+.pp-set-ok { display: inline-flex; align-items: center; gap: 5px; color: var(--fb-success-text, #3a9a52); font-size: 13px; }
