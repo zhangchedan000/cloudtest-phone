@@ -282,6 +282,7 @@ func main() {
 		}()
 	}
 	apiServer := api.New(svc, st, webFS, token, check)
+	apiServer.SetBuildInfo(version, *listen) // 在线升级要用：当前版本号 + 本机监听地址
 	if net != nil && net.CanCheck() {
 		apiServer.SetNetworkCheck(net.Check)
 	}

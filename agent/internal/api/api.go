@@ -43,6 +43,18 @@ type Server struct {
 	// 本机显示名的自定义覆盖（用户在管理页改的名），存在 DataDir/host-name，启动时读回。
 	hostNameMu       sync.RWMutex
 	hostNameOverride string
+
+	// 在线升级用：当前版本号（main.version）和本机监听地址（推 /api/health 地址做体检）。
+	version     string
+	plainListen string
+	upgradeMu   sync.Mutex // 一次只允许一个升级在跑
+	upgrading   bool
+}
+
+// SetBuildInfo 接上当前版本号和监听地址（main 启动时调；在线升级要用）。
+func (s *Server) SetBuildInfo(version, listen string) {
+	s.version = version
+	s.plainListen = listen
 }
 
 // hostNameFile 本机自定义显示名的存放文件。
@@ -133,6 +145,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/servers", s.addServer)
 	mux.HandleFunc("PUT /api/servers/{id}", s.updateServer)
 	mux.HandleFunc("DELETE /api/servers/{id}", s.deleteServer)
+	mux.HandleFunc("GET /api/update", s.updateStatus)
+	mux.HandleFunc("POST /api/update", s.doUpdate)
 	mux.HandleFunc("GET /api/oled", s.oledState)
 	mux.HandleFunc("POST /api/oled", s.oledSet)
 	mux.HandleFunc("GET /api/groups", s.listGroups)

@@ -38,7 +38,8 @@ body { background: var(--fb-bg); color: var(--fb-text); font-family: Inter, ui-s
 .pp-rail-item:hover { background: var(--fb-surface-muted); color: var(--fb-text); }
 .pp-rail-item.on { color: var(--fb-accent); }
 .pp-rail-item.on::before { content: ''; position: absolute; left: 0; top: 9px; bottom: 9px; width: 3px; border-radius: 0 2px 2px 0; background: var(--fb-accent); }
-.pp-rail-ico { font-size: 21px; line-height: 1; }
+.pp-rail-ico { position: relative; font-size: 21px; line-height: 1; }
+.pp-rail-dot { position: absolute; top: -3px; right: -5px; width: 9px; height: 9px; border-radius: 50%; background: var(--fb-danger, #ff4d4f); border: 1.5px solid var(--fb-surface); }
 .pp-rail-label { font-size: 11px; line-height: 1; }
 .pp-page { display: flex; flex-direction: column; gap: 16px; }
 
@@ -152,9 +153,19 @@ body { background: var(--fb-bg); color: var(--fb-text); font-family: Inter, ui-s
 
 /* 详情 */
 .pp-detail { display: flex; gap: 24px; align-items: flex-start; }
-.pp-detail-screen { position: sticky; top: 0; display: flex; flex-direction: column; align-items: center; gap: 8px; padding-right: 52px; }
-.pp-detail-controls { position: absolute; right: 0; top: 0; display: flex; flex-direction: column; gap: 8px; }
+.pp-detail-screen { position: relative; display: flex; flex-direction: column; align-items: center; gap: 6px; }
 .pp-detail-side { flex: 1; min-width: 0; }
+
+/* 控制窗（照魔云腾）：手机画面 + 右侧一条小图标工具条；底部一条就三个主键 */
+.pp-stage { display: flex; align-items: stretch; width: 100%; }
+.pp-phone-wrap { position: relative; display: flex; align-items: center; justify-content: center; flex: 1; min-width: 0; }
+.pp-side-tools { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 4px 3px; overflow-y: auto; border-left: 1px solid var(--fb-line); background: var(--fb-surface); }
+.pp-side-tool.ant-btn { width: 34px; height: 34px; min-width: 34px; padding: 0; font-size: 16px; color: var(--fb-text-secondary); }
+.pp-side-tool.ant-btn:hover { color: var(--fb-accent); background: var(--fb-surface-muted); }
+.pp-navbar { display: flex; align-items: center; justify-content: center; gap: 30px; width: 100%; padding: 6px 12px; }
+.pp-navkey.ant-btn { width: 44px; height: 40px; font-size: 19px; color: var(--fb-text-secondary); }
+.pp-navkey.ant-btn:hover { color: var(--fb-accent); }
+.pp-upload-toast { position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%); padding: 4px 12px; border-radius: 8px; background: rgba(0,0,0,.72); color: #fff; font-size: 12px; white-space: nowrap; z-index: 3; }
 
 /* 参数面板 */
 .pp-params-head { margin-bottom: 12px; }
@@ -212,16 +223,25 @@ body { background: var(--fb-bg); color: var(--fb-text); font-family: Inter, ui-s
 .pp-live-quality button.on { background: rgba(255,255,255,.28); }
 .pp-live-note { position: absolute; left: 6px; right: 6px; bottom: 6px; padding: 2px 6px; border-radius: 6px; background: rgba(0,0,0,.6); color: #fff; font-size: 11px; text-align: center; }
 
-/* 单台手机的弹出窗口（#window=<id>） */
+/* 单台手机的弹出窗口（#window=<id>）：照魔云腾——画面铺满，底部一条导航栏 */
 .pp-window { height: 100vh; display: flex; flex-direction: column; background: var(--fb-bg); }
-.pp-window-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--fb-line); background: var(--fb-surface); flex-wrap: wrap; }
-.pp-window-body { flex: 1; min-height: 0; overflow: auto; padding: 12px; display: flex; justify-content: center; }
-.pp-window .pp-detail-screen { position: relative; }
-.pp-window .pp-phone-large .pp-phone-screen { height: calc(100vh - 118px); width: calc((100vh - 118px) * 0.47); max-width: calc(100vw - 90px); }
-.pp-window .pp-screen-hint { margin: 2px 0 0; opacity: 0.7; }
-/* 横屏（投屏窗口「旋转」或 App 自己横屏）：手机框也横过来 */
+.pp-window-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 12px; border-bottom: 1px solid var(--fb-line); background: var(--fb-surface); flex-wrap: wrap; flex: none; }
+.pp-window-body { flex: 1; min-height: 0; overflow: hidden; padding: 0; display: flex; }
+.pp-window .pp-detail { flex: 1; min-height: 0; width: 100%; gap: 0; }
+.pp-window .pp-detail-screen { flex: 1; min-height: 0; width: 100%; gap: 0; }
+/* 手机画面 + 右侧工具条占满上方全部空间，底栏贴在最底下 */
+.pp-window .pp-stage { flex: 1; min-height: 0; }
+.pp-window .pp-phone-wrap { min-width: 0; background: #000; overflow: hidden; }
+.pp-window .pp-kbd { height: 100%; width: 100%; }
+.pp-window .pp-phone-large { height: 100%; display: flex; align-items: center; justify-content: center; }
+.pp-window .pp-phone-large .pp-phone-caption { display: none; }
+/* 键盘提示不挤占画面：浮在画面最底部 */
+.pp-window .pp-kbd > p { position: absolute; left: 0; right: 0; bottom: 6px; z-index: 2; margin: 0; color: rgba(255,255,255,.5); text-shadow: 0 1px 2px rgba(0,0,0,.6); pointer-events: none; }
+.pp-window .pp-phone-large .pp-phone-screen { height: 100%; width: auto; aspect-ratio: 300 / 640; max-width: 100%; border: none; border-radius: 0; }
+.pp-window .pp-navbar { flex: none; border-top: 1px solid var(--fb-line); background: var(--fb-surface); }
+/* 横屏（投屏窗口「旋转」或 App 自己横屏）：画面也横过来 */
 .pp-phone-large .pp-phone-screen:has(.pp-live-landscape) { width: 640px; height: 300px; }
-.pp-window .pp-phone-large .pp-phone-screen:has(.pp-live-landscape) { width: min(calc(100vw - 140px), calc((100vh - 118px) * 2.1)); height: auto; aspect-ratio: 2.2; }
+.pp-window .pp-phone-large .pp-phone-screen:has(.pp-live-landscape) { width: 100%; height: auto; max-height: 100%; aspect-ratio: 2.2; }
 .pp-proxy-switch { width: 300px; max-width: 100%; margin-bottom: 4px; }
 
 /* 控制台（仿魔云腾客户端布局） */

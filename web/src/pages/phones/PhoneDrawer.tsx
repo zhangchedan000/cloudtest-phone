@@ -108,21 +108,28 @@ export function PhoneDrawer({ phone, mode = 'view', onClose, onEdit, bare = fals
   }
   const key = (k: string) => () => (liveMode ? void ws.input(live.id, { kind: 'key', key: k } as InputRequest) : message.info('预览模式：接上管家程序后可用'))
 
-  const controls = [
-    { icon: <ArrowLeftOutlined />, tip: '返回', onClick: key('back') }, { icon: <HomeOutlined />, tip: '主页', onClick: key('home') },
-    { icon: <BorderOutlined />, tip: '多任务', onClick: key('recents') }, { icon: <SoundOutlined />, tip: '音量 +', onClick: key('volume_up') },
-    { icon: <SoundOutlined style={{ opacity: 0.55, transform: 'scale(0.8)' }} />, tip: '音量 -', onClick: key('volume_down') },
-    { icon: <RotateRightOutlined />, tip: '横竖屏切换（桌面是锁竖屏的，打开支持横屏的 App 再转）', onClick: rotate },
-    { icon: <CameraOutlined />, tip: '截图（新窗口打开原图）', onClick: () => (liveMode ? void openRawScreenshot(live.id).catch((e: Error) => message.error(e.message)) : message.info('预览模式：接上管家程序后可用')) },
-    { icon: <VideoCameraOutlined style={recording ? { color: '#ff4d4f' } : undefined} />, tip: recording ? '录屏中：点一下停止并下载' : '录屏（录浏览器里的实时画面，停止后下载成视频文件）', onClick: () => (liveMode ? toggleRecord() : message.info('预览模式：接上管家程序后可用')) },
-    { icon: <UploadOutlined />, tip: '上传文件（图片、视频进相册，其他进下载目录；也可以直接把文件拖进窗口）', onClick: () => (liveMode ? fileInput.current?.click() : message.info('预览模式：接上管家程序后可用')) },
-    { icon: <AppstoreOutlined />, tip: '应用列表（打开 / 卸载手机里的 App）', onClick: () => (liveMode ? setAppsOpen(true) : message.info('预览模式：接上管家程序后可用')) },
-    { icon: <EnvironmentOutlined />, tip: '虚拟定位（给手机设一个假的 GPS 位置）', onClick: () => (liveMode ? setLocOpen(true) : message.info('预览模式：接上管家程序后可用')) },
-    { icon: <MessageOutlined />, tip: '收短信（填一条内容，手机就收到一条，进短信 App）', onClick: () => (liveMode ? setSmsOpen(true) : message.info('预览模式：接上管家程序后可用')) },
-    { icon: <InteractionOutlined />, tip: '摇一摇（让手机抖一下，触发 App 的摇一摇）', onClick: () => (liveMode ? void api.shake(live.id).then(() => message.success('摇了一下')).catch((e: Error) => message.error(e.message)) : message.info('预览模式：接上管家程序后可用')) },
-    { icon: <AppstoreAddOutlined />, tip: '安装 APK（也可以直接把 APK 拖进窗口）', onClick: () => (liveMode ? apkInput.current?.click() : message.info('预览模式：接上管家程序后可用')) },
-    { icon: <CopyOutlined />, tip: '剪贴板（电脑 ↔ 手机互相复制，支持中文）', onClick: () => (liveMode ? setClipOpen(true) : message.info('预览模式：接上管家程序后可用')) },
-    { icon: <CodeOutlined />, tip: 'ADB 连接命令（复制到自己电脑上用）', onClick: () => (liveMode ? setAdbOpen(true) : message.info('预览模式：接上管家程序后可用')) }
+  // 底部导航栏：照魔云腾，只放三个主键（返回 / 主页 / 多任务）
+  const navKeys = [
+    { icon: <ArrowLeftOutlined />, tip: '返回', onClick: key('back') },
+    { icon: <HomeOutlined />, tip: '主页', onClick: key('home') },
+    { icon: <BorderOutlined />, tip: '多任务', onClick: key('recents') }
+  ]
+  // 其余功能收进底栏右边的「工具」弹出，不占手机画面
+  const guard = (fn: () => void) => () => (liveMode ? fn() : message.info('预览模式：接上管家程序后可用'))
+  const tools = [
+    { icon: <SoundOutlined />, label: '音量 +', tip: '音量 +', onClick: key('volume_up') },
+    { icon: <SoundOutlined style={{ opacity: 0.55, transform: 'scale(0.8)' }} />, label: '音量 -', tip: '音量 -', onClick: key('volume_down') },
+    { icon: <RotateRightOutlined />, label: '旋转', tip: '横竖屏切换（桌面是锁竖屏的，打开支持横屏的 App 再转）', onClick: rotate },
+    { icon: <CameraOutlined />, label: '截图', tip: '截图（新窗口打开原图）', onClick: guard(() => void openRawScreenshot(live.id).catch((e: Error) => message.error(e.message))) },
+    { icon: <VideoCameraOutlined style={recording ? { color: '#ff4d4f' } : undefined} />, label: recording ? '停止录屏' : '录屏', tip: recording ? '录屏中：点一下停止并下载' : '录屏（录浏览器里的实时画面，停止后下载成视频文件）', onClick: guard(toggleRecord) },
+    { icon: <UploadOutlined />, label: '上传', tip: '上传文件（图片、视频进相册，其他进下载目录；也可以直接把文件拖进窗口）', onClick: guard(() => fileInput.current?.click()) },
+    { icon: <AppstoreOutlined />, label: '应用', tip: '应用列表（打开 / 卸载手机里的 App）', onClick: guard(() => setAppsOpen(true)) },
+    { icon: <EnvironmentOutlined />, label: '定位', tip: '虚拟定位（给手机设一个假的 GPS 位置）', onClick: guard(() => setLocOpen(true)) },
+    { icon: <MessageOutlined />, label: '收短信', tip: '收短信（填一条内容，手机就收到一条，进短信 App）', onClick: guard(() => setSmsOpen(true)) },
+    { icon: <InteractionOutlined />, label: '摇一摇', tip: '摇一摇（让手机抖一下，触发 App 的摇一摇）', onClick: guard(() => void api.shake(live.id).then(() => message.success('摇了一下')).catch((e: Error) => message.error(e.message))) },
+    { icon: <AppstoreAddOutlined />, label: '装 APK', tip: '安装 APK（也可以直接把 APK 拖进窗口）', onClick: guard(() => apkInput.current?.click()) },
+    { icon: <CopyOutlined />, label: '剪贴板', tip: '剪贴板（电脑 ↔ 手机互相复制，支持中文）', onClick: guard(() => setClipOpen(true)) },
+    { icon: <CodeOutlined />, label: 'ADB', tip: 'ADB 连接命令（复制到自己电脑上用）', onClick: guard(() => setAdbOpen(true)) }
   ]
 
   const title = <Space size={10}>{mode === 'edit' && <span className="pp-muted">编辑</span>}<b>{live.name}</b><StatusDot status={live.status} />{live.dataJob?.state === 'running' && <span className="pp-small" style={{ color: '#1677ff' }}>{live.dataJob.kind === 'backup' ? '备份中…' : '恢复中…'}</span>}{mode === 'edit' && <span className="pp-muted">{String(model?.values.marketName ?? '')} · Android {live.androidVersion}</span>}</Space>
@@ -190,16 +197,23 @@ export function PhoneDrawer({ phone, mode = 'view', onClose, onEdit, bare = fals
             for (const f of Array.from(e.dataTransfer.files)) void sendFile(f.name.toLowerCase().endsWith('.apk') ? 'apk' : 'file', f)
           }}
         >
-          <KeyboardInput id={live.id} enabled={running && liveMode}>
-            <PhoneScreen id={live.id} status={live.status} name={`${String(model?.values.marketName ?? '')} · Android ${live.androidVersion}`} size="large" seed={live.name.length + live.id.charCodeAt(5)} />
-          </KeyboardInput>
-          <div className="pp-detail-controls">
-            {controls.map((c) => <Tooltip key={c.tip} title={c.tip} placement="left"><Button disabled={!running} icon={c.icon} onClick={c.onClick} /></Tooltip>)}
+          <div className="pp-stage">
+            <div className="pp-phone-wrap">
+              <KeyboardInput id={live.id} enabled={running && liveMode}>
+                <PhoneScreen id={live.id} status={live.status} name={`${String(model?.values.marketName ?? '')} · Android ${live.androidVersion}`} size="large" seed={live.name.length + live.id.charCodeAt(5)} />
+              </KeyboardInput>
+              {uploading && <div className="pp-upload-toast">上传：{uploading}</div>}
+            </div>
+            {/* 右侧工具条：照魔云腾，一排小图标，鼠标悬停看名字 */}
+            <div className="pp-side-tools">
+              {tools.map((c) => <Tooltip key={c.label} title={c.tip} placement="left"><Button type="text" className="pp-side-tool" disabled={!running} icon={c.icon} onClick={c.onClick} /></Tooltip>)}
+            </div>
+          </div>
+          <div className="pp-navbar">
+            {navKeys.map((c) => <Tooltip key={c.tip} title={c.tip}><Button type="text" className="pp-navkey" disabled={!running} icon={c.icon} onClick={c.onClick} /></Tooltip>)}
           </div>
           <input ref={apkInput} type="file" accept=".apk" hidden onChange={(e) => { void sendFile('apk', e.target.files?.[0]); e.target.value = '' }} />
           <input ref={fileInput} type="file" hidden onChange={(e) => { void sendFile('file', e.target.files?.[0]); e.target.value = '' }} />
-          {uploading && <p className="pp-small pp-center">上传：{uploading}</p>}
-          <p className="pp-muted pp-small pp-center pp-screen-hint">点一下 = 点击，按住拖动 = 滑动；直接打字输入、Ctrl+V 粘贴；长文字 / 复制互通点右侧「剪贴板」</p>
           <ClipboardDialog open={clipOpen} phoneId={live.id} onClose={() => setClipOpen(false)} />
           <AppsDialog open={appsOpen} phoneId={live.id} onClose={() => setAppsOpen(false)} />
           <LocationDialog open={locOpen} phoneId={live.id} onClose={() => setLocOpen(false)} />

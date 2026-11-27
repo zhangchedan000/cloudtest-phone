@@ -125,6 +125,10 @@ export const api = {
   clearLocation: (id: string) => call<{ ok: boolean }>('DELETE', `/phones/${id}/location`),
   sendSMS: (id: string, sender: string, body: string) => call<{ ok: boolean }>('POST', `/phones/${id}/sms`, { sender, body }),
   shake: (id: string) => call<{ ok: boolean }>('POST', `/phones/${id}/shake`),
+  /** 在线升级：查当前版本 / GitHub 最新版本 / 能不能升。 */
+  updateStatus: (sid?: string) => call<{ current: string; latest?: string; canUpdate: boolean; note?: string; upgrading: boolean }>('GET', '/update', undefined, sid),
+  /** 开始在线升级（下载→SHA 校验→后台换新重启→失败回滚）。 */
+  startUpdate: (sid?: string) => call<{ from: string; to: string; upgrading: boolean }>('POST', '/update', undefined, sid),
   proxies: (sid?: string) => call<Proxy[]>('GET', '/proxies', undefined, sid),
   createProxy: (proxy: Omit<Proxy, 'id'>, sid?: string) => call<Proxy>('POST', '/proxies', proxy, sid),
   checkProxy: (id: string, sid?: string) => call<ProxyCheck>('POST', `/proxies/${id}/check`, undefined, sid),

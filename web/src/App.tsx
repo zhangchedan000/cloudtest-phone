@@ -10,6 +10,7 @@ import { ConsolePage } from '@/pages/phones/ConsolePage'
 import { useWorkspace } from '@/data/store'
 import { PhoneDrawer } from '@/pages/phones/PhoneDrawer'
 import { windowPhoneId } from '@/pages/phones/phoneWindow'
+import { UpdateButton } from '@/pages/other/UpdateButton'
 
 /** 页面登记表：侧边栏和标题都从这里读（同 Prism 的 registry）。 */
 const PAGES: { key: string; label: string; icon: ReactNode; render: () => ReactNode }[] = [
@@ -68,6 +69,7 @@ function MainApp() {
               <span className="pp-rail-label">主题</span>
             </button>
           </Tooltip>
+          <UpdateButton />
           <button className="pp-rail-item" onClick={() => go('hosts')}>
             <span className="pp-rail-ico"><SettingOutlined /></span>
             <span className="pp-rail-label">设置</span>
