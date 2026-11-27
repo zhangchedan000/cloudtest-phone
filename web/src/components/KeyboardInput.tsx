@@ -48,6 +48,22 @@ export function KeyboardInput({ id, enabled, children }: { id: string; enabled: 
 
   const focus = () => { if (enabled) box.current?.focus({ preventScroll: true }) }
 
+  // 默认就「接上键盘」：控制窗一开就自动 focus 到打字框，并一直保持——除非你点进了真正的输入框
+  // 或弹窗（代理/群控对话框、下拉菜单等），那时让它们自己用。不用先点画面、也不显示任何提示（2026-11-27 用户要求）。
+  useEffect(() => {
+    if (!enabled) return
+    const keep = () => {
+      const a = document.activeElement as HTMLElement | null
+      if (a === box.current) return
+      const real = !!a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.tagName === 'SELECT' || a.isContentEditable)
+      const inOverlay = !!a && !!a.closest('.ant-modal, .ant-dropdown, .ant-select-dropdown, .ant-picker-dropdown, .ant-popover')
+      if (!real && !inOverlay) box.current?.focus({ preventScroll: true })
+    }
+    const t = setTimeout(keep, 120)          // 等抽屉动画开完再抢焦点
+    document.addEventListener('focusin', keep)
+    return () => { clearTimeout(t); document.removeEventListener('focusin', keep) }
+  }, [enabled])
+
   return (
     <div className="pp-kbd" onPointerUp={focus}>
       {children}
