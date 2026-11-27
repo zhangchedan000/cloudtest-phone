@@ -82,3 +82,47 @@ func TestCopyWithFrameEndsWriterGone(t *testing.T) {
 	}
 	_ = w.Close()
 }
+
+// 按真帧边界补 AUD：多帧流在任意分块大小下结果都一致（= 不管读取被怎么切都不会把一帧切断/撕裂），
+// 去掉插入的 AUD 能还原成原始裸流，AUD 数量 = 帧数。
+func TestFrameSplitterBoundaries(t *testing.T) {
+	nal := func(hdr byte, n int) []byte {
+		b := []byte{0, 0, 0, 1, hdr}
+		for i := 0; i < n; i++ {
+			b = append(b, byte(2+(i%250))) // 不含 00，避免假起始码 / AUD
+		}
+		return b
+	}
+	key := func(idrLen int) []byte {
+		return append(append(nal(0x67, 5), nal(0x68, 3)...), nal(0x65, idrLen)...) // SPS+PPS+IDR = 一帧
+	}
+	frames := [][]byte{key(40), nal(0x41, 20), nal(0x41, 25), key(35), nal(0x41, 15)}
+	var orig []byte
+	for _, f := range frames {
+		orig = append(orig, f...)
+	}
+	run := func(chunk int) []byte {
+		var sp frameSplitter
+		var out []byte
+		for i := 0; i < len(orig); i += chunk {
+			j := i + chunk
+			if j > len(orig) {
+				j = len(orig)
+			}
+			out = append(out, sp.feed(orig[i:j])...)
+		}
+		return append(out, sp.flush()...)
+	}
+	ref := run(len(orig))
+	if got := bytes.ReplaceAll(ref, audNAL, nil); !bytes.Equal(got, orig) {
+		t.Fatalf("去掉 AUD 后和原始流不一致：\n got % x\norig % x", got, orig)
+	}
+	if n := bytes.Count(ref, audNAL); n != len(frames) {
+		t.Fatalf("AUD 数量 = %d，应 = 帧数 %d", n, len(frames))
+	}
+	for _, c := range []int{1, 2, 3, 4, 5, 7, 13, 64, 1000} {
+		if got := run(c); !bytes.Equal(got, ref) {
+			t.Fatalf("分块 %d 的结果和一次喂完不一致（跨块起始码处理有 bug）", c)
+		}
+	}
+}

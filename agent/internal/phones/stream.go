@@ -60,19 +60,68 @@ func (t *streamTracker) finish(id string, gen uint64) bool {
 // audNAL H.264 的「访问单元分隔符」（AUD，NAL 类型 9），6 个字节。
 var audNAL = []byte{0, 0, 0, 1, 0x09, 0xf0}
 
-// frameGap screenrecord 一帧是一口气写完的；停了这么久没新数据，就认为这一帧写完了。
-// 快速滚动时一帧数据大、CPU 忙，管家读同一帧的数据可能被调度卡顿隔开——阈值太小会把一帧从中间切断、
-// 浏览器解到半帧就「撕裂」（2026-11-27 用户滚轮快滑时发现）。提到 60ms 覆盖调度卡顿；画面停住后最后一帧
-// 晚 60ms 显示、几乎无感（而且被网络延迟盖掉）。彻底免疫要按 H.264 访问单元边界补 AUD，先用这个稳住。
+// frameGap 画面停住这么久没新数据，就把最后一帧冲出去（补个 AUD）。只用于「停住后的最后一帧」，
+// 活动中每一帧靠下面按真帧边界补的 AUD 分帧，和这个时间无关。
 const frameGap = 60 * time.Millisecond
 
-// copyWithFrameEnds 把 screenrecord 的输出原样转给浏览器，每次停顿（一帧写完）后补一个 AUD。
+// frameSplitter 按 H.264 Annex-B 的真帧边界给流补 AUD（访问单元分隔符），而不是靠「停顿多久」猜。
 //
-// 为什么：裸流里一个 NAL 在哪结束，要等下一个起始码到了才知道，所以浏览器总是晚一帧显示；
-// 画面不动时 screenrecord 不再出新帧，最后一帧（包括刚打开时的第一帧）就一直显示不出来——
-// 打开详情页是黑屏、点完按钮画面停在上一帧（2026-11-15 真浏览器里测出）。
-// 补上 AUD 后，上一帧马上有了结尾；浏览器认出结尾的 AUD 就立刻解码显示。
-// 旧版页面不认这个 AUD 也没关系：它会被当成下一帧开头的分隔符，标准允许。
+// 为什么重写（2026-11-27 用户滚轮快滑时「撕裂」）：以前每次输出停顿 15ms 就补一个 AUD，
+// 快速滚动时一帧数据大、管家读取被调度拖慢，一帧的数据在读取侧被隔开 >15ms，就被从**中间**切断、
+// 浏览器解到半帧 → 撕裂。现在不看时间：扫描起始码，等上一帧的图像 NAL(1=P帧 / 5=IDR帧) 出现后、
+// **下一个 NAL 之前**才补 AUD——这是真边界，不管读取被拖多久都不会把一帧切断。
+// 画面停住（后面没有新 NAL 了）再靠 frameGap 补最后一个，把尾帧冲出去（那时帧已完整，安全）。
+type frameSplitter struct {
+	sawVCL bool   // 上一帧的图像 NAL 已出现，下一个 NAL 之前可以补 AUD 分帧
+	carry  []byte // 末尾可能是没凑齐的起始码（跨 chunk），最多留 3 字节，下次拼上再判
+}
+
+// feed 处理一段数据，返回要写给浏览器的字节（原数据 + 在真帧边界插入的 AUD）。
+func (s *frameSplitter) feed(data []byte) []byte {
+	b := append(s.carry, data...)
+	s.carry = nil
+	out := make([]byte, 0, len(b)+12)
+	emit := 0
+	for i := 0; i+3 < len(b); i++ {
+		if b[i] == 0 && b[i+1] == 0 && b[i+2] == 1 { // 起始码 00 00 01，NAL 头在 b[i+3]
+			nalType := b[i+3] & 0x1f
+			if s.sawVCL { // 到了新一帧的第一个 NAL：先把上一帧收尾（补 AUD）
+				out = append(out, b[emit:i]...)
+				out = append(out, audNAL...)
+				emit = i
+				s.sawVCL = false
+			}
+			if nalType == 1 || nalType == 5 { // 图像 NAL（P / IDR）
+				s.sawVCL = true
+			}
+			i += 3 // 跳过这个起始码（for 的 i++ 再 +1）
+		}
+	}
+	// 末尾最多留 3 字节（可能是没凑齐的起始码），其余放出
+	if len(b)-emit > 3 {
+		cut := len(b) - 3
+		out = append(out, b[emit:cut]...)
+		s.carry = append(s.carry, b[cut:]...)
+	} else {
+		s.carry = append(s.carry, b[emit:]...)
+	}
+	return out
+}
+
+// flush 画面停住 / 流结束：把没放出的尾巴 + （有半帧的话）一个 AUD 冲出去。
+func (s *frameSplitter) flush() []byte {
+	out := s.carry
+	s.carry = nil
+	if s.sawVCL {
+		out = append(out, audNAL...)
+		s.sawVCL = false
+	}
+	return out
+}
+
+// copyWithFrameEnds 把 screenrecord 的 H.264 裸流转给浏览器，按真帧边界补 AUD（见 frameSplitter）。
+// 活动中的分帧与时间无关、不会撕裂；画面停住 gap 后把最后一帧冲出去（否则裸流里最后一帧要等下一个
+// 起始码才显示，画面不动就一直黑着 / 停在上一帧，2026-11-15 真浏览器里测出）。
 func copyWithFrameEnds(w io.Writer, r io.Reader, gap time.Duration) error {
 	chunks := make(chan []byte, 16)
 	readErr := make(chan error, 1)
@@ -92,7 +141,21 @@ func copyWithFrameEnds(w io.Writer, r io.Reader, gap time.Duration) error {
 	}()
 	timer := time.NewTimer(time.Hour)
 	timer.Stop()
+	var sp frameSplitter
 	pending := false
+	writeAll := func(p []byte) error {
+		if len(p) == 0 {
+			return nil
+		}
+		if _, err := w.Write(p); err != nil {
+			go func() { // 浏览器断开了：把剩下的读完，让 screenrecord 能退出
+				for range chunks {
+				}
+			}()
+			return err
+		}
+		return nil
+	}
 	for {
 		select {
 		case b, ok := <-chunks:
@@ -100,20 +163,16 @@ func copyWithFrameEnds(w io.Writer, r io.Reader, gap time.Duration) error {
 				if err := <-readErr; err != io.EOF {
 					return err
 				}
-				return nil
+				return writeAll(sp.flush())
 			}
-			if _, err := w.Write(b); err != nil {
-				go func() { // 浏览器断开了：把剩下的读完，让 screenrecord 能退出
-					for range chunks {
-					}
-				}()
+			if err := writeAll(sp.feed(b)); err != nil {
 				return err
 			}
 			pending = true
 			timer.Reset(gap)
 		case <-timer.C:
 			if pending {
-				if _, err := w.Write(audNAL); err != nil {
+				if err := writeAll(sp.flush()); err != nil {
 					return err
 				}
 				pending = false
