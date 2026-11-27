@@ -2,7 +2,7 @@ import {
   AppstoreAddOutlined, AppstoreOutlined, ArrowLeftOutlined, BorderOutlined, CameraOutlined, CodeOutlined, CopyOutlined, DeleteOutlined, EditOutlined, EnvironmentOutlined, HomeOutlined, InteractionOutlined, MessageOutlined, MoreOutlined,
   PoweroffOutlined, RedoOutlined, ReloadOutlined, RotateRightOutlined, SoundOutlined, UploadOutlined, VideoCameraOutlined
 } from '@ant-design/icons'
-import { App, Avatar, Button, Descriptions, Drawer, Dropdown, Empty, Input, InputNumber, List, Modal, Select, Space, Spin, Switch, Tabs, Tag, Tooltip } from 'antd'
+import { App, Avatar, Button, Descriptions, Drawer, Dropdown, Empty, Input, InputNumber, List, Modal, Popover, Select, Space, Spin, Switch, Tabs, Tag, Tooltip } from 'antd'
 import { api, getClipboard, openRawScreenshot, serverUrl, setClipboard, upload, type InputRequest } from '@/data/api'
 import { useEffect, useRef, useState } from 'react'
 import { PhoneScreen } from '@/components/PhoneScreen'
@@ -36,6 +36,7 @@ export function PhoneDrawer({ phone, mode = 'view', onClose, onEdit, bare = fals
   const [adbOpen, setAdbOpen] = useState(false)
   const [groupModal, setGroupModal] = useState(false)
   const [proxyModal, setProxyModal] = useState(false)
+  const [toolsOpen, setToolsOpen] = useState(false)
   const [dragging, setDragging] = useState(false)
   const recorder = useRef<MediaRecorder | null>(null)
   const [recording, setRecording] = useState(false)
@@ -150,15 +151,17 @@ export function PhoneDrawer({ phone, mode = 'view', onClose, onEdit, bare = fals
       </Space>
     </div>
   )
+  const powerItem = running || live.status === 'starting'
+    ? { key: 'stop', label: '关机', icon: <PoweroffOutlined />, danger: true as const }
+    : { key: 'start', label: '开机', icon: <PoweroffOutlined />, disabled: blocked }
   const extra = (<Space size={6}>
           {mode === 'view' && onEdit && <Button icon={<EditOutlined />} onClick={onEdit}>编辑</Button>}
-          {running || live.status === 'starting'
-            ? <Button danger icon={<PoweroffOutlined />} onClick={() => ws.setStatus([live.id], 'stopped')}>关机</Button>
-            : <Tooltip title={blocked ? '有错误没解决，禁止开机（点「编辑」看「检查」）' : ''}><Button type="primary" disabled={blocked} icon={<PoweroffOutlined />} onClick={() => ws.setStatus([live.id], 'running')}>开机</Button></Tooltip>}
           <Dropdown
             disabled={!liveMode}
             menu={{
               items: [
+                powerItem,
+                { type: 'divider' as const },
                 ...(mode === 'view' && liveMode ? [
                   { key: 'proxy', label: '切换代理' },
                   { key: 'group', label: followers.length ? `群控中 ${followers.length} 台（改）` : '群控（一控多）' },
@@ -173,6 +176,8 @@ export function PhoneDrawer({ phone, mode = 'view', onClose, onEdit, bare = fals
                 ...(host?.androidVersions ?? []).filter((v) => v !== live.androidVersion).map((v) => ({ key: `flash-${v}`, label: `刷机：换成 Android ${v}（清空数据）` }))
               ],
               onClick: ({ key }) => {
+                if (key === 'stop') { void ws.setStatus([live.id], 'stopped'); return }
+                if (key === 'start') { if (!blocked) void ws.setStatus([live.id], 'running'); return }
                 if (key === 'proxy') { setProxyModal(true); return }
                 if (key === 'group') { setGroupModal(true); return }
                 if (key === 'backup' || key === 'restore') { setBackupMode(key); return }
@@ -203,20 +208,27 @@ export function PhoneDrawer({ phone, mode = 'view', onClose, onEdit, bare = fals
             for (const f of Array.from(e.dataTransfer.files)) void sendFile(f.name.toLowerCase().endsWith('.apk') ? 'apk' : 'file', f)
           }}
         >
-          <div className="pp-stage">
-            <div className="pp-phone-wrap">
-              <KeyboardInput id={live.id} enabled={running && liveMode}>
-                <PhoneScreen id={live.id} status={live.status} name={`${String(model?.values.marketName ?? '')} · Android ${live.androidVersion}`} size="large" seed={live.name.length + live.id.charCodeAt(5)} />
-              </KeyboardInput>
-              {uploading && <div className="pp-upload-toast">上传：{uploading}</div>}
-            </div>
-            {/* 右侧工具条：照魔云腾，一排小图标，鼠标悬停看名字 */}
-            <div className="pp-side-tools">
-              {tools.map((c) => <Tooltip key={c.label} title={c.tip} placement="left"><Button type="text" className="pp-side-tool" disabled={!running} icon={c.icon} onClick={c.onClick} /></Tooltip>)}
-            </div>
+          {/* 照魔云腾：手机画面铺满窗口，不留边框、不要侧栏 */}
+          <div className="pp-phone-wrap">
+            <KeyboardInput id={live.id} enabled={running && liveMode}>
+              <PhoneScreen id={live.id} status={live.status} name={`${String(model?.values.marketName ?? '')} · Android ${live.androidVersion}`} size="large" seed={live.name.length + live.id.charCodeAt(5)} />
+            </KeyboardInput>
+            {uploading && <div className="pp-upload-toast">上传：{uploading}</div>}
           </div>
+          {/* 底部一条：三个主键居中；右边「工具」弹出所有操作、「更多/关机」管理 */}
           <div className="pp-navbar">
-            {navKeys.map((c) => <Tooltip key={c.tip} title={c.tip}><Button type="text" className="pp-navkey" disabled={!running} icon={c.icon} onClick={c.onClick} /></Tooltip>)}
+            <div className="pp-navbar-keys">
+              {navKeys.map((c) => <Tooltip key={c.tip} title={c.tip}><Button type="text" className="pp-navkey" disabled={!running} icon={c.icon} onClick={c.onClick} /></Tooltip>)}
+            </div>
+            <div className="pp-navbar-right">
+              <Popover trigger="click" placement="topRight" open={toolsOpen} onOpenChange={setToolsOpen} title="工具"
+                content={<div className="pp-tools-grid">
+                  {tools.map((c) => <Tooltip key={c.label} title={c.tip}><Button className="pp-tool" disabled={!running} onClick={() => { setToolsOpen(false); c.onClick() }}>{c.icon}<span>{c.label}</span></Button></Tooltip>)}
+                </div>}>
+                <Button type="text" disabled={!running}>工具</Button>
+              </Popover>
+              {extra}
+            </div>
           </div>
           <input ref={apkInput} type="file" accept=".apk" hidden onChange={(e) => { void sendFile('apk', e.target.files?.[0]); e.target.value = '' }} />
           <input ref={fileInput} type="file" hidden onChange={(e) => { void sendFile('file', e.target.files?.[0]); e.target.value = '' }} />
@@ -277,15 +289,11 @@ export function PhoneDrawer({ phone, mode = 'view', onClose, onEdit, bare = fals
   // 独立弹出窗口（每台手机一个，可以同时开好几个）：没有抽屉外框，铺满窗口
   if (bare) return (
     <div className="pp-window">
-      <div className="pp-window-head">
-        {title}
-        {extra}
-      </div>
       <div className="pp-window-body">{body}</div>
     </div>
   )
   return (
-    <Drawer open size={mode === 'view' ? 600 : 860} onClose={onClose} destroyOnHidden title={title} extra={extra}>
+    <Drawer open size={mode === 'view' ? 600 : 860} onClose={onClose} destroyOnHidden title={title} extra={mode === 'edit' ? extra : undefined}>
       {body}
     </Drawer>
   )
