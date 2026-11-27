@@ -225,7 +225,8 @@ body { background: var(--fb-bg); color: var(--fb-text); font-family: Inter, ui-s
 
 /* 单台手机的弹出窗口（#window=<id>）：照魔云腾——画面铺满，底部一条导航栏 */
 .pp-window { height: 100vh; display: flex; flex-direction: column; background: var(--fb-bg); }
-.pp-window-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 12px; border-bottom: 1px solid var(--fb-line); background: var(--fb-surface); flex-wrap: wrap; flex: none; }
+.pp-window-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 5px 10px; border-bottom: 1px solid var(--fb-line); background: var(--fb-surface); flex-wrap: nowrap; flex: none; min-width: 0; }
+.pp-window-head > :first-child { min-width: 0; overflow: hidden; }
 .pp-window-body { flex: 1; min-height: 0; overflow: hidden; padding: 0; display: flex; }
 .pp-window .pp-detail { flex: 1; min-height: 0; width: 100%; gap: 0; }
 .pp-window .pp-detail-screen { flex: 1; min-height: 0; width: 100%; gap: 0; }

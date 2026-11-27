@@ -2,7 +2,7 @@ import {
   AppstoreAddOutlined, AppstoreOutlined, ArrowLeftOutlined, BorderOutlined, CameraOutlined, CodeOutlined, CopyOutlined, DeleteOutlined, EditOutlined, EnvironmentOutlined, HomeOutlined, InteractionOutlined, MessageOutlined, MoreOutlined,
   PoweroffOutlined, RedoOutlined, ReloadOutlined, RotateRightOutlined, SoundOutlined, UploadOutlined, VideoCameraOutlined
 } from '@ant-design/icons'
-import { App, Avatar, Button, Descriptions, Drawer, Dropdown, Empty, Input, InputNumber, List, Modal, Popover, Select, Space, Spin, Switch, Tabs, Tag, Tooltip } from 'antd'
+import { App, Avatar, Button, Descriptions, Drawer, Dropdown, Empty, Input, InputNumber, List, Modal, Select, Space, Spin, Switch, Tabs, Tag, Tooltip } from 'antd'
 import { api, getClipboard, openRawScreenshot, serverUrl, setClipboard, upload, type InputRequest } from '@/data/api'
 import { useEffect, useRef, useState } from 'react'
 import { PhoneScreen } from '@/components/PhoneScreen'
@@ -34,6 +34,8 @@ export function PhoneDrawer({ phone, mode = 'view', onClose, onEdit, bare = fals
   const [locOpen, setLocOpen] = useState(false)
   const [smsOpen, setSmsOpen] = useState(false)
   const [adbOpen, setAdbOpen] = useState(false)
+  const [groupModal, setGroupModal] = useState(false)
+  const [proxyModal, setProxyModal] = useState(false)
   const [dragging, setDragging] = useState(false)
   const recorder = useRef<MediaRecorder | null>(null)
   const [recording, setRecording] = useState(false)
@@ -149,9 +151,6 @@ export function PhoneDrawer({ phone, mode = 'view', onClose, onEdit, bare = fals
     </div>
   )
   const extra = (<Space size={6}>
-          {mode === 'view' && liveMode && <Popover trigger="click" placement="bottomRight" title="群控（一控多）" content={groupPicker}>
-            <Button type={followers.length ? 'primary' : 'default'}>{followers.length ? `群控中 ${followers.length} 台` : '群控'}</Button>
-          </Popover>}
           {mode === 'view' && onEdit && <Button icon={<EditOutlined />} onClick={onEdit}>编辑</Button>}
           {running || live.status === 'starting'
             ? <Button danger icon={<PoweroffOutlined />} onClick={() => ws.setStatus([live.id], 'stopped')}>关机</Button>
@@ -160,6 +159,11 @@ export function PhoneDrawer({ phone, mode = 'view', onClose, onEdit, bare = fals
             disabled={!liveMode}
             menu={{
               items: [
+                ...(mode === 'view' && liveMode ? [
+                  { key: 'proxy', label: '切换代理' },
+                  { key: 'group', label: followers.length ? `群控中 ${followers.length} 台（改）` : '群控（一控多）' },
+                  { type: 'divider' as const }
+                ] : []),
                 ...(running || live.status === 'starting' ? [{ key: 'restart', label: '重启', icon: <RedoOutlined /> }, { type: 'divider' as const }] : []),
                 { key: 'backup', label: '备份这台手机…' },
                 { key: 'restore', label: '从备份恢复…' },
@@ -169,6 +173,8 @@ export function PhoneDrawer({ phone, mode = 'view', onClose, onEdit, bare = fals
                 ...(host?.androidVersions ?? []).filter((v) => v !== live.androidVersion).map((v) => ({ key: `flash-${v}`, label: `刷机：换成 Android ${v}（清空数据）` }))
               ],
               onClick: ({ key }) => {
+                if (key === 'proxy') { setProxyModal(true); return }
+                if (key === 'group') { setGroupModal(true); return }
                 if (key === 'backup' || key === 'restore') { setBackupMode(key); return }
                 if (key === 'restart') { void ws.setStatus([live.id], 'stopped').then(() => ws.setStatus([live.id], 'running')); return }
                 if (key === 'renew') { Modal.confirm({ title: `一键新机 ${live.name}？`, content: '序列号、WiFi/蓝牙 MAC、Android ID、广告 ID 等「随机」身份重新生成一遍，机型、App 数据、代理都保留。重启后生效。', onOk: () => ws.renewPhones([live.id]) }); return }
@@ -218,6 +224,13 @@ export function PhoneDrawer({ phone, mode = 'view', onClose, onEdit, bare = fals
           <AppsDialog open={appsOpen} phoneId={live.id} onClose={() => setAppsOpen(false)} />
           <LocationDialog open={locOpen} phoneId={live.id} onClose={() => setLocOpen(false)} />
           <SmsDialog open={smsOpen} phoneId={live.id} onClose={() => setSmsOpen(false)} />
+          <Modal open={proxyModal} onCancel={() => setProxyModal(false)} footer={null} destroyOnHidden width={360} title="切换代理">
+            <ProxySwitcher phone={live} />
+            <p className="pp-muted pp-small" style={{ marginTop: 10 }}>换了之后，开着的手机时区会马上跟着换。</p>
+          </Modal>
+          <Modal open={groupModal} onCancel={() => setGroupModal(false)} footer={null} destroyOnHidden width={340} title="群控（一控多）">
+            {groupPicker}
+          </Modal>
         </div>}
         <BackupDialog phone={live} mode={backupMode} onClose={() => setBackupMode(null)} />
         <AdbDialog open={adbOpen} id={live.id} running={running} adbOn={!!live.adb} onEnable={() => ws.assign([live.id], { adb: true })} ip={live.ip} name={live.name} host={new URL(serverUrl(live.serverId)).hostname} onClose={() => setAdbOpen(false)} />
@@ -265,7 +278,7 @@ export function PhoneDrawer({ phone, mode = 'view', onClose, onEdit, bare = fals
   if (bare) return (
     <div className="pp-window">
       <div className="pp-window-head">
-        <Space size={10} wrap>{title}{mode === 'view' && liveMode && <ProxySwitcher phone={live} />}</Space>
+        {title}
         {extra}
       </div>
       <div className="pp-window-body">{body}</div>
