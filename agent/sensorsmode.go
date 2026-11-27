@@ -6,8 +6,10 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"encoding/base64"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 	"unsafe"
@@ -132,6 +134,7 @@ func runSensors() {
 			go func() {
 				defer slave.Close() // 一直开着：rild 重启时主端读写不会出错
 				m := modem.New(*spec.Modem, master)
+				activeModem.Store(m) // 收短信注入要找到当前基带（helperCommand 的 sms 命令）
 				for {
 					_ = m.Serve(master)
 					time.Sleep(time.Second)
@@ -156,9 +159,25 @@ func runSensors() {
 	sensors.Serve(spec, os.NewFile(3, "ptmx"), os.NewFile(4, "pts"), func(string) {})
 }
 
+// activeModem 当前这台手机在用的基带（收短信注入时往它上报 +CMT）。
+var activeModem atomic.Pointer[modem.Modem]
+
 // helperCommand 小助手执行一条管家的命令。
 func helperCommand(dev *touch.Device, cmd string) error {
 	f := strings.Fields(cmd)
+	// 收短信注入：sms <base64发件号> <base64正文>
+	if len(f) == 3 && f[0] == "sms" {
+		m := activeModem.Load()
+		if m == nil {
+			return fmt.Errorf("基带还没就绪")
+		}
+		sender, err1 := base64.StdEncoding.DecodeString(f[1])
+		body, err2 := base64.StdEncoding.DecodeString(f[2])
+		if err1 != nil || err2 != nil {
+			return fmt.Errorf("短信参数编码不对")
+		}
+		return m.InjectSMS(string(sender), string(body))
+	}
 	if len(f) >= 3 && f[0] == "prop" {
 		switch {
 		case f[1] == "hide" && len(f) == 3:
@@ -196,7 +215,9 @@ func serveModemTCP(spec modem.Spec) {
 			}
 			go func(c net.Conn) {
 				defer c.Close()
-				_ = modem.New(spec, c).Serve(c)
+				m := modem.New(spec, c)
+				activeModem.Store(m) // 收短信注入要找到当前基带（helperCommand 的 sms 命令）
+				_ = m.Serve(c)
 			}(c)
 		}
 		ln.Close()
