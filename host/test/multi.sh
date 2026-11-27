@@ -203,7 +203,7 @@ print(max([b-a for a,b in zip(p,p[1:]) if (d[a+4]&31)==5] or [0]))" "$DIR/$id.h2
   # 画面要动起来才像真在用（静止画面编码几乎不耗 CPU）：每 2 秒左右滑一下桌面
   pex "pp-$id" sh -c 'for i in $(seq 1 14); do input swipe 900 1300 150 1300 250; sleep 1; input swipe 150 1300 900 1300 250; sleep 1; done' </dev/null >/dev/null 2>&1 &
 done < "$DIR/phones.txt"
-# 每台实时画面用的编码器：c2.rk.* = 硬件（#133），c2.android.* = 软件。开画面后马上查：
+# 每台实时画面用的编码器：c2.mt.*（改名后）/ c2.rk.*（旧名）= 硬件（#133/#20），c2.android.* = 软件。开画面后马上查：
 # 谷歌版日志多，logcat 缓冲只有 256KB，等 30 秒画面放完再查，分配编码器那行早被冲掉了（2026-11-23）
 sleep 5
 while read -r id _; do
@@ -330,7 +330,8 @@ try:
         if len(a) >= 2: enc[a[0]] = a[1]
 except OSError: pass
 for i, e in sorted(enc.items()):
-    if "c2.rk." not in e: bad.append(f"{i} 实时画面没用上硬件编码（{e}）" + ("，原因看 %s.encoder-fallback.txt" % i if "c2.android" in e else ""))
+    # 硬件编码器：c2.mt.*（改名后的当前名，#20）或 c2.rk.*（旧名）；c2.android.* 才是软件
+    if "c2.mt." not in e and "c2.rk." not in e: bad.append(f"{i} 实时画面没用上硬件编码（{e}）" + ("，原因看 %s.encoder-fallback.txt" % i if "c2.android" in e else ""))
 # 画面有没有内容（2026-11-24 伪装档扩展列表让界面画不出来，只查编码器时漏掉了）：看最大关键帧，纯黑的只有一两 KB
 try:
     for line in open(os.path.join(d, "stream.txt")):
