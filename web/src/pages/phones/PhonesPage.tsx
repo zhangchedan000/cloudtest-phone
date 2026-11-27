@@ -140,7 +140,6 @@ export function PhonesPage() {
         </Tooltip>
         <div className="pp-card-meta">
           <div>{String(ws.modelOf(p)?.values.marketName ?? '未选机型')} · A{p.androidVersion}</div>
-          <div><ProxyCell proxy={ws.proxyOf(p)} /></div>
           <div className="pp-card-row"><span className="pp-chip" style={{ borderColor: ws.groupOf(p)?.color }}>{ws.groupOf(p)?.name ?? '未分组'}</span><IssueBadge issues={issues} /></div>
           {p.usage && <div className="pp-card-row pp-small pp-muted">{usageText(p.usage)}</div>}
           {p.status === 'running' && p.net && !p.net.ok && <Tooltip title={p.net.error}><Tag color="error" className="pp-small">上不了网</Tag></Tooltip>}
@@ -230,15 +229,17 @@ export function PhonesPage() {
               <AppstoreOutlined />
               <div className="pp-host-item-main"><div className="pp-host-item-name">全部设备</div><div className="pp-muted pp-small">{ws.phones.length} 台云手机</div></div>
             </button>
+            {/* 照魔云腾：设备归到「未分组」组下面 */}
+            <div className="pp-hostgroup-head"><DownOutlined className="pp-hostgroup-caret" /><span>未分组</span><span className="pp-muted">({hostHits.length})</span></div>
             {hostHits.map((h) => {
               const total = ws.phones.filter((p) => p.hostId === h.id).length
               const run = ws.phones.filter((p) => p.hostId === h.id && p.status === 'running').length
               return (
-                <button key={h.id} className={`pp-host-item ${hostId === h.id ? 'pp-host-item-active' : ''}`} onClick={() => setHostId(h.id)}>
-                  <StatusDot status={h.online ? 'running' : 'stopped'} />
+                <button key={h.id} className={`pp-host-item pp-host-device ${hostId === h.id ? 'pp-host-item-active' : ''}`} onClick={() => setHostId(h.id)}>
+                  <span className={`pp-host-q ${h.online ? 'pp-host-q-on' : ''}`}><span className="pp-host-q-letter">{h.name.replace(/[^A-Za-z0-9]/g, '').slice(0, 1).toUpperCase() || 'Q'}</span><i className={h.online ? 'pp-dot-on' : 'pp-dot-off'} /></span>
                   <div className="pp-host-item-main">
                     <div className="pp-host-item-name">{h.name}</div>
-                    <div className="pp-muted pp-small">{total} 台 · 运行 {run}{h.diskGb ? ` · ${h.diskUsedGb}/${h.diskGb}GB` : ''}</div>
+                    <div className="pp-muted pp-small">{h.diskGb ? `${h.diskUsedGb}/${h.diskGb}GB · ` : ''}{total} 台 · 运行 {run}</div>
                   </div>
                 </button>
               )
