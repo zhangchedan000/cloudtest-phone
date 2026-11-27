@@ -196,6 +196,8 @@ func (s *Service) applySettings(ctx context.Context, id string) {
 	s.applyAdb(ctx, id)
 	// 虚拟定位：设了就重设进去（location.go）
 	s.applyLocation(ctx, id)
+	// 导航栏默认手势：去掉挡 App 的三键栏（nav.go）
+	s.applyNavGesture(ctx, id)
 	// /dev 里服务器的硬件节点删掉（devclean.go，踩坑 #74）
 	s.cleanDev(ctx, id)
 	// 高通 Adreno 伪装档：补一个 /dev/kgsl-3d0 空壳，消掉「是高通却有 mali0、没 kgsl」的破绽（devclean.go，踩坑 #165）
