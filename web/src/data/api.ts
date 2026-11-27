@@ -123,6 +123,7 @@ export const api = {
   location: (id: string) => call<{ location: { lat: number; lng: number } | null }>('GET', `/phones/${id}/location`),
   setLocation: (id: string, lat: number, lng: number) => call<{ ok: boolean }>('POST', `/phones/${id}/location`, { lat, lng }),
   clearLocation: (id: string) => call<{ ok: boolean }>('DELETE', `/phones/${id}/location`),
+  sendSMS: (id: string, sender: string, body: string) => call<{ ok: boolean }>('POST', `/phones/${id}/sms`, { sender, body }),
   proxies: (sid?: string) => call<Proxy[]>('GET', '/proxies', undefined, sid),
   createProxy: (proxy: Omit<Proxy, 'id'>, sid?: string) => call<Proxy>('POST', '/proxies', proxy, sid),
   checkProxy: (id: string, sid?: string) => call<ProxyCheck>('POST', `/proxies/${id}/check`, undefined, sid),

@@ -1,5 +1,5 @@
 import {
-  AppstoreAddOutlined, AppstoreOutlined, ArrowLeftOutlined, BorderOutlined, CameraOutlined, CodeOutlined, CopyOutlined, DeleteOutlined, EditOutlined, EnvironmentOutlined, HomeOutlined, MoreOutlined,
+  AppstoreAddOutlined, AppstoreOutlined, ArrowLeftOutlined, BorderOutlined, CameraOutlined, CodeOutlined, CopyOutlined, DeleteOutlined, EditOutlined, EnvironmentOutlined, HomeOutlined, MessageOutlined, MoreOutlined,
   PoweroffOutlined, RedoOutlined, ReloadOutlined, RotateRightOutlined, SoundOutlined, UploadOutlined, VideoCameraOutlined
 } from '@ant-design/icons'
 import { App, Avatar, Button, Descriptions, Drawer, Dropdown, Empty, Input, InputNumber, List, Modal, Popover, Select, Space, Spin, Switch, Tabs, Tag, Tooltip } from 'antd'
@@ -32,6 +32,7 @@ export function PhoneDrawer({ phone, mode = 'view', onClose, onEdit, bare = fals
   const [clipOpen, setClipOpen] = useState(false)
   const [appsOpen, setAppsOpen] = useState(false)
   const [locOpen, setLocOpen] = useState(false)
+  const [smsOpen, setSmsOpen] = useState(false)
   const [adbOpen, setAdbOpen] = useState(false)
   const [dragging, setDragging] = useState(false)
   const recorder = useRef<MediaRecorder | null>(null)
@@ -117,6 +118,7 @@ export function PhoneDrawer({ phone, mode = 'view', onClose, onEdit, bare = fals
     { icon: <UploadOutlined />, tip: '上传文件（图片、视频进相册，其他进下载目录；也可以直接把文件拖进窗口）', onClick: () => (liveMode ? fileInput.current?.click() : message.info('预览模式：接上管家程序后可用')) },
     { icon: <AppstoreOutlined />, tip: '应用列表（打开 / 卸载手机里的 App）', onClick: () => (liveMode ? setAppsOpen(true) : message.info('预览模式：接上管家程序后可用')) },
     { icon: <EnvironmentOutlined />, tip: '虚拟定位（给手机设一个假的 GPS 位置）', onClick: () => (liveMode ? setLocOpen(true) : message.info('预览模式：接上管家程序后可用')) },
+    { icon: <MessageOutlined />, tip: '收短信（填一条内容，手机就收到一条，进短信 App）', onClick: () => (liveMode ? setSmsOpen(true) : message.info('预览模式：接上管家程序后可用')) },
     { icon: <AppstoreAddOutlined />, tip: '安装 APK（也可以直接把 APK 拖进窗口）', onClick: () => (liveMode ? apkInput.current?.click() : message.info('预览模式：接上管家程序后可用')) },
     { icon: <CopyOutlined />, tip: '剪贴板（电脑 ↔ 手机互相复制，支持中文）', onClick: () => (liveMode ? setClipOpen(true) : message.info('预览模式：接上管家程序后可用')) },
     { icon: <CodeOutlined />, tip: 'ADB 连接命令（复制到自己电脑上用）', onClick: () => (liveMode ? setAdbOpen(true) : message.info('预览模式：接上管家程序后可用')) }
@@ -200,6 +202,7 @@ export function PhoneDrawer({ phone, mode = 'view', onClose, onEdit, bare = fals
           <ClipboardDialog open={clipOpen} phoneId={live.id} onClose={() => setClipOpen(false)} />
           <AppsDialog open={appsOpen} phoneId={live.id} onClose={() => setAppsOpen(false)} />
           <LocationDialog open={locOpen} phoneId={live.id} onClose={() => setLocOpen(false)} />
+          <SmsDialog open={smsOpen} phoneId={live.id} onClose={() => setSmsOpen(false)} />
         </div>}
         <BackupDialog phone={live} mode={backupMode} onClose={() => setBackupMode(null)} />
         <AdbDialog open={adbOpen} id={live.id} running={running} adbOn={!!live.adb} onEnable={() => ws.assign([live.id], { adb: true })} ip={live.ip} name={live.name} host={new URL(serverUrl(live.serverId)).hostname} onClose={() => setAdbOpen(false)} />
@@ -436,6 +439,36 @@ function LocationDialog({ open, phoneId, onClose }: { open: boolean; phoneId: st
         ? <p className="pp-small" style={{ marginTop: 10, color: '#52c41a' }}>当前已定位到：{cur.lat.toFixed(4)}, {cur.lng.toFixed(4)}（关机重开也会自动恢复）</p>
         : <p className="pp-muted pp-small" style={{ marginTop: 10 }}>当前没有设虚拟定位。</p>}
       <p className="pp-muted pp-small" style={{ marginTop: 2 }}>换城市直接点一下就切。关闭后 App 不再更新到这个位置；个别 App 可能还缓存着上一个，重开手机彻底清掉。</p>
+    </Modal>
+  )
+}
+
+/** 收短信：填一条短信内容，手机就「收到」一条（2026-11-27 用户要求，对齐魔云腾）。 */
+function SmsDialog({ open, phoneId, onClose }: { open: boolean; phoneId: string; onClose: () => void }) {
+  const { message } = App.useApp()
+  const [sender, setSender] = useState('10086')
+  const [body, setBody] = useState('')
+  const [busy, setBusy] = useState(false)
+  useEffect(() => { if (open) setBody('') }, [open])
+  const send = async () => {
+    if (!body.trim()) { message.warning('先填短信内容'); return }
+    setBusy(true)
+    try { await api.sendSMS(phoneId, sender.trim() || '10086', body); message.success('已发给手机'); onClose() }
+    catch (e) { message.error((e as Error).message) } finally { setBusy(false) }
+  }
+  return (
+    <Modal open={open} onCancel={onClose} footer={null} destroyOnHidden width={440} title="收短信">
+      <p className="pp-muted pp-small">填一条短信，手机就「收到」一条（进短信 App、弹通知），常用来测试收验证码类的流程。</p>
+      <div style={{ margin: '10px 0' }}>
+        <span className="pp-muted pp-small">发件号</span>
+        <Input value={sender} onChange={(e) => setSender(e.target.value)} placeholder="10086 / +8613800138000" style={{ width: 220, marginLeft: 8 }} />
+        <span className="pp-muted pp-small" style={{ marginLeft: 6 }}>（只能填号码）</span>
+      </div>
+      <Input.TextArea value={body} onChange={(e) => setBody(e.target.value)} rows={3} placeholder="短信内容（中英文都行）" maxLength={1000} showCount />
+      <div style={{ marginTop: 12 }}>
+        <Button type="primary" icon={<MessageOutlined />} loading={busy} onClick={send}>发给手机</Button>
+      </div>
+      <p className="pp-muted pp-small" style={{ marginTop: 10 }}>注：这是模拟「收到一条短信」，不是真从运营商网络收。手机要有信号（SIM 已注册运营商）。</p>
     </Modal>
   )
 }
