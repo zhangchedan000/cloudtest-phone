@@ -2,52 +2,103 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8" />
-<title>连接板子</title>
+<title>服务器</title>
 <style>
   * { box-sizing: border-box; }
   html, body { height: 100%; margin: 0; }
   body {
-    background: #0f1115; color: #e6e6e6;
+    background: #f5f6f8; color: #1f2329;
     font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
     display: flex; align-items: center; justify-content: center;
   }
-  .card { width: 420px; max-width: 90%; text-align: center; }
-  h1 { font-size: 22px; font-weight: 600; margin: 0 0 6px; }
-  p { color: #8b8f98; font-size: 13px; margin: 0 0 22px; }
-  input {
-    width: 100%; height: 44px; padding: 0 14px; font-size: 15px;
-    background: #1a1d24; border: 1px solid #2b2f3a; border-radius: 10px; color: #fff; outline: none;
-  }
-  input:focus { border-color: #1677ff; }
-  button {
-    width: 100%; height: 44px; margin-top: 14px; font-size: 15px; font-weight: 600;
-    background: #1677ff; border: none; border-radius: 10px; color: #fff; cursor: pointer;
-  }
-  button:hover { background: #0958d9; }
-  .hint { margin-top: 16px; color: #6b7280; font-size: 12px; line-height: 1.6; }
+  .card { width: 460px; max-width: 92%; background: #fff; border: 1px solid #e5e6eb; border-radius: 14px; padding: 26px; box-shadow: 0 6px 24px rgba(0,0,0,.06); }
+  h1 { font-size: 20px; font-weight: 600; margin: 0 0 4px; }
+  .sub { color: #8a9099; font-size: 13px; margin: 0 0 18px; }
+  .list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
+  .empty { color: #a7acb3; font-size: 13px; text-align: center; padding: 14px 0; }
+  .row { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid #e5e6eb; border-radius: 10px; }
+  .row .q { width: 30px; height: 30px; border-radius: 8px; background: #eaf2ff; color: #1677ff; display: flex; align-items: center; justify-content: center; font-weight: 700; flex: none; }
+  .row .info { flex: 1; min-width: 0; }
+  .row .nm { font-weight: 600; font-size: 14px; }
+  .row .ad { color: #8a9099; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .row button { height: 32px; padding: 0 14px; border-radius: 8px; border: none; cursor: pointer; font-size: 13px; }
+  .conn { background: #1677ff; color: #fff; }
+  .conn:hover { background: #0958d9; }
+  .del { background: transparent; color: #c0c4cc; font-size: 18px !important; padding: 0 6px !important; }
+  .del:hover { color: #f5222d; }
+  .form { display: flex; gap: 8px; }
+  .form input { height: 40px; padding: 0 12px; font-size: 14px; background: #fff; border: 1px solid #dcdfe6; border-radius: 9px; outline: none; }
+  .form input:focus { border-color: #1677ff; }
+  #name { width: 120px; flex: none; }
+  #addr { flex: 1; }
+  .add { height: 40px; padding: 0 18px; background: #1677ff; color: #fff; border: none; border-radius: 9px; font-size: 14px; font-weight: 600; cursor: pointer; flex: none; }
+  .add:hover { background: #0958d9; }
+  .err { color: #f5222d; font-size: 12px; margin-top: 8px; min-height: 16px; }
+  .hint { color: #a7acb3; font-size: 12px; margin-top: 12px; }
 </style>
 </head>
 <body>
   <div class="card">
-    <h1>云测机</h1>
-    <p>填一下你板子（管家）的地址，连上就能用了。</p>
-    <input id="addr" placeholder="例如 192.168.68.194" autofocus />
-    <button id="go">连接</button>
-    <div class="hint">不用加 https:// 和端口，直接填 IP 就行（默认 8443）。<br/>以后换地址：菜单「云测机 → 连接设置」。</div>
+    <h1>服务器</h1>
+    <p class="sub">添加你的板子（管家），连上就能用。可以加多块板子。</p>
+    <div class="list" id="list"></div>
+    <div class="form">
+      <input id="name" placeholder="名字(可选)" />
+      <input id="addr" placeholder="板子 IP，例如 192.168.68.194" autofocus />
+      <button class="add" id="add">添加</button>
+    </div>
+    <div class="err" id="err"></div>
+    <div class="hint">不用加 https:// 和端口，直接填 IP（默认 8443）。添加后点「连接」就进去了。</div>
   </div>
   <script>
-    const params = new URLSearchParams(location.search)
-    const cur = params.get('current') || ''
-    const input = document.getElementById('addr')
-    if (cur) { try { input.value = new URL(cur).hostname } catch { input.value = cur } }
-    function go() {
-      const v = input.value.trim()
-      if (!v) { input.focus(); return }
-      // 通知主进程（main.js 的 will-navigate 拦截 app://set-server/）
-      location.href = 'app://set-server/' + encodeURIComponent(v)
+    const listEl = document.getElementById('list')
+    const errEl = document.getElementById('err')
+    const nameEl = document.getElementById('name')
+    const addrEl = document.getElementById('addr')
+
+    function render(servers) {
+      listEl.innerHTML = ''
+      if (!servers || servers.length === 0) {
+        listEl.innerHTML = '<div class="empty">还没有服务器，下面添加你的板子 👇</div>'
+        return
+      }
+      for (const s of servers) {
+        const row = document.createElement('div')
+        row.className = 'row'
+        const host = (() => { try { return new URL(s.url).host } catch { return s.url } })()
+        row.innerHTML =
+          '<div class="q">Q</div>' +
+          '<div class="info"><div class="nm"></div><div class="ad"></div></div>' +
+          '<button class="conn">连接</button>' +
+          '<button class="del" title="删除">×</button>'
+        row.querySelector('.nm').textContent = s.name
+        row.querySelector('.ad').textContent = host
+        row.querySelector('.conn').addEventListener('click', () => window.pp.connect(s.id))
+        row.querySelector('.del').addEventListener('click', async () => { const r = await window.pp.deleteServer(s.id); render(r.servers) })
+        listEl.appendChild(row)
+      }
     }
-    document.getElementById('go').addEventListener('click', go)
-    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') go() })
+
+    async function refresh() {
+      const r = await window.pp.getServers()
+      render(r.servers)
+    }
+
+    async function add() {
+      errEl.textContent = ''
+      const addr = addrEl.value.trim()
+      if (!addr) { addrEl.focus(); return }
+      const r = await window.pp.addServer(nameEl.value, addr)
+      if (r.error) { errEl.textContent = r.error; return }
+      nameEl.value = ''; addrEl.value = ''
+      render(r.servers)
+      // 加完只有这一台就直接连上
+      if (r.servers.length === 1) window.pp.connect(r.servers[0].id)
+    }
+
+    document.getElementById('add').addEventListener('click', add)
+    addrEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') add() })
+    refresh()
   </script>
 </body>
 </html>

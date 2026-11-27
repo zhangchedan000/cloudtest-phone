@@ -18,7 +18,7 @@
     "appId": "com.prismphone.client",
     "productName": "云测机",
     "artifactName": "yuncs-client-setup-${version}.${ext}",
-    "files": ["main.js", "setup.html"],
+    "files": ["main.js", "preload.js", "setup.html"],
     "win": {
       "target": [{ "target": "nsis", "arch": ["x64"] }]
     },

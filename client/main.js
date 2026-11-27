@@ -1,28 +1,35 @@
 // 云测机桌面客户端（Electron 外壳，2026-11-27 用户要求做成客户端）。
 //
-// 它就是一个干净的桌面窗口，加载板子上管家的管理界面（管家自带网页，端口 8443/HTTPS）。
-// 相比浏览器，客户端把那些烦人的东西都内部处理好了：
-//   - 自动信任板子的自签证书（不再弹「不安全」/ 证书警告）；
-//   - 把板子地址当成「安全来源」，实时画面的视频解码（WebCodecs）直接能用，不用再给浏览器加命令行标记；
-//   - 没有浏览器地址栏、书签栏，就是一个管理程序。
-// 界面本身还是管家网页那套（以后照魔云腾重做，改的是网页端，客户端自动跟着变）。
+// 它是个干净的桌面程序，加载板子上管家的管理界面（管家自带网页，端口 8443/HTTPS）。
+// 相比浏览器，客户端把烦人的东西都内部处理好：
+//   - 自动信任板子的自签证书（不弹「不安全」/ 证书警告）；
+//   - 把板子地址当「安全来源」，实时画面视频解码(WebCodecs)直接能用，不用再给浏览器加命令行标记；
+//   - 没有地址栏书签栏，就是一个管理程序。
+// 界面本身是管家网页那套（照魔云腾改版的，改网页端客户端自动跟着变）。
+//
+// 服务器管理：第一次打开让用户「添加服务器」（把板子加进来，可加多块），连上就用；地址存在本地。
 
-const { app, BrowserWindow, Menu, dialog, shell, session } = require('electron')
+const { app, BrowserWindow, Menu, shell, ipcMain } = require('electron')
 const fs = require('fs')
 const path = require('path')
+const crypto = require('crypto')
 
 const CONFIG = path.join(app.getPath('userData'), 'config.json')
 
 function loadConfig() {
-  try { return JSON.parse(fs.readFileSync(CONFIG, 'utf8')) } catch { return {} }
+  try {
+    const c = JSON.parse(fs.readFileSync(CONFIG, 'utf8'))
+    if (!Array.isArray(c.servers)) c.servers = []
+    return c
+  } catch { return { servers: [], current: '' } }
 }
 function saveConfig(c) {
   try { fs.mkdirSync(path.dirname(CONFIG), { recursive: true }); fs.writeFileSync(CONFIG, JSON.stringify(c, null, 2)) } catch { /* ignore */ }
 }
 
-// 规整用户填的地址：补上 https://、默认端口 8443。
+// 规整地址：补 https://、默认端口 8443。
 function normalizeServer(raw) {
-  let s = (raw || '').trim()
+  let s = String(raw || '').trim()
   if (!s) return ''
   if (!/^https?:\/\//i.test(s)) s = 'https://' + s
   try {
@@ -32,27 +39,28 @@ function normalizeServer(raw) {
   } catch { return '' }
 }
 
-// 把配置里的板子地址当成「安全来源」，并忽略它的自签证书错误——WebCodecs 视频才能用、不弹证书警告。
-function applySecurity(server) {
+// 把所有已添加服务器的地址都标成「安全来源」+ 忽略自签证书错误（视频能播、不弹警告）。
+// 必须在 app ready 之前设好（Chromium 启动时读命令行）。
+function applySecurity(servers) {
   app.commandLine.appendSwitch('ignore-certificate-errors')
-  if (server) {
-    // 板子的 http(备用) 和 https 都标成安全来源
-    let origins = server
-    try { const u = new URL(server); origins += ',http://' + u.hostname + ':8099' } catch { /* ignore */ }
-    app.commandLine.appendSwitch('unsafely-treat-insecure-origin-as-secure', origins)
-    app.commandLine.appendSwitch('disable-features', 'InsecureDownloadWarnings')
+  const origins = []
+  for (const sv of servers) {
+    if (!sv.url) continue
+    origins.push(sv.url)
+    try { const u = new URL(sv.url); origins.push('http://' + u.hostname + ':8099') } catch { /* ignore */ }
   }
+  if (origins.length) app.commandLine.appendSwitch('unsafely-treat-insecure-origin-as-secure', origins.join(','))
 }
 
 let win
 let currentServer = ''
 
 function buildMenu() {
-  const template = [
+  Menu.setApplicationMenu(Menu.buildFromTemplate([
     {
       label: '云测机',
       submenu: [
-        { label: '连接设置（换板子地址）', click: () => openSetup() },
+        { label: '服务器管理 / 添加板子', click: () => openSetup() },
         { label: '刷新', accelerator: 'CmdOrCtrl+R', click: () => win && win.reload() },
         { type: 'separator' },
         { label: '退出', role: 'quit' }
@@ -69,67 +77,78 @@ function buildMenu() {
         { label: '开发者工具', accelerator: 'F12', click: () => win && win.webContents.toggleDevTools() }
       ]
     }
-  ]
-  Menu.setApplicationMenu(Menu.buildFromTemplate(template))
+  ]))
 }
 
 function createWindow() {
   win = new BrowserWindow({
-    width: 1360,
-    height: 860,
-    minWidth: 960,
-    minHeight: 600,
-    title: '云测机',
-    backgroundColor: '#0f1115',
-    autoHideMenuBar: true,
-    webPreferences: {
-      // 管家界面同源访问自己的 API，不涉及跨域；关掉一些对 LAN 自签场景没必要的限制。
-      webSecurity: true,
-      spellcheck: false
-    }
+    width: 1360, height: 860, minWidth: 980, minHeight: 620,
+    title: '云测机', backgroundColor: '#f5f6f8', autoHideMenuBar: true,
+    webPreferences: { preload: path.join(__dirname, 'preload.js'), spellcheck: false }
   })
-  // 新开窗口（比如「截图新窗口打开原图」）用系统浏览器打开，别在客户端里乱开
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (currentServer && url.startsWith(currentServer)) return { action: 'allow' }
     shell.openExternal(url)
     return { action: 'deny' }
   })
-  loadServerOrSetup()
+  showStartup()
 }
 
-function loadServerOrSetup() {
-  if (currentServer) win.loadURL(currentServer)
+// 启动时：有「当前服务器」就直接连；否则打开服务器管理页让用户添加/选择。
+function showStartup() {
+  const c = loadConfig()
+  const cur = c.servers.find((s) => s.id === c.current)
+  if (cur) loadServer(cur)
   else openSetup()
 }
 
-function openSetup() {
-  win.loadFile(path.join(__dirname, 'setup.html'), { query: { current: currentServer } })
+function loadServer(sv) {
+  currentServer = sv.url
+  win.loadURL(sv.url)
 }
 
-// 渲染进程（setup.html）保存地址时通过加载一个特殊 URL 通知主进程。
-app.on('web-contents-created', (_e, contents) => {
-  contents.on('will-navigate', (e, url) => {
-    if (url.startsWith('app://set-server/')) {
-      e.preventDefault()
-      const raw = decodeURIComponent(url.slice('app://set-server/'.length))
-      const srv = normalizeServer(raw)
-      if (!srv) { dialog.showErrorBox('地址不对', '请填板子的地址，例如 192.168.68.194'); return }
-      currentServer = srv
-      const c = loadConfig(); c.server = srv; saveConfig(c)
-      win.loadURL(srv)
-    }
-  })
+function openSetup() {
+  win.loadFile(path.join(__dirname, 'setup.html'))
+}
+
+// ---- 服务器管理的通道（setup.html 通过 preload 调）----
+ipcMain.handle('pp-get-servers', () => {
+  const c = loadConfig()
+  return { servers: c.servers, current: c.current }
+})
+ipcMain.handle('pp-add-server', (_e, { name, url }) => {
+  const u = normalizeServer(url)
+  if (!u) return { error: '地址不对，填板子的 IP，例如 192.168.68.194' }
+  const c = loadConfig()
+  if (c.servers.some((s) => s.url === u)) return { error: '这台已经加过了' }
+  const sv = { id: crypto.randomUUID(), name: String(name || '').trim() || u.replace(/^https?:\/\//, ''), url: u }
+  c.servers.push(sv)
+  saveConfig(c)
+  return { servers: c.servers, current: c.current }
+})
+ipcMain.handle('pp-delete-server', (_e, id) => {
+  const c = loadConfig()
+  c.servers = c.servers.filter((s) => s.id !== id)
+  if (c.current === id) c.current = ''
+  saveConfig(c)
+  return { servers: c.servers, current: c.current }
+})
+ipcMain.on('pp-connect', (_e, id) => {
+  const c = loadConfig()
+  const sv = c.servers.find((s) => s.id === id)
+  if (!sv) return
+  c.current = id
+  saveConfig(c)
+  loadServer(sv)
 })
 
-// 自签证书：直接信任（都是用户自己局域网里的板子）
+// 自签证书：直接信任（都是用户自己局域网里的板子）。
 app.on('certificate-error', (event, _wc, _url, _err, _cert, callback) => {
   event.preventDefault()
   callback(true)
 })
 
-// 安全开关必须在 app ready 之前设好（Chromium 启动时才读命令行），所以在这里（模块加载时）就读配置、设开关。
-currentServer = normalizeServer(loadConfig().server || '')
-applySecurity(currentServer)
+applySecurity(loadConfig().servers)
 
 app.whenReady().then(() => {
   buildMenu()
