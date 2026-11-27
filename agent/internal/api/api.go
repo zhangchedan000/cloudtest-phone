@@ -106,6 +106,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/phones/{id}/clipboard", s.setClipboard)
 	mux.HandleFunc("GET /api/phones/{id}/apps", s.listApps)
 	mux.HandleFunc("POST /api/phones/{id}/apps", s.appAction)
+	mux.HandleFunc("GET /api/phones/{id}/location", s.getLocation)
+	mux.HandleFunc("POST /api/phones/{id}/location", s.setLocation)
+	mux.HandleFunc("DELETE /api/phones/{id}/location", s.action(func(r *http.Request, id string) error { return s.svc.ClearLocation(r.Context(), id) }))
 	mux.HandleFunc("POST /api/phones/{id}/adb-key", s.authorizeADB)
 	mux.HandleFunc("POST /api/phones/{id}/apk", s.installAPK)
 	mux.HandleFunc("GET /api/phones/{id}/logs", s.logs)
@@ -619,6 +622,31 @@ func (s *Server) appAction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
+		fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func (s *Server) getLocation(w http.ResponseWriter, r *http.Request) {
+	loc, err := s.svc.GetLocation(r.PathValue("id"))
+	if err != nil {
+		fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"location": loc})
+}
+
+func (s *Server) setLocation(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Lat float64 `json:"lat"`
+		Lng float64 `json:"lng"`
+	}
+	if err := decode(r, &req); err != nil {
+		fail(w, err)
+		return
+	}
+	if err := s.svc.SetLocation(r.Context(), r.PathValue("id"), req.Lat, req.Lng); err != nil {
 		fail(w, err)
 		return
 	}

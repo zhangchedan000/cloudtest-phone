@@ -261,6 +261,8 @@ func main() {
 	go svc.RunInternetChecker(context.Background(), 2*time.Minute)
 	// 电池漂移：每 3 分钟把每台手机的电量/温度推一小步，别让电池冻在一个固定值（battery.go）
 	go svc.RunBatteryDrift(context.Background(), 3*time.Minute)
+	// 虚拟定位刷新：每 4 秒给设了定位的手机重推一次位置，保持定位新鲜（location.go）
+	go svc.RunLocationRefresh(context.Background(), 4*time.Second)
 	var health *netcfg.HealthChecker
 	if net != nil {
 		// 网络模块的宿主机检查：策略路由被删了 30 秒内自动补回

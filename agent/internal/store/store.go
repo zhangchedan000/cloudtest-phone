@@ -44,6 +44,14 @@ type Phone struct {
 	// Adb「开发者选项 → USB 调试」开着吗。默认关（真手机普通用户都是关的，App 能读到这个开关）；
 	// 要用 ADB 时在管理页打开（踩坑 #56）。
 	Adb bool `json:"adb,omitempty"`
+	// Location 虚拟定位（经纬度）；nil = 没设（手机本来就没有真 GPS）。2026-11-27 用户要求，对齐魔云腾。
+	Location *LatLng `json:"location,omitempty"`
+}
+
+// LatLng 一个经纬度点。
+type LatLng struct {
+	Lat float64 `json:"lat"`
+	Lng float64 `json:"lng"`
 }
 
 type ProxyCheck struct {

@@ -1,8 +1,8 @@
 import {
-  AppstoreAddOutlined, AppstoreOutlined, ArrowLeftOutlined, BorderOutlined, CameraOutlined, CodeOutlined, CopyOutlined, DeleteOutlined, EditOutlined, HomeOutlined, MoreOutlined,
+  AppstoreAddOutlined, AppstoreOutlined, ArrowLeftOutlined, BorderOutlined, CameraOutlined, CodeOutlined, CopyOutlined, DeleteOutlined, EditOutlined, EnvironmentOutlined, HomeOutlined, MoreOutlined,
   PoweroffOutlined, RedoOutlined, ReloadOutlined, RotateRightOutlined, SoundOutlined, UploadOutlined, VideoCameraOutlined
 } from '@ant-design/icons'
-import { App, Avatar, Button, Descriptions, Drawer, Dropdown, Empty, Input, List, Modal, Popover, Select, Space, Spin, Switch, Tabs, Tag, Tooltip } from 'antd'
+import { App, Avatar, Button, Descriptions, Drawer, Dropdown, Empty, Input, InputNumber, List, Modal, Popover, Select, Space, Spin, Switch, Tabs, Tag, Tooltip } from 'antd'
 import { api, getClipboard, openRawScreenshot, serverUrl, setClipboard, upload, type InputRequest } from '@/data/api'
 import { useEffect, useRef, useState } from 'react'
 import { PhoneScreen } from '@/components/PhoneScreen'
@@ -31,6 +31,7 @@ export function PhoneDrawer({ phone, mode = 'view', onClose, onEdit, bare = fals
   const [uploading, setUploading] = useState<string>('')
   const [clipOpen, setClipOpen] = useState(false)
   const [appsOpen, setAppsOpen] = useState(false)
+  const [locOpen, setLocOpen] = useState(false)
   const [adbOpen, setAdbOpen] = useState(false)
   const [dragging, setDragging] = useState(false)
   const recorder = useRef<MediaRecorder | null>(null)
@@ -115,6 +116,7 @@ export function PhoneDrawer({ phone, mode = 'view', onClose, onEdit, bare = fals
     { icon: <VideoCameraOutlined style={recording ? { color: '#ff4d4f' } : undefined} />, tip: recording ? '录屏中：点一下停止并下载' : '录屏（录浏览器里的实时画面，停止后下载成视频文件）', onClick: () => (liveMode ? toggleRecord() : message.info('预览模式：接上管家程序后可用')) },
     { icon: <UploadOutlined />, tip: '上传文件（图片、视频进相册，其他进下载目录；也可以直接把文件拖进窗口）', onClick: () => (liveMode ? fileInput.current?.click() : message.info('预览模式：接上管家程序后可用')) },
     { icon: <AppstoreOutlined />, tip: '应用列表（打开 / 卸载手机里的 App）', onClick: () => (liveMode ? setAppsOpen(true) : message.info('预览模式：接上管家程序后可用')) },
+    { icon: <EnvironmentOutlined />, tip: '虚拟定位（给手机设一个假的 GPS 位置）', onClick: () => (liveMode ? setLocOpen(true) : message.info('预览模式：接上管家程序后可用')) },
     { icon: <AppstoreAddOutlined />, tip: '安装 APK（也可以直接把 APK 拖进窗口）', onClick: () => (liveMode ? apkInput.current?.click() : message.info('预览模式：接上管家程序后可用')) },
     { icon: <CopyOutlined />, tip: '剪贴板（电脑 ↔ 手机互相复制，支持中文）', onClick: () => (liveMode ? setClipOpen(true) : message.info('预览模式：接上管家程序后可用')) },
     { icon: <CodeOutlined />, tip: 'ADB 连接命令（复制到自己电脑上用）', onClick: () => (liveMode ? setAdbOpen(true) : message.info('预览模式：接上管家程序后可用')) }
@@ -197,6 +199,7 @@ export function PhoneDrawer({ phone, mode = 'view', onClose, onEdit, bare = fals
           <p className="pp-muted pp-small pp-center pp-screen-hint">点一下 = 点击，按住拖动 = 滑动；直接打字输入、Ctrl+V 粘贴；长文字 / 复制互通点右侧「剪贴板」</p>
           <ClipboardDialog open={clipOpen} phoneId={live.id} onClose={() => setClipOpen(false)} />
           <AppsDialog open={appsOpen} phoneId={live.id} onClose={() => setAppsOpen(false)} />
+          <LocationDialog open={locOpen} phoneId={live.id} onClose={() => setLocOpen(false)} />
         </div>}
         <BackupDialog phone={live} mode={backupMode} onClose={() => setBackupMode(null)} />
         <AdbDialog open={adbOpen} id={live.id} running={running} adbOn={!!live.adb} onEnable={() => ws.assign([live.id], { adb: true })} ip={live.ip} name={live.name} host={new URL(serverUrl(live.serverId)).hostname} onClose={() => setAdbOpen(false)} />
@@ -368,6 +371,70 @@ function AppsDialog({ open, phoneId, onClose }: { open: boolean; phoneId: string
               </List.Item>
             )} />}
       <p className="pp-muted pp-small" style={{ marginTop: 8 }}>蓝色「装的」= 你自己安装的；其余系统自带。</p>
+    </Modal>
+  )
+}
+
+/** 常用城市经纬度（含跨境），点一下填进输入框。 */
+const LOC_PRESETS: { name: string; lat: number; lng: number }[] = [
+  { name: '北京', lat: 39.9042, lng: 116.4074 }, { name: '上海', lat: 31.2304, lng: 121.4737 },
+  { name: '广州', lat: 23.1291, lng: 113.2644 }, { name: '深圳', lat: 22.5431, lng: 114.0579 },
+  { name: '香港', lat: 22.3193, lng: 114.1694 }, { name: '台北', lat: 25.0330, lng: 121.5654 },
+  { name: '东京', lat: 35.6762, lng: 139.6503 }, { name: '首尔', lat: 37.5665, lng: 126.9780 },
+  { name: '新加坡', lat: 1.3521, lng: 103.8198 }, { name: '曼谷', lat: 13.7563, lng: 100.5018 },
+  { name: '纽约', lat: 40.7128, lng: -74.0060 }, { name: '洛杉矶', lat: 34.0522, lng: -118.2437 },
+  { name: '伦敦', lat: 51.5074, lng: -0.1278 }, { name: '巴黎', lat: 48.8566, lng: 2.3522 },
+  { name: '迪拜', lat: 25.2048, lng: 55.2708 }, { name: '悉尼', lat: -33.8688, lng: 151.2093 }
+]
+
+/** 虚拟定位：给手机设一个假的 GPS 位置（2026-11-27 用户要求，对齐魔云腾）。 */
+function LocationDialog({ open, phoneId, onClose }: { open: boolean; phoneId: string; onClose: () => void }) {
+  const { message } = App.useApp()
+  const [lat, setLat] = useState<number | null>(null)
+  const [lng, setLng] = useState<number | null>(null)
+  const [cur, setCur] = useState<{ lat: number; lng: number } | null>(null)
+  const [busy, setBusy] = useState(false)
+  useEffect(() => {
+    if (!open) return
+    void api.location(phoneId).then((r) => {
+      setCur(r.location)
+      if (r.location) { setLat(r.location.lat); setLng(r.location.lng) }
+    }).catch(() => {})
+  }, [open, phoneId])
+  const set = async () => {
+    if (lat == null || lng == null) { message.warning('先填经纬度，或点一个城市'); return }
+    setBusy(true)
+    try { await api.setLocation(phoneId, lat, lng); setCur({ lat, lng }); message.success('定位已设置') }
+    catch (e) { message.error((e as Error).message) } finally { setBusy(false) }
+  }
+  const clear = async () => {
+    setBusy(true)
+    try { await api.clearLocation(phoneId); setCur(null); message.success('已关闭虚拟定位') }
+    catch (e) { message.error((e as Error).message) } finally { setBusy(false) }
+  }
+  return (
+    <Modal open={open} onCancel={onClose} footer={null} destroyOnHidden width={440} title="虚拟定位">
+      <p className="pp-muted pp-small">给手机设一个假的 GPS 位置，手机里的 App（地图、点外卖、按位置的）读到的就是这个点。常用于跨境测试。</p>
+      <div style={{ margin: '10px 0' }}>
+        <Space wrap size={[6, 6]}>
+          {LOC_PRESETS.map((c) => (
+            <Button key={c.name} size="small" onClick={() => { setLat(c.lat); setLng(c.lng) }}>{c.name}</Button>
+          ))}
+        </Space>
+      </div>
+      <Space>
+        <span className="pp-muted pp-small">纬度</span>
+        <InputNumber value={lat} onChange={(v) => setLat(v)} min={-90} max={90} step={0.0001} style={{ width: 130 }} placeholder="lat" />
+        <span className="pp-muted pp-small">经度</span>
+        <InputNumber value={lng} onChange={(v) => setLng(v)} min={-180} max={180} step={0.0001} style={{ width: 130 }} placeholder="lng" />
+      </Space>
+      <div style={{ marginTop: 14, display: 'flex', gap: 8 }}>
+        <Button type="primary" icon={<EnvironmentOutlined />} loading={busy} onClick={set}>设置定位</Button>
+        <Button danger disabled={!cur} loading={busy} onClick={clear}>关闭定位</Button>
+      </div>
+      {cur
+        ? <p className="pp-small" style={{ marginTop: 10, color: '#52c41a' }}>当前已定位到：{cur.lat.toFixed(4)}, {cur.lng.toFixed(4)}（关机重开也会自动恢复）</p>
+        : <p className="pp-muted pp-small" style={{ marginTop: 10 }}>当前没有设虚拟定位。</p>}
     </Modal>
   )
 }
