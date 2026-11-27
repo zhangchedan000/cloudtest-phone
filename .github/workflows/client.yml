@@ -1,10 +1,13 @@
 name: 打包客户端(Windows)
 
-# 手动触发，或推 client-v* 标签时触发。在 GitHub 的 Windows 机器上编 exe（Linux 上编 Windows 要 wine，麻烦）。
+# 改了 client/ 推到 main 就自动在 GitHub 的 Windows 机器上编 exe（Linux 上编 Windows 要 wine，麻烦）。
 on:
   workflow_dispatch:
   push:
-    tags: ['client-v*']
+    branches: [main]
+    paths:
+      - 'client/**'
+      - '.github/workflows/client.yml'
 
 permissions:
   contents: write
