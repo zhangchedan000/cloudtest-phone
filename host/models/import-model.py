@@ -131,10 +131,158 @@ def cpu_tree(pkg):
         files[p] = s
     for rel, tgt in pkg.links.items():
         if rel.startswith("cpu/"):
-            links[rel[4:]] = tgt
+            links[rel[4:]] = normalize_cpu_link(rel[4:], tgt)
     if not any(re.match(r"^cpu\d+/regs/identification/midr_el1$", p) for p in files):
         return None
     return {"files": files, "links": links, "dirs": sorted(dirs)}
+
+
+def normalize_cpu_link(rel, target):
+    """把采集到的符号链接目标还原成真机 sysfs 的样子。
+    有的魔云腾包把 cpuN/cpufreq、of_node、subsystem 等存成**真符号链接**，目标是解包时的临时
+    提取路径（/data/app/.../task_xxx/...）——照搬进树会让 App `readlink` 到提取路径，大破绽。
+    这里按锚点把它还原：cpufreq 指回本树的 policy（和现有树一样的相对写法），其余还原到 /sys。"""
+    t = (target or "").replace("\\", "/").strip()
+    base = rel.split("/")[-1]
+    if not t or t.startswith("../") or t.startswith("/sys/"):
+        return t                                   # 已经是规整的
+    if base == "cpufreq":
+        m = re.search(r"/cpufreq/(policy\d+)", t)
+        if m:
+            return "..//cpu/cpufreq/" + m.group(1)  # 对齐现有树（honor 等）的写法
+    for anchor, pre in (("/firmware/", "/sys"), ("/platform/", "/sys/devices"),
+                        ("/bus/", "/sys"), ("/devices/", "/sys")):
+        i = t.find(anchor)
+        if i >= 0:
+            return pre + t[i:]
+    return t
+
+
+def fit_tree_to_host(tree, host):
+    """采集核数 > 板子核数（host）时，把 CPU 目录模板缩到 host 个核、重编号成 0..host-1（踩坑 #147）。
+    魔云腾内核要求模板核数 == 板子物理核数，否则把 /sys/.../cpu 下路径按目录接管、整棵树挂不上
+    （这正是 Tensor G3 / Exynos 这类 9、10 核机型之前没有 CPU 树、midr 伪装不了的根因）。
+    缩核规则：只要核数 > host，就从「保留核最多的频率组」（并列取最高频最低的）里删掉编号最大的核，
+    每个频率组至少留 1 个（保住大/中/小核结构）；然后把所有核号、policy 名、CPU 列表 / 位掩码、
+    cpufreq 链接目标一并改好。只做缩核（host 以内原样返回）。"""
+    files, links, dirs = tree["files"], tree["links"], tree.get("dirs", [])
+    cpus = sorted({int(m.group(1)) for p in files for m in [re.match(r"cpu(\d+)(?:/|$)", p)] if m})
+    if len(cpus) <= host:
+        return tree
+    policies = {}                                   # policy 名 -> 该组的核集合
+    for p, v in files.items():
+        m = re.match(r"cpufreq/(policy\d+)/related_cpus$", p)
+        if m:
+            policies[m.group(1)] = {int(x) for x in v.split()}
+    if not policies:
+        policies = {"policy0": set(cpus)}            # 没频率组信息：整组当一簇兜底
+    pol_max = {}
+    for pol in policies:
+        mf = files.get(f"cpufreq/{pol}/cpuinfo_max_freq", "").strip()
+        pol_max[pol] = int(mf) if mf.isdigit() else 0
+    pol_of = {c: pol for pol, cs in policies.items() for c in cs}
+    keep = set(cpus)
+    while len(keep) > host:
+        groups = {}
+        for c in keep:
+            groups.setdefault(pol_of.get(c), []).append(c)
+        cand = [(pol, cs) for pol, cs in groups.items() if pol is not None and len(cs) > 1]
+        if not cand:
+            break
+        cand.sort(key=lambda kv: (-len(kv[1]), pol_max.get(kv[0], 0)))
+        keep.discard(max(cand[0][1]))               # 删这组里编号最大的核
+    keep = sorted(keep)
+    remap = {old: new for new, old in enumerate(keep)}       # 旧核号 -> 新核号（连续 0..host-1）
+    pol_rename = {}                                          # 旧 policy 名 -> 新名（按组内最小新核号）
+    for pol, cs in policies.items():
+        kept = sorted(remap[c] for c in cs if c in remap)
+        if kept:
+            pol_rename[pol] = f"policy{kept[0]}"
+
+    SENT = "\x00"
+
+    def ren_path(p):
+        p2 = re.sub(r"^cpu(\d+)(?=/|$)",
+                    lambda m: f"cpu{remap[int(m.group(1))]}" if int(m.group(1)) in remap else SENT, p)
+        if SENT in p2:
+            return None                             # 被删核的条目：丢掉
+        return re.sub(r"cpufreq/(policy\d+)",
+                      lambda m: "cpufreq/" + pol_rename.get(m.group(1), m.group(1)), p2)
+
+    def ren_list(s):
+        spaced = " " in s.strip()
+        got = []
+        for tok in s.replace(",", " ").split():
+            if "-" in tok:
+                a, b = tok.split("-"); rng = range(int(a), int(b) + 1)
+            else:
+                rng = [int(tok)]
+            got += [remap[c] for c in rng if c in remap]
+        got = sorted(set(got))
+        if not got:
+            return ""
+        if spaced:
+            return " ".join(str(c) for c in got)
+        out, i = [], 0
+        while i < len(got):
+            j = i
+            while j + 1 < len(got) and got[j + 1] == got[j] + 1:
+                j += 1
+            out.append(str(got[i]) if i == j else f"{got[i]}-{got[j]}")
+            i = j + 1
+        return ",".join(out)
+
+    def ren_mask(s):
+        groups = s.split(",")
+        if not all(re.fullmatch(r"[0-9a-fA-F]+", g.strip() or "") for g in groups):
+            return s
+        bits = 0
+        for g in groups:
+            bits = (bits << 32) | int(g.strip(), 16)
+        nb = 0
+        for old, new in remap.items():
+            if (bits >> old) & 1:
+                nb |= 1 << new
+        if len(groups) > 1:
+            hx = f"{nb:0{len(groups) * 8}x}"[-len(groups) * 8:]
+            return ",".join(hx[i:i + 8] for i in range(0, len(hx), 8))
+        return f"{nb:0{max(1, (host + 3) // 4)}x}"   # 位宽按板子核数（8 核 -> 2 位，和真机 8 核树一致）
+
+    LIST_BASES = {"online", "present", "possible", "offline", "isolated", "related_cpus", "affected_cpus"}
+    MASK_BASES = {"package_cpus", "core_cpus", "core_siblings", "thread_siblings", "die_cpus", "cluster_cpus"}
+
+    def nl_suffix(v):
+        return "\n" if v.endswith("\n") else ""
+
+    nf = {}
+    for p, v in files.items():
+        np_ = ren_path(p)
+        if np_ is None:
+            continue
+        base = p.split("/")[-1]
+        if base in LIST_BASES or base.endswith("_list"):
+            v = ren_list(v.strip()) + nl_suffix(v)
+        elif base in MASK_BASES or base.endswith("_map"):
+            v = ren_mask(v.strip()) + nl_suffix(v)
+        nf[np_] = v
+    nl = {}
+    for p, tgt in links.items():
+        np_ = ren_path(p)
+        if np_ is None:
+            continue
+        base = p.split("/")[-1]
+        if base == "cpufreq":
+            m = re.search(r"(policy\d+)", tgt)
+            if m:
+                tgt = "..//cpu/cpufreq/" + pol_rename.get(m.group(1), m.group(1))
+        elif base == "of_node":
+            mi = re.match(r"cpu(\d+)/of_node$", np_)
+            if mi:
+                tgt = f"/sys/firmware/devicetree/base/cpus/cpu@{int(mi.group(1)) * 0x100:x}"
+        nl[np_] = tgt
+    nd = sorted(x for x in (ren_path(d) for d in dirs) if x is not None)
+    tree["files"], tree["links"], tree["dirs"] = nf, nl, nd
+    return tree
 
 
 def cpu_parts_from(tree, cpuinfo):
@@ -553,6 +701,8 @@ def convert(path, tac_db, host_gpu, host_cpus, loose=False):
     gpu = gpu_of(pkg, props)
     family = re.sub(r"\s+M[CP]\d+$", "", gpu).replace(" (TM)", "")
     tree = cpu_tree(pkg)
+    if tree:
+        tree = fit_tree_to_host(tree, host_cpus)   # 核数 > 板子的（Tensor G3 / Exynos 等）缩到板子核数，才能挂树（踩坑 #147）
     parts, midrs = cpu_parts_from(tree, pkg.text("cpuinfo") or pkg.text("proc/cpuinfo"))
     disp = display_of(pkg)
     krel, kbuild = kernel_of(pkg)
