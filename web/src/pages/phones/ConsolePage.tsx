@@ -1,7 +1,8 @@
 import { CaretRightOutlined, DeleteOutlined, EditOutlined, EyeOutlined, FolderOutlined, MobileOutlined, PlusOutlined, PoweroffOutlined, RedoOutlined, ReloadOutlined, SearchOutlined, UnorderedListOutlined, UploadOutlined } from '@ant-design/icons'
-import { App, Badge, Button, Checkbox, Drawer, Dropdown, Empty, Input, Modal, Select, Space, Table, Tabs, Tag, Tooltip } from 'antd'
+import { App, Badge, Button, Checkbox, Drawer, Dropdown, Empty, Input, Modal, Select, Slider, Space, Table, Tabs, Tag, Tooltip } from 'antd'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { batchUpload } from '@/data/api'
+import { usePersisted } from '@/data/persist'
 import { PhoneScreen } from '@/components/PhoneScreen'
 import { IssueBadge, ProxyCell, StatusDot } from '@/components/bits'
 import { blocksStart } from '@/data/consistency'
@@ -23,12 +24,14 @@ interface Task { id: number; at: Date; what: string; count: number; state: 'runn
 export function ConsolePage() {
   const ws = useWorkspace()
   const { message } = App.useApp()
-  const [groupKey, setGroupKey] = useState('all')
+  // 这些偏好记忆（关了重开保持）：分组、视图、刷新间隔、手机大小
+  const [groupKey, setGroupKey] = usePersisted('pp.console.group', 'all')
   const [query, setQuery] = useState('')
   const [selected, setSelected] = useState<string[]>([])
   const [collapsed, setCollapsed] = useState<string[]>([])
-  const [tab, setTab] = useState<'grid' | 'list'>('grid')
-  const [refreshSec, setRefreshSec] = useState(0)
+  const [tab, setTab] = usePersisted<'grid' | 'list'>('pp.console.tab', 'grid')
+  const [refreshSec, setRefreshSec] = usePersisted('pp.console.refreshSec', 0)
+  const [tileW, setTileW] = usePersisted('pp.console.tileW', 240)
   const [tasks, setTasks] = useState<Task[]>([])
   const [tasksOpen, setTasksOpen] = useState(false)
   const [creating, setCreating] = useState(false)
@@ -193,6 +196,7 @@ export function ConsolePage() {
           <Button icon={<ReloadOutlined />} onClick={() => void ws.refresh()}>刷新</Button>
           <span className="pp-muted">刷新间隔</span>
           <Select style={{ width: 90 }} value={refreshSec} onChange={setRefreshSec} options={[{ value: 0, label: '默认' }, { value: 1, label: '1 秒' }, { value: 3, label: '3 秒' }, { value: 10, label: '10 秒' }]} />
+          {tab === 'grid' && <span className="pp-slot-slider"><span className="pp-muted pp-small">手机大小</span><Slider min={170} max={420} value={tileW} onChange={setTileW} style={{ width: 110 }} tooltip={{ open: false }} /></span>}
           <span style={{ flex: 1 }} />
           {selected.length > 0 && <span className="pp-muted">已选 {selected.length} 台</span>}
           <Badge count={runningTasks} size="small"><Button icon={<UnorderedListOutlined />} onClick={() => setTasksOpen(true)}>任务列表</Button></Badge>
@@ -203,7 +207,7 @@ export function ConsolePage() {
         <Tabs activeKey={tab} onChange={(k) => setTab(k as 'grid' | 'list')} items={[{ key: 'list', label: '列表视图' }, { key: 'grid', label: '网格视图' }]} />
 
         {list.length === 0 ? <Empty description="没有手机" /> : tab === 'grid' ? (
-          <div className="pp-console-grid">
+          <div className="pp-console-grid" style={{ ['--console-w' as string]: `${tileW}px` }}>
             {list.map((p) => (
               <Dropdown key={p.id} trigger={['contextMenu']} menu={contextMenu(p)}>
               <div className={`pp-console-tile ${selected.includes(p.id) ? 'pp-console-tile-on' : ''}`}>

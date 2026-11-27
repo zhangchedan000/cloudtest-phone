@@ -80,18 +80,48 @@ function buildMenu() {
   ]))
 }
 
+let quitting = false
+
 function createWindow() {
+  const c = loadConfig()
+  const b = c.bounds || {}
   win = new BrowserWindow({
-    width: 1360, height: 860, minWidth: 980, minHeight: 620,
+    width: b.width || 1360, height: b.height || 860,
+    x: typeof b.x === 'number' ? b.x : undefined, y: typeof b.y === 'number' ? b.y : undefined,
+    minWidth: 980, minHeight: 620,
     title: '云测机', backgroundColor: '#f5f6f8', autoHideMenuBar: true,
     webPreferences: { preload: path.join(__dirname, 'preload.js'), spellcheck: false }
   })
+  if (b.maximized) win.maximize()
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (currentServer && url.startsWith(currentServer)) return { action: 'allow' }
     shell.openExternal(url)
     return { action: 'deny' }
   })
+  // 记住窗口大小和位置：改动时存起来，下次打开照上次的（2026-11-27 用户要求）
+  const saveBounds = () => {
+    if (!win || win.isDestroyed()) return
+    const cfg = loadConfig()
+    cfg.bounds = win.isMaximized() ? { ...(cfg.bounds || {}), maximized: true } : { ...win.getBounds(), maximized: false }
+    saveConfig(cfg)
+  }
+  let t
+  const debounced = () => { clearTimeout(t); t = setTimeout(saveBounds, 500) }
+  win.on('resize', debounced)
+  win.on('move', debounced)
+  win.on('maximize', saveBounds)
+  win.on('unmaximize', saveBounds)
+  // 关闭行为：退出（默认）或最小化（点 X 只最小化、程序继续跑）
+  win.on('close', (e) => {
+    saveBounds()
+    if (!quitting && (loadConfig().closeBehavior === 'minimize')) { e.preventDefault(); win.minimize() }
+  })
   showStartup()
+}
+
+// 开机自启动（Windows / macOS）：按设置开关
+function applyAutoStart() {
+  try { app.setLoginItemSettings({ openAtLogin: !!loadConfig().autoStart }) } catch { /* 忽略 */ }
 }
 
 // 启动时：有「当前服务器」就直接连；否则打开服务器管理页让用户添加/选择。
@@ -142,6 +172,19 @@ ipcMain.on('pp-connect', (_e, id) => {
   loadServer(sv)
 })
 
+// ---- 设置页用的通道：关闭行为 / 开机自启动（preload 暴露成 window.pp.getPrefs / setPref）----
+ipcMain.handle('pp-get-prefs', () => {
+  const c = loadConfig()
+  return { closeBehavior: c.closeBehavior === 'minimize' ? 'minimize' : 'quit', autoStart: !!c.autoStart }
+})
+ipcMain.on('pp-set-pref', (_e, key, value) => {
+  const c = loadConfig()
+  if (key === 'closeBehavior') c.closeBehavior = value === 'minimize' ? 'minimize' : 'quit'
+  if (key === 'autoStart') c.autoStart = !!value
+  saveConfig(c)
+  if (key === 'autoStart') applyAutoStart()
+})
+
 // 自签证书：直接信任（都是用户自己局域网里的板子）。
 app.on('certificate-error', (event, _wc, _url, _err, _cert, callback) => {
   event.preventDefault()
@@ -150,8 +193,11 @@ app.on('certificate-error', (event, _wc, _url, _err, _cert, callback) => {
 
 applySecurity(loadConfig().servers)
 
+app.on('before-quit', () => { quitting = true })
+
 app.whenReady().then(() => {
   buildMenu()
+  applyAutoStart()
   createWindow()
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow() })
 })

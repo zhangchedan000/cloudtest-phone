@@ -107,7 +107,9 @@ body { background: var(--fb-bg); color: var(--fb-text); font-family: Inter, ui-s
 .pp-newslot-legend { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 12px; font-size: 12px; color: var(--fb-text-muted); }
 .pp-newslot-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 4px; vertical-align: middle; }
 
-.pp-slot-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; aspect-ratio: 1 / 1.6; border: 1px dashed var(--fb-line); border-radius: 12px; background: var(--fb-surface-muted); cursor: pointer; transition: border-color .15s, background .15s; }
+.pp-slot-empty { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; aspect-ratio: 1 / 1.6; border: 1px dashed var(--fb-line); border-radius: 12px; background: var(--fb-surface-muted); cursor: pointer; transition: border-color .15s, background .15s; }
+.pp-slot-num { position: absolute; top: 8px; left: 10px; font-size: 12px; font-weight: 600; }
+.pp-card-num { font-size: 12px; font-weight: 700; color: var(--fb-text-muted); flex: none; }
 .pp-slot-empty:hover { border-color: var(--fb-accent); background: var(--fb-chip); }
 .pp-slot-plus { font-size: 26px; color: var(--fb-text-muted); }
 
@@ -253,10 +255,12 @@ body { background: var(--fb-bg); color: var(--fb-text); font-family: Inter, ui-s
 .pp-tree-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
 .pp-console-main { flex: 1; min-width: 0; display: flex; flex-direction: column; padding: 12px 14px; overflow: auto; }
 .pp-console-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.pp-console-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 12px; }
+.pp-console-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(var(--console-w, 240px), 1fr)); gap: 12px; }
 .pp-console-tile { display: flex; flex-direction: column; gap: 6px; padding: 6px; border-radius: 10px; border: 1px solid transparent; }
 .pp-console-tile-on { border-color: var(--fb-accent); }
 .pp-console-screen { cursor: pointer; display: flex; justify-content: center; }
+/* 关机/开机中的画面是绝对定位、没有内在宽度，给 thumb 定死 100% 宽，免得塌成一条（2026-11-27） */
+.pp-console-screen .pp-phone-thumb { width: 100%; }
 .pp-console-tile-foot { display: flex; align-items: center; gap: 4px; font-size: 13px; }
 .pp-stop-square { display: inline-block; width: 10px; height: 10px; background: currentColor; border-radius: 2px; }
 @media (max-width: 760px) { .pp-console { flex-direction: column; height: auto; } .pp-console-side { width: auto; border-right: 0; border-bottom: 1px solid var(--fb-line); max-height: 320px; } }
@@ -265,3 +269,13 @@ body { background: var(--fb-bg); color: var(--fb-text); font-family: Inter, ui-s
 .pp-kbd { position: relative; }
 .pp-kbd-box { position: absolute; left: 50%; bottom: 40px; width: 1px; height: 1px; opacity: 0; resize: none; border: 0; padding: 0; pointer-events: none; }
 .pp-dropping { outline: 2px dashed var(--ant-color-primary, #1677ff); outline-offset: 4px; border-radius: 8px; }
+
+/* 设置页（照魔云腾：存储 / 通用 / 关于） */
+.pp-settings { max-width: 860px; display: flex; flex-direction: column; gap: 16px; }
+.pp-set-card { background: var(--fb-surface); border: 1px solid var(--fb-line); border-radius: 12px; padding: 6px 18px; }
+.pp-set-card h3 { margin: 14px 2px 6px; font-size: 15px; }
+.pp-set-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 13px 2px; border-top: 1px solid var(--fb-line-soft); }
+.pp-set-card h3 + .pp-set-row { border-top: 0; }
+.pp-set-row-main { min-width: 0; }
+.pp-set-row-title { font-size: 14px; }
+.pp-set-row-right { flex: none; display: flex; align-items: center; gap: 8px; }

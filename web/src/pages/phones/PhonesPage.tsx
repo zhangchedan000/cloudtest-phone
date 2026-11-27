@@ -2,6 +2,7 @@ import { AppstoreAddOutlined, AppstoreOutlined, DeleteOutlined, DownOutlined, Ed
 import { Alert, App, Button, Card, Checkbox, Dropdown, Empty, Input, Modal, Segmented, Select, Slider, Space, Table, Tag, Tooltip } from 'antd'
 import { useMemo, useRef, useState } from 'react'
 import { batchUpload, type BatchResult } from '@/data/api'
+import { usePersisted } from '@/data/persist'
 import { DataTable } from '@/components/DataTable'
 import { PhoneScreen } from '@/components/PhoneScreen'
 import { IssueBadge, ProxyCell, StatusDot } from '@/components/bits'
@@ -17,17 +18,18 @@ import { openPhoneWindow } from './phoneWindow'
 export function PhonesPage() {
   const ws = useWorkspace()
   const { message } = App.useApp()
-  const [view, setView] = useState<'cards' | 'list'>('cards')
-  const [groupId, setGroupId] = useState<string>('all')
-  const [hostId, setHostId] = useState<string>('all')
-  const [query, setQuery] = useState('')
+  // 这些「偏好」存本地，关了重开保持（usePersisted）：视图、分组筛选、搜索、隐藏空坑位、窗口 / 投屏大小
+  const [view, setView] = usePersisted<'cards' | 'list'>('pp.phones.view', 'cards')
+  const [groupId, setGroupId] = usePersisted<string>('pp.phones.group', 'all')
+  const [hostId, setHostId] = usePersisted<string>('pp.phones.host', 'all')
+  const [query, setQuery] = usePersisted('pp.phones.query', '')
   const [hostQuery, setHostQuery] = useState('')
   const [selected, setSelected] = useState<string[]>([])
   const [managingGroups, setManagingGroups] = useState(false)
-  const [hideEmpty, setHideEmpty] = useState(false)
-  const [slotW, setSlotW] = useState(210)
+  const [hideEmpty, setHideEmpty] = usePersisted('pp.phones.hideEmpty', false)
+  const [slotW, setSlotW] = usePersisted('pp.phones.slotW', 210)
   // 投屏大小 = 手机画面占卡片宽度的百分比（55~100）；画面始终竖屏 1:2，放大就整体按竖版变大
-  const [screenPct, setScreenPct] = useState(82)
+  const [screenPct, setScreenPct] = usePersisted('pp.phones.screenPct', 82)
   // 每台机器固定给几个「空坑位」快捷创建入口（不按同时并发数限制，想建多少建多少）
   const EMPTY_SLOTS = 8
   const [open, setOpen] = useState<Phone>()
@@ -50,7 +52,8 @@ export function PhonesPage() {
   }
   const [creating, setCreating] = useState(false)
   const [presetHost, setPresetHost] = useState<string>()
-  const addPhoneOn = (hid?: string) => { setPresetHost(hid); setCreating(true) }
+  const [presetName, setPresetName] = useState<string>()
+  const addPhoneOn = (hid?: string, name?: string) => { setPresetHost(hid); setPresetName(name); setCreating(true) }
   const [addingDevice, setAddingDevice] = useState(false)
   // 批量装 App / 传文件：文件只上传一次，服务器分发到选中的每台
   const apkInput = useRef<HTMLInputElement>(null)
@@ -58,10 +61,13 @@ export function PhonesPage() {
   const [batchBusy, setBatchBusy] = useState('')
   const [batchDone, setBatchDone] = useState<{ title: string; results: BatchResult[] }>()
 
+  // 「只显示运行中」开关（设置页里开）
+  const [onlyRunning] = usePersisted('pp.onlyRunning', false)
   const list = useMemo(() => ws.phones.filter((p) =>
     (groupId === 'all' || `${p.serverId ?? 'local'}|${p.groupId}` === groupId) && (hostId === 'all' || p.hostId === hostId) &&
+    (!onlyRunning || p.status === 'running' || p.status === 'starting') &&
     (!query || `${p.name} ${String(ws.modelOf(p)?.values.marketName ?? '')}`.toLowerCase().includes(query.toLowerCase()))
-  ), [ws, groupId, hostId, query])
+  ), [ws, groupId, hostId, query, onlyRunning])
 
   // 上网健康检查：运行中但连不上外网的手机（管家程序每 2 分钟查一次）
   const offline = ws.phones.filter((p) => p.status === 'running' && p.net && !p.net.ok)
@@ -116,13 +122,14 @@ export function PhonesPage() {
 
   const toggle = (id: string, on: boolean) => setSelected((s) => (on ? [...s, id] : s.filter((x) => x !== id)))
 
-  // 坑位网格里渲染一台已创建的手机
-  const renderPhoneCard = (p: Phone) => {
+  // 坑位网格里渲染一台已创建的手机（num = 坑位编号 #1 #2 #3…，照魔云腾）
+  const renderPhoneCard = (p: Phone, num: number) => {
     const issues = ws.issuesOf(p)
     return (
       <Card key={p.id} className={`pp-card ${selected.includes(p.id) ? 'pp-card-selected' : ''}`} size="small" variant="outlined">
         <div className="pp-card-top">
           <Checkbox checked={selected.includes(p.id)} onChange={(e) => toggle(p.id, e.target.checked)} />
+          <span className="pp-card-num">#{num}</span>
           <b className="pp-card-name">{p.name}</b>
           <StatusDot status={p.status} />
         </div>
@@ -146,9 +153,10 @@ export function PhonesPage() {
     )
   }
 
-  // 坑位网格里渲染一个空坑位（点「创建」在这台机器上新建）
-  const renderEmptySlot = (h: Host, i: number) => (
-    <div key={`empty-${h.id}-${i}`} className="pp-card pp-slot-empty" onClick={() => addPhoneOn(h.id)} role="button" tabIndex={0}>
+  // 坑位网格里渲染一个空坑位（num = 坑位编号，点「创建」新建、默认名按编号顺延）
+  const renderEmptySlot = (h: Host, i: number, num: number) => (
+    <div key={`empty-${h.id}-${i}`} className="pp-card pp-slot-empty" onClick={() => addPhoneOn(h.id, `手机-${num}`)} role="button" tabIndex={0}>
+      <span className="pp-slot-num pp-muted">#{num}</span>
       <PlusOutlined className="pp-slot-plus" />
       <span className="pp-muted">空坑位</span>
       <Button size="small" type="primary" ghost icon={<PlusOutlined />}>创建</Button>
@@ -179,8 +187,8 @@ export function PhonesPage() {
           <Empty description="这台机器还没有云手机" image={Empty.PRESENTED_IMAGE_SIMPLE}><Button type="primary" icon={<PlusOutlined />} onClick={() => addPhoneOn(h.id)}>创建</Button></Empty>
         ) : (
           <div className="pp-grid" style={{ ['--slot-w' as string]: `${slotW}px`, ['--screen-pct' as string]: `${screenPct}%` }}>
-            {mine.map(renderPhoneCard)}
-            {!hideEmpty && Array.from({ length: empties }, (_, i) => renderEmptySlot(h, i))}
+            {mine.map((p, i) => renderPhoneCard(p, i + 1))}
+            {!hideEmpty && Array.from({ length: empties }, (_, i) => renderEmptySlot(h, i, mine.length + i + 1))}
           </div>
         )}
       </section>
@@ -254,7 +262,7 @@ export function PhonesPage() {
               {batchBusy && <span className="pp-muted">{batchBusy}</span>}
               <input ref={apkInput} type="file" accept=".apk" hidden onChange={(e) => { void runBatch('apk', e.target.files?.[0]); e.target.value = '' }} />
               <input ref={fileInput} type="file" hidden onChange={(e) => { void runBatch('file', e.target.files?.[0]); e.target.value = '' }} />
-              <Button type="primary" icon={<PlusOutlined />} onClick={() => addPhoneOn(hostId === 'all' ? undefined : hostId)}>新建云手机</Button>
+              <Button type="primary" icon={<PlusOutlined />} onClick={() => { const hid = hostId === 'all' ? undefined : hostId; const n = ws.phones.filter((p) => !hid || p.hostId === hid).length + 1; addPhoneOn(hid, `手机-${n}`) }}>新建云手机</Button>
             </Space>
           </div>
 
@@ -301,7 +309,7 @@ export function PhonesPage() {
       </Modal>
       <PhoneDrawer phone={open} mode={openMode} onEdit={() => setOpenMode('edit')} onClose={() => setOpen(undefined)} />
       <GroupsModal open={managingGroups} onClose={() => setManagingGroups(false)} />
-      <NewPhoneModal open={creating} presetHostId={presetHost} onClose={() => setCreating(false)} />
+      <NewPhoneModal open={creating} presetHostId={presetHost} presetName={presetName} onClose={() => setCreating(false)} />
       <AddServerModal open={addingDevice} onClose={() => setAddingDevice(false)} />
     </div>
   )

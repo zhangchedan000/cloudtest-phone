@@ -1,14 +1,27 @@
 import { Alert, Checkbox, Form, Input, InputNumber, Modal, Select } from 'antd'
+import { api } from '@/data/api'
 import { catalog } from '@/data/catalog'
 import { checkPhone } from '@/data/consistency'
 import { randomValue } from '@/data/random'
 import { useWorkspace } from '@/data/store'
 import type { FieldSetting, Phone } from '@/data/types'
 
-interface Values { name: string; count: number; hostId: string; modelId: string; androidVersion: number; proxyId: string; groupId: string; gapps: boolean }
+interface Values { name: string; count: number; hostId: string; modelId: string; androidVersion: number; proxyId: string; groupId: string; gapps: boolean; region?: string }
+
+/** 国家 / 地区（用于 GPS 定位，照魔云腾）：选了就把这台的虚拟定位设到该地，value = "纬度,经度"。空 = 不单独设（语言 / 时区本来就跟代理走）。 */
+const REGIONS: { label: string; v: string }[] = [
+  { label: '美国 · 洛杉矶', v: '34.0522,-118.2437' }, { label: '美国 · 纽约', v: '40.7128,-74.0060' },
+  { label: '英国 · 伦敦', v: '51.5074,-0.1278' }, { label: '德国 · 法兰克福', v: '50.1109,8.6821' },
+  { label: '法国 · 巴黎', v: '48.8566,2.3522' }, { label: '日本 · 东京', v: '35.6762,139.6503' },
+  { label: '韩国 · 首尔', v: '37.5665,126.9780' }, { label: '新加坡', v: '1.3521,103.8198' },
+  { label: '香港', v: '22.3193,114.1694' }, { label: '台湾 · 台北', v: '25.0330,121.5654' },
+  { label: '中国 · 北京', v: '39.9042,116.4074' }, { label: '中国 · 上海', v: '31.2304,121.4737' },
+  { label: '阿联酋 · 迪拜', v: '25.2048,55.2708' }, { label: '澳大利亚 · 悉尼', v: '-33.8688,151.2093' },
+  { label: '加拿大 · 多伦多', v: '43.6532,-79.3832' }, { label: '泰国 · 曼谷', v: '13.7563,100.5018' }
+]
 
 /** 新建云手机（照魔云腾创建云机布局：左边两栏表单 + 右边坑位图）。随机字段自动生成，时区/语言/位置默认跟随代理。 */
-export function NewPhoneModal({ open, onClose, presetHostId }: { open: boolean; onClose: () => void; presetHostId?: string }) {
+export function NewPhoneModal({ open, onClose, presetHostId, presetName }: { open: boolean; onClose: () => void; presetHostId?: string; presetName?: string }) {
   const ws = useWorkspace()
   const [form] = Form.useForm<Values>()
   const hostId = Form.useWatch('hostId', form)
@@ -28,7 +41,9 @@ export function NewPhoneModal({ open, onClose, presetHostId }: { open: boolean; 
   const occupied = host ? ws.phones.filter((p) => p.hostId === host.id).length : 0
   const slotCount = host ? Math.min(Math.max(occupied + count, 8), 40) : 0
 
-  const create = (v: Values) => {
+  const create = async (v: Values) => {
+    // 国家/地区：选了就把虚拟定位设到该地（建完这台之后设；语言/时区仍跟代理走）
+    const ll = v.region ? v.region.split(',').map(Number) : null
     for (let i = 0; i < v.count; i++) {
       const fields: Record<string, FieldSetting> = {}
       for (const field of catalog.fields) {
@@ -41,7 +56,8 @@ export function NewPhoneModal({ open, onClose, presetHostId }: { open: boolean; 
         gapps: v.gapps && gappsOK, createdAt: new Date().toISOString(), fields
       }
       checkPhone({ phone, model, proxy: ws.proxies.filter(same).find((p) => p.id === v.proxyId), host, others: ws.phones.filter(same) })
-      ws.addPhone(phone)
+      const created = await ws.addPhone(phone)
+      if (created && ll && ll.length === 2 && !Number.isNaN(ll[0]) && !Number.isNaN(ll[1])) void api.setLocation(created.id, ll[0], ll[1]).catch(() => { /* 定位设置失败不挡创建 */ })
     }
     form.resetFields()
     onClose()
@@ -57,7 +73,7 @@ export function NewPhoneModal({ open, onClose, presetHostId }: { open: boolean; 
       okText="创建"
       destroyOnHidden
     >
-      <Form form={form} layout="vertical" onFinish={create} onValuesChange={(changed) => { if ('hostId' in changed) form.setFieldsValue({ proxyId: undefined, groupId: undefined }) }} initialValues={{ name: '手机-', count: 1, hostId: presetHostId ?? ws.hosts.find((h) => h.online)?.id ?? ws.hosts[0]?.id, modelId: ws.models[0]?.id, androidVersion: 14, gapps: true, groupId: ws.groups.filter(same)[0]?.id }}>
+      <Form form={form} layout="vertical" onFinish={create} onValuesChange={(changed) => { if ('hostId' in changed) form.setFieldsValue({ proxyId: undefined, groupId: undefined }) }} initialValues={{ name: presetName ?? '手机-', count: 1, hostId: presetHostId ?? ws.hosts.find((h) => h.online)?.id ?? ws.hosts[0]?.id, modelId: ws.models[0]?.id, androidVersion: 14, gapps: true, groupId: ws.groups.filter(same)[0]?.id }}>
         <div className="pp-newphone">
           <div className="pp-newphone-form">
             <div className="pp-form-2col">
@@ -67,6 +83,7 @@ export function NewPhoneModal({ open, onClose, presetHostId }: { open: boolean; 
               <Form.Item label="安卓版本（镜像）" name="androidVersion"><Select options={(host?.androidVersions?.length ? host.androidVersions : [14]).map((v) => ({ value: v, label: `Android ${v}` }))} /></Form.Item>
               <Form.Item label="代理" name="proxyId" rules={[{ required: true, message: '必须分配代理：没有代理禁止开机' }]}><Select options={ws.proxies.filter(same).map((p) => ({ value: p.id, label: p.name }))} /></Form.Item>
               <Form.Item label="分组" name="groupId"><Select allowClear options={ws.groups.filter(same).map((g) => ({ value: g.id, label: g.name }))} /></Form.Item>
+              <Form.Item label="国家/地区（GPS 定位）" name="region" tooltip="选了就把这台的虚拟定位设到该地区；语言、时区本来就跟着代理走"><Select allowClear showSearch optionFilterProp="label" placeholder="跟随代理（不单独设）" options={REGIONS.map((r) => ({ value: r.v, label: r.label }))} /></Form.Item>
             </div>
             {gpuWarn && <Alert type="error" showIcon title="这个机型的显卡和机器对不上，会露馅" className="pp-alert" />}
             <Form.Item name="gapps" valuePropName="checked" className="pp-newphone-gapps" extra={gappsOK ? '开机带谷歌服务（GMS / Play 商店），可登谷歌账号。镜像较大、开机稍慢。' : '这台机器没装当前安卓版本的谷歌服务镜像（在服务器上运行 host/build-gapps-image.sh 生成）。'}>

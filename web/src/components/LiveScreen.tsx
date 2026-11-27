@@ -38,7 +38,7 @@ export function LiveScreen({ id, size }: { id: string; size: 'thumb' | 'large' }
   const [quality, setQuality] = useState<Quality>(savedQuality)
   // 视频连上了不等于画面出来了：第一帧解出来之前继续显示截图，免得一打开是黑屏
   const [gotFrame, setGotFrame] = useState(false)
-  const down = useRef<{ x: number; y: number; landscape: boolean; at: number } | null>(null)
+  const down = useRef<{ x: number; y: number; landscape: boolean; at: number; moveAt: number } | null>(null)
   const canvas = useRef<HTMLCanvasElement>(null)
   const wantVideo = video === 'connecting' || video === 'playing'
 
@@ -138,16 +138,32 @@ export function LiveScreen({ id, size }: { id: string; size: 'thumb' | 'large' }
 
   const interactive = size === 'large'
   const pointer = interactive ? {
-    onPointerDown: (event: PointerEvent<HTMLElement>) => { const p = toDevice(event); if (p) down.current = { ...p, at: Date.now() } },
+    // 按下就「捕获」这根指针：之后即使拖出画面外，移动和松手也还归这里，拖动跟手不丢（修「按住拖动页面不滚」）
+    onPointerDown: (event: PointerEvent<HTMLElement>) => {
+      const p = toDevice(event)
+      if (!p) return
+      down.current = { ...p, at: Date.now(), moveAt: 0 }
+      try { event.currentTarget.setPointerCapture(event.pointerId) } catch { /* 忽略 */ }
+    },
+    // 记录「真正开始拖」的时刻（按住不动的那段不算进滑动时长，否则会变成超慢拖拽、安卓不滚）
+    onPointerMove: (event: PointerEvent<HTMLElement>) => {
+      const d = down.current
+      if (!d || d.moveAt) return
+      const p = toDevice(event)
+      if (p && Math.hypot(p.x - d.x, p.y - d.y) >= 8) d.moveAt = Date.now()
+    },
     onPointerUp: (event: PointerEvent<HTMLElement>) => {
       const start = down.current
       const end = toDevice(event)
       down.current = null
+      try { event.currentTarget.releasePointerCapture(event.pointerId) } catch { /* 忽略 */ }
       if (!start || !end) return
       const moved = Math.hypot(end.x - start.x, end.y - start.y)
+      // 滑动时长只算拖动那段，并限制在适合滚动 / 翻页的区间（60~600ms）：快划就是甩动翻页，慢拖也能跟手滚
+      const dragMs = Math.min(600, Math.max(60, Date.now() - (start.moveAt || start.at)))
       void (moved < 12
         ? ws.input(id, { kind: 'tap', x: start.x, y: start.y, landscape: start.landscape })
-        : ws.input(id, { kind: 'swipe', x: start.x, y: start.y, x2: end.x, y2: end.y, durationMs: Math.max(100, Date.now() - start.at), landscape: start.landscape })
+        : ws.input(id, { kind: 'swipe', x: start.x, y: start.y, x2: end.x, y2: end.y, durationMs: dragMs, landscape: start.landscape })
       ).then(() => setTick((t) => t + 1))
     }
   } : {}

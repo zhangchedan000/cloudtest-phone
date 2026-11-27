@@ -1,6 +1,6 @@
 import { ApiOutlined, AppstoreOutlined, BulbOutlined, DesktopOutlined, MobileOutlined, ProfileOutlined, SettingOutlined } from '@ant-design/icons'
 import { Input, Spin, Tooltip } from 'antd'
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, type ReactNode } from 'react'
 import { applyTheme, useTheme } from '@/theme'
 import { HostsPage } from '@/pages/other/HostsPage'
 import { ModelsPage } from '@/pages/other/ModelsPage'
@@ -11,6 +11,8 @@ import { useWorkspace } from '@/data/store'
 import { PhoneDrawer } from '@/pages/phones/PhoneDrawer'
 import { windowPhoneId } from '@/pages/phones/phoneWindow'
 import { UpdateButton } from '@/pages/other/UpdateButton'
+import { SettingsPage } from '@/pages/other/SettingsPage'
+import { usePersisted } from '@/data/persist'
 
 /** 页面登记表：侧边栏和标题都从这里读（同 Prism 的 registry）。 */
 const PAGES: { key: string; label: string; icon: ReactNode; render: () => ReactNode }[] = [
@@ -39,7 +41,8 @@ export function App() {
 }
 
 function MainApp() {
-  const [page, setPage] = useState(() => (location.hash.slice(1) || 'phones'))
+  // 停在哪个页面也记住（关了重开回到上次那页）
+  const [page, setPage] = usePersisted('pp.page', location.hash.slice(1) || 'phones')
   const theme = useTheme()
   const ws = useWorkspace()
   const current = PAGES.find((p) => p.key === page) ?? PAGES[0]
@@ -70,7 +73,7 @@ function MainApp() {
             </button>
           </Tooltip>
           <UpdateButton />
-          <button className="pp-rail-item" onClick={() => go('hosts')}>
+          <button className={`pp-rail-item ${page === 'settings' ? 'on' : ''}`} onClick={() => go('settings')}>
             <span className="pp-rail-ico"><SettingOutlined /></span>
             <span className="pp-rail-label">设置</span>
           </button>
@@ -86,7 +89,7 @@ function MainApp() {
               <span className="pp-muted pp-small">按回车登录；口令保存在这个浏览器里</span>
             </div>
           )}
-          {(ws.mode === 'live' || ws.mode === 'demo') && current.render()}
+          {(ws.mode === 'live' || ws.mode === 'demo') && (page === 'settings' ? <SettingsPage /> : current.render())}
         </div>
       </main>
     </div>

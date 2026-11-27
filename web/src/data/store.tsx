@@ -35,7 +35,7 @@ interface Workspace {
   setStatus: (ids: string[], status: PhoneStatus) => Promise<void>
   saveFields: (id: string, fields: Record<string, FieldSetting>, patch?: Partial<Phone>) => Promise<void>
   assign: (ids: string[], patch: { proxyId?: string; groupId?: string; gapps?: boolean; adb?: boolean }) => Promise<void>
-  addPhone: (phone: Phone) => Promise<void>
+  addPhone: (phone: Phone) => Promise<Phone | undefined>
   removePhones: (ids: string[]) => Promise<void>
   resetPhones: (ids: string[], androidVersion?: number) => Promise<void>
   renewPhones: (ids: string[]) => Promise<void>
@@ -207,11 +207,13 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         await each(ids, '修改', (id) => api.savePhone(id, patch))
       },
       addPhone: async (phone) => {
-        if (!live) { setPhones((list) => [...list, phone]); return }
+        if (!live) { setPhones((list) => [...list, phone]); return phone }
         // 字段由管家程序按机型生成，页面只传基本信息。
         // 建在选中的机器所在的服务器上
         const sid = hosts.find((h) => h.id === phone.hostId)?.serverId ?? LOCAL
-        await each([phone.id], '创建', () => api.createPhone({ name: phone.name, modelId: phone.modelId, androidVersion: phone.androidVersion, proxyId: phone.proxyId, groupId: phone.groupId, note: phone.note, gapps: phone.gapps }, sid))
+        let created: Phone | undefined
+        await each([phone.id], '创建', async () => { created = await api.createPhone({ name: phone.name, modelId: phone.modelId, androidVersion: phone.androidVersion, proxyId: phone.proxyId, groupId: phone.groupId, note: phone.note, gapps: phone.gapps }, sid) })
+        return created
       },
       resetPhones: async (ids, androidVersion) => {
         if (!live) { message.info('预览模式：接上管家程序后可用'); return }

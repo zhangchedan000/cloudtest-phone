@@ -9,5 +9,8 @@ contextBridge.exposeInMainWorld('pp', {
   // 删一台
   deleteServer: (id) => ipcRenderer.invoke('pp-delete-server', id),
   // 连接某台（主进程去加载它的界面）
-  connect: (id) => ipcRenderer.send('pp-connect', id)
+  connect: (id) => ipcRenderer.send('pp-connect', id),
+  // 设置页：关闭行为 / 开机自启动
+  getPrefs: () => ipcRenderer.invoke('pp-get-prefs'),
+  setPref: (key, value) => ipcRenderer.send('pp-set-pref', key, value)
 })
