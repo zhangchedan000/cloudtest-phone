@@ -40,6 +40,12 @@ export function LiveScreen({ id, size }: { id: string; size: 'thumb' | 'large' }
   const [gotFrame, setGotFrame] = useState(false)
   const down = useRef<{ x: number; y: number; landscape: boolean; at: number; moveAt: number } | null>(null)
   const canvas = useRef<HTMLCanvasElement>(null)
+  const rootRef = useRef<HTMLDivElement>(null)
+  const imgRef = useRef<HTMLImageElement>(null)
+  // 鼠标滚轮滚动：累积滚动量、节流成一次滑动手势发给手机（见下方 useEffect）
+  const wheelAcc = useRef(0)
+  const wheelTimer = useRef<number | undefined>(undefined)
+  const lastWheel = useRef<{ el: HTMLElement; clientX: number; clientY: number } | null>(null)
   const wantVideo = video === 'connecting' || video === 'playing'
 
   // 截屏：视频画面出来以后不再截；否则大屏 1 秒、小图 5 秒一张，上一张取回来才请求下一张。
@@ -112,9 +118,8 @@ export function LiveScreen({ id, size }: { id: string; size: 'thumb' | 'large' }
   // 画面实际是横的还是竖的（转屏以后视频 / 截图是横的，见管家 rotate.go）
   const [landscape, setLandscape] = useState(false)
   const frameSize = (el: HTMLElement) => el instanceof HTMLCanvasElement ? { w: el.width, h: el.height } : el instanceof HTMLImageElement ? { w: el.naturalWidth, h: el.naturalHeight } : { w: 0, h: 0 }
-  const toDevice = (event: PointerEvent<HTMLElement>) => {
-    if (!device) return undefined
-    const el = event.currentTarget
+  const toDevice = (el: HTMLElement | null, clientX: number, clientY: number) => {
+    if (!device || !el) return undefined
     // 画面横竖和手机分辨率不一致时按转过来的宽高算
     const f = frameSize(el)
     const land = f.w > 0 && f.h > 0 && f.w > f.h
@@ -130,17 +135,53 @@ export function LiveScreen({ id, size }: { id: string; size: 'thumb' | 'large' }
     }
     const clamp = (v: number, max: number) => Math.min(max, Math.max(0, Math.round(v)))
     return {
-      x: clamp(((event.clientX - left) / width) * dw, dw),
-      y: clamp(((event.clientY - top) / height) * dh, dh),
-      landscape: land
+      x: clamp(((clientX - left) / width) * dw, dw),
+      y: clamp(((clientY - top) / height) * dh, dh),
+      landscape: land, dh
     }
   }
+
+  // 鼠标滚轮 → 手机里真实滑动手势（跟键盘打字一个道理：PC 上滚，手机里真实执行）。
+  // React 的 onWheel 是被动监听、preventDefault 无效，所以用原生非被动监听。累积滚动量、70ms 批量发一次滑动。
+  useEffect(() => {
+    const root = rootRef.current
+    if (!root || size !== 'large' || !device) return
+    const activeMedia = () => [canvas.current, imgRef.current].find((x) => x && frameSize(x).w > 0) as HTMLElement | undefined
+    const flush = () => {
+      wheelTimer.current = undefined
+      const acc = wheelAcc.current; wheelAcc.current = 0
+      const lw = lastWheel.current
+      if (!acc || !lw) return
+      const p = toDevice(lw.el, lw.clientX, lw.clientY)
+      if (!p) return
+      const dh = p.dh
+      const dist = Math.min(dh * 0.75, Math.max(dh * 0.1, Math.abs(acc) * dh / 650))
+      const fingerUp = acc > 0           // 滚轮下滚=想看下面内容=手指向上滑
+      const midY = dh / 2, half = dist / 2
+      const cy = (v: number) => Math.min(dh, Math.max(0, Math.round(v)))
+      void ws.input(id, {
+        kind: 'swipe', x: p.x, y: cy(fingerUp ? midY + half : midY - half),
+        x2: p.x, y2: cy(fingerUp ? midY - half : midY + half), durationMs: 150, landscape: p.landscape
+      }).then(() => setTick((t) => t + 1)).catch(() => {})
+    }
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault()
+      const el = activeMedia()
+      if (!el) return
+      wheelAcc.current += e.deltaY
+      lastWheel.current = { el, clientX: e.clientX, clientY: e.clientY }
+      if (!wheelTimer.current) wheelTimer.current = window.setTimeout(flush, 70)
+    }
+    root.addEventListener('wheel', onWheel, { passive: false })
+    return () => { root.removeEventListener('wheel', onWheel); if (wheelTimer.current) { clearTimeout(wheelTimer.current); wheelTimer.current = undefined } }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [size, device, id])
 
   const interactive = size === 'large'
   const pointer = interactive ? {
     // 按下就「捕获」这根指针：之后即使拖出画面外，移动和松手也还归这里，拖动跟手不丢（修「按住拖动页面不滚」）
     onPointerDown: (event: PointerEvent<HTMLElement>) => {
-      const p = toDevice(event)
+      const p = toDevice(event.currentTarget, event.clientX, event.clientY)
       if (!p) return
       down.current = { ...p, at: Date.now(), moveAt: 0 }
       try { event.currentTarget.setPointerCapture(event.pointerId) } catch { /* 忽略 */ }
@@ -149,12 +190,12 @@ export function LiveScreen({ id, size }: { id: string; size: 'thumb' | 'large' }
     onPointerMove: (event: PointerEvent<HTMLElement>) => {
       const d = down.current
       if (!d || d.moveAt) return
-      const p = toDevice(event)
+      const p = toDevice(event.currentTarget, event.clientX, event.clientY)
       if (p && Math.hypot(p.x - d.x, p.y - d.y) >= 8) d.moveAt = Date.now()
     },
     onPointerUp: (event: PointerEvent<HTMLElement>) => {
       const start = down.current
-      const end = toDevice(event)
+      const end = toDevice(event.currentTarget, event.clientX, event.clientY)
       down.current = null
       try { event.currentTarget.releasePointerCapture(event.pointerId) } catch { /* 忽略 */ }
       if (!start || !end) return
@@ -170,9 +211,10 @@ export function LiveScreen({ id, size }: { id: string; size: 'thumb' | 'large' }
 
   const showVideo = video === 'playing' && gotFrame
   return (
-    <div className={`pp-live${landscape ? ' pp-live-landscape' : ''}`}>
+    <div className={`pp-live${landscape ? ' pp-live-landscape' : ''}`} ref={rootRef}>
       {!showVideo && shot && (
         <img
+          ref={imgRef}
           className="pp-live-img"
           src={shot}
           alt=""
