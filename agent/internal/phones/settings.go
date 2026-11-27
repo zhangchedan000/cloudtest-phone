@@ -198,6 +198,8 @@ func (s *Service) applySettings(ctx context.Context, id string) {
 	s.applyLocation(ctx, id)
 	// 导航栏默认手势：去掉挡 App 的三键栏（nav.go）
 	s.applyNavGesture(ctx, id)
+	// 原生桌面：新装的 App 自动在主屏幕摆一个图标（像 Pixel；launcher.go）
+	s.applyLauncherHomeIcons(ctx, id)
 	// /dev 里服务器的硬件节点删掉（devclean.go，踩坑 #74）
 	s.cleanDev(ctx, id)
 	// 高通 Adreno 伪装档：补一个 /dev/kgsl-3d0 空壳，消掉「是高通却有 mali0、没 kgsl」的破绽（devclean.go，踩坑 #165）
