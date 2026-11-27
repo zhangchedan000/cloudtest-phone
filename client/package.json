@@ -18,8 +18,9 @@
     "appId": "com.prismphone.client",
     "productName": "云测机",
     "artifactName": "yuncs-client-setup-${version}.${ext}",
-    "files": ["main.js", "preload.js", "setup.html"],
+    "files": ["main.js", "preload.js", "setup.html", "icon.png", "icon.ico", "buildinfo.json"],
     "win": {
+      "icon": "icon.ico",
       "target": [{ "target": "nsis", "arch": ["x64"] }]
     },
     "nsis": {
@@ -27,6 +28,8 @@
       "perMachine": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
+      "installerIcon": "icon.ico",
+      "uninstallerIcon": "icon.ico",
       "shortcutName": "云测机"
     }
   }

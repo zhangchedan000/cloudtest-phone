@@ -10,7 +10,9 @@ contextBridge.exposeInMainWorld('pp', {
   deleteServer: (id) => ipcRenderer.invoke('pp-delete-server', id),
   // 连接某台（主进程去加载它的界面）
   connect: (id) => ipcRenderer.send('pp-connect', id),
-  // 设置页：关闭行为 / 开机自启动
+  // 设置页：关闭行为 / 开机自启动 / 客户端构建号（getPrefs 返回里带 clientBuild）
   getPrefs: () => ipcRenderer.invoke('pp-get-prefs'),
-  setPref: (key, value) => ipcRenderer.send('pp-set-pref', key, value)
+  setPref: (key, value) => ipcRenderer.send('pp-set-pref', key, value),
+  // 检查客户端自身更新（下载新安装包、静默装、重启）
+  checkUpdate: () => ipcRenderer.send('pp-check-update')
 })

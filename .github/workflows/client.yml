@@ -23,6 +23,13 @@ jobs:
       - name: 安装依赖
         working-directory: client
         run: npm install --no-audit --no-fund
+      - name: 写构建号（客户端自更新靠它比对版本）
+        shell: bash
+        run: |
+          SHA=$(git rev-parse --short HEAD)
+          echo "{\"build\":\"$SHA\"}" > client/buildinfo.json
+          echo -n "$SHA" > client/client.version
+          echo "构建号 $SHA"; cat client/buildinfo.json
       - name: 打包 Windows 安装包
         working-directory: client
         run: npm run dist:win
@@ -36,5 +43,7 @@ jobs:
         with:
           tag_name: client-latest
           name: 云测机客户端（最新）
-          body: 云测机 Windows 桌面客户端。下载 .exe 安装即可（第一次打开 Windows 可能拦一下，点「更多信息 → 仍要运行」）。
-          files: client/dist/*.exe
+          body: 云测机 Windows 桌面客户端。下载 .exe 安装即可（第一次打开 Windows 可能拦一下，点「更多信息 → 仍要运行」）。装好后客户端会自己检查更新。
+          files: |
+            client/dist/*.exe
+            client/client.version

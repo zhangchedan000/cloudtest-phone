@@ -4,17 +4,33 @@
 // 相比浏览器，客户端把烦人的东西都内部处理好：
 //   - 自动信任板子的自签证书（不弹「不安全」/ 证书警告）；
 //   - 把板子地址当「安全来源」，实时画面视频解码(WebCodecs)直接能用，不用再给浏览器加命令行标记；
-//   - 没有地址栏书签栏，就是一个管理程序。
+//   - 没有地址栏书签栏，就是一个管理程序；
+//   - 点 X 缩小到系统托盘（后台继续跑），托盘里才真退出（2026-11-27 用户要求）；
+//   - 自己检查更新、下载新安装包、静默装好重启（不用每次手动下，2026-11-27 用户要求）。
 // 界面本身是管家网页那套（照魔云腾改版的，改网页端客户端自动跟着变）。
 //
 // 服务器管理：第一次打开让用户「添加服务器」（把板子加进来，可加多块），连上就用；地址存在本地。
 
-const { app, BrowserWindow, Menu, shell, ipcMain } = require('electron')
+const { app, BrowserWindow, Menu, Tray, nativeImage, dialog, shell, ipcMain, net } = require('electron')
 const fs = require('fs')
 const path = require('path')
 const crypto = require('crypto')
+const { spawn } = require('child_process')
 
 const CONFIG = path.join(app.getPath('userData'), 'config.json')
+const ICON = path.join(__dirname, 'icon.png')
+
+// 自更新：从固定标签 client-latest 的 release 资产取版本号和安装包（和管家在线升级一个套路）。
+const REPO = 'zhangchedan000/cloudtest-phone'
+const REL_BASE = `https://github.com/${REPO}/releases/download/client-latest`
+const VER_URL = `${REL_BASE}/client.version`
+const SETUP_URL = `${REL_BASE}/yuncs-client-setup-1.0.0.exe`
+const RELEASE_PAGE = `https://github.com/${REPO}/releases/tag/client-latest`
+
+// 本机构建号（CI 打包时写进 buildinfo.json；开发态没有就是 dev，dev 不自动检查更新）。
+function currentBuild() {
+  try { return String(JSON.parse(fs.readFileSync(path.join(__dirname, 'buildinfo.json'), 'utf8')).build || 'dev') } catch { return 'dev' }
+}
 
 function loadConfig() {
   try {
@@ -53,17 +69,20 @@ function applySecurity(servers) {
 }
 
 let win
+let tray
 let currentServer = ''
+let quitting = false
 
 function buildMenu() {
   Menu.setApplicationMenu(Menu.buildFromTemplate([
     {
       label: '云测机',
       submenu: [
-        { label: '服务器管理 / 添加板子', click: () => openSetup() },
+        { label: '服务器管理 / 添加板子', click: () => { showWindow(); openSetup() } },
         { label: '刷新', accelerator: 'CmdOrCtrl+R', click: () => win && win.reload() },
+        { label: '检查更新', click: () => checkUpdate({ manual: true }) },
         { type: 'separator' },
-        { label: '退出', role: 'quit' }
+        { label: '退出', click: () => reallyQuit() }
       ]
     },
     {
@@ -80,7 +99,35 @@ function buildMenu() {
   ]))
 }
 
-let quitting = false
+// 系统托盘：点 X 缩到这里，后台继续跑；托盘菜单里才真退出。
+function createTray() {
+  if (tray) return
+  try {
+    const img = nativeImage.createFromPath(ICON)
+    tray = new Tray(img.isEmpty() ? nativeImage.createEmpty() : img)
+    tray.setToolTip('云测机')
+    tray.setContextMenu(Menu.buildFromTemplate([
+      { label: '显示主界面', click: () => showWindow() },
+      { label: '检查更新', click: () => checkUpdate({ manual: true }) },
+      { type: 'separator' },
+      { label: '退出', click: () => reallyQuit() }
+    ]))
+    tray.on('double-click', () => showWindow())
+    tray.on('click', () => showWindow())
+  } catch { /* 托盘建不出来就算了，不影响主程序 */ }
+}
+
+function showWindow() {
+  if (!win || win.isDestroyed()) { createWindow(); return }
+  if (win.isMinimized()) win.restore()
+  win.show()
+  win.focus()
+}
+
+function reallyQuit() {
+  quitting = true
+  app.quit()
+}
 
 function createWindow() {
   const c = loadConfig()
@@ -89,7 +136,7 @@ function createWindow() {
     width: b.width || 1360, height: b.height || 860,
     x: typeof b.x === 'number' ? b.x : undefined, y: typeof b.y === 'number' ? b.y : undefined,
     minWidth: 980, minHeight: 620,
-    title: '云测机', backgroundColor: '#f5f6f8', autoHideMenuBar: true,
+    title: '云测机', backgroundColor: '#f5f6f8', autoHideMenuBar: true, icon: ICON,
     webPreferences: { preload: path.join(__dirname, 'preload.js'), spellcheck: false }
   })
   if (b.maximized) win.maximize()
@@ -111,10 +158,19 @@ function createWindow() {
   win.on('move', debounced)
   win.on('maximize', saveBounds)
   win.on('unmaximize', saveBounds)
-  // 关闭行为：退出（默认）或最小化（点 X 只最小化、程序继续跑）
+  // 关闭行为：点 X 默认缩到托盘（后台继续跑）；设置里选「退出」才真关。
   win.on('close', (e) => {
     saveBounds()
-    if (!quitting && (loadConfig().closeBehavior === 'minimize')) { e.preventDefault(); win.minimize() }
+    if (!quitting && loadConfig().closeBehavior !== 'quit') {
+      e.preventDefault()
+      win.hide()
+      if (!win._trayNoticeShown) {
+        win._trayNoticeShown = true
+        if (tray && process.platform === 'win32') {
+          try { tray.displayBalloon({ title: '云测机还在后台运行', content: '点托盘图标可重新打开；要彻底退出，右键托盘→退出。' }) } catch { /* 忽略 */ }
+        }
+      }
+    }
   })
   showStartup()
 }
@@ -139,6 +195,82 @@ function loadServer(sv) {
 
 function openSetup() {
   win.loadFile(path.join(__dirname, 'setup.html'))
+}
+
+// ---- 自动更新（仿管家在线升级：比对构建号 → 下载安装包 → 静默装 → 重启）----
+let updating = false
+
+// 用 electron net 取文本（自动跟随 GitHub 的重定向）。
+function fetchText(url) {
+  return new Promise((resolve, reject) => {
+    const req = net.request({ url, redirect: 'follow' })
+    req.on('response', (res) => {
+      if (res.statusCode >= 400) { reject(new Error('HTTP ' + res.statusCode)); return }
+      let buf = ''
+      res.on('data', (c) => { buf += c.toString() })
+      res.on('end', () => resolve(buf.trim()))
+    })
+    req.on('error', reject)
+    req.end()
+  })
+}
+
+// 下载文件到本地，onProgress(0~1)。
+function downloadFile(url, dest, onProgress) {
+  return new Promise((resolve, reject) => {
+    const req = net.request({ url, redirect: 'follow' })
+    req.on('response', (res) => {
+      if (res.statusCode >= 400) { reject(new Error('HTTP ' + res.statusCode)); return }
+      const total = Number(res.headers['content-length'] || 0)
+      let got = 0
+      const out = fs.createWriteStream(dest)
+      res.on('data', (c) => { got += c.length; out.write(c); if (total && onProgress) onProgress(got / total) })
+      res.on('end', () => { out.end(() => resolve()) })
+      res.on('error', reject)
+    })
+    req.on('error', reject)
+    req.end()
+  })
+}
+
+async function checkUpdate({ manual } = {}) {
+  if (updating) { if (manual) dialog.showMessageBox(win, { message: '更新正在进行中…' }); return }
+  const cur = currentBuild()
+  if (cur === 'dev' && !manual) return   // 开发态不自动打扰
+  let latest
+  try { latest = await fetchText(VER_URL) } catch (e) {
+    if (manual) dialog.showMessageBox(win, { type: 'error', message: '检查更新失败', detail: '连不上更新服务器：' + e.message })
+    return
+  }
+  if (!latest || latest === cur) {
+    if (manual) dialog.showMessageBox(win, { type: 'info', message: '已是最新版本', detail: '当前版本：' + cur })
+    return
+  }
+  const pick = dialog.showMessageBoxSync(win, {
+    type: 'info', buttons: ['现在更新', '以后再说'], defaultId: 0, cancelId: 1,
+    message: '发现新版本', detail: `有新版客户端可用（${latest}）。现在下载并安装吗？\n安装时会自动关闭本程序、装好后重开。`
+  })
+  if (pick !== 0) return
+  updating = true
+  const dest = path.join(app.getPath('temp'), 'yuncs-client-setup.exe')
+  try {
+    if (win && !win.isDestroyed()) win.setProgressBar(0)
+    await downloadFile(SETUP_URL, dest, (p) => { if (win && !win.isDestroyed()) win.setProgressBar(p) })
+    if (win && !win.isDestroyed()) win.setProgressBar(-1)
+    if (!fs.existsSync(dest) || fs.statSync(dest).size < 1024 * 1024) throw new Error('下载的安装包不完整')
+    // 静默安装（NSIS /S），装完自动重开；先启动安装器再退出本程序，免得文件被占用。
+    const child = spawn(dest, ['/S'], { detached: true, stdio: 'ignore' })
+    child.unref()
+    setTimeout(() => reallyQuit(), 800)
+  } catch (e) {
+    updating = false
+    if (win && !win.isDestroyed()) win.setProgressBar(-1)
+    const pick2 = dialog.showMessageBoxSync(win, {
+      type: 'error', buttons: ['打开下载页', '取消'], defaultId: 0,
+      message: '自动更新失败', detail: e.message + '\n\n可以手动去下载页下载最新安装包。'
+    })
+    if (pick2 === 0) shell.openExternal(RELEASE_PAGE)
+  }
 }
 
 // ---- 服务器管理的通道（setup.html 通过 preload 调）----
@@ -172,18 +304,19 @@ ipcMain.on('pp-connect', (_e, id) => {
   loadServer(sv)
 })
 
-// ---- 设置页用的通道：关闭行为 / 开机自启动（preload 暴露成 window.pp.getPrefs / setPref）----
+// ---- 设置页用的通道：关闭行为 / 开机自启动 / 客户端更新（preload 暴露成 window.pp.*）----
 ipcMain.handle('pp-get-prefs', () => {
   const c = loadConfig()
-  return { closeBehavior: c.closeBehavior === 'minimize' ? 'minimize' : 'quit', autoStart: !!c.autoStart }
+  return { closeBehavior: c.closeBehavior === 'quit' ? 'quit' : 'minimize', autoStart: !!c.autoStart, clientBuild: currentBuild() }
 })
 ipcMain.on('pp-set-pref', (_e, key, value) => {
   const c = loadConfig()
-  if (key === 'closeBehavior') c.closeBehavior = value === 'minimize' ? 'minimize' : 'quit'
+  if (key === 'closeBehavior') c.closeBehavior = value === 'quit' ? 'quit' : 'minimize'
   if (key === 'autoStart') c.autoStart = !!value
   saveConfig(c)
   if (key === 'autoStart') applyAutoStart()
 })
+ipcMain.on('pp-check-update', () => checkUpdate({ manual: true }))
 
 // 自签证书：直接信任（都是用户自己局域网里的板子）。
 app.on('certificate-error', (event, _wc, _url, _err, _cert, callback) => {
@@ -195,11 +328,20 @@ applySecurity(loadConfig().servers)
 
 app.on('before-quit', () => { quitting = true })
 
-app.whenReady().then(() => {
-  buildMenu()
-  applyAutoStart()
-  createWindow()
-  app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow() })
-})
+// 单实例：再开一个就把已开的窗口拉到前台，不开第二个。
+if (!app.requestSingleInstanceLock()) {
+  app.quit()
+} else {
+  app.on('second-instance', () => showWindow())
+  app.whenReady().then(() => {
+    buildMenu()
+    createTray()
+    applyAutoStart()
+    createWindow()
+    setTimeout(() => checkUpdate({}), 4000)   // 启动几秒后静默查一次更新
+    app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); else showWindow() })
+  })
+}
 
+// 缩到托盘后窗口是「隐藏」不是「关闭」，所以这里只有真退出时才会触发；保险起见非 mac 直接退。
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit() })
