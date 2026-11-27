@@ -91,9 +91,6 @@ export function KeyboardInput({ id, enabled, children }: { id: string; enabled: 
           })
         }}
       />
-      <p className={`pp-small pp-center ${active ? 'pp-kbd-on' : 'pp-muted'}`}>
-        {active ? '⌨ 键盘已连接：直接打字，Ctrl+V 粘贴电脑上复制的内容，Esc = 返回' : '点一下手机画面，就能用电脑键盘直接打字'}
-      </p>
     </div>
   )
 }

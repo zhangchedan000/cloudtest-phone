@@ -236,8 +236,6 @@ body { background: var(--fb-bg); color: var(--fb-text); font-family: Inter, ui-s
 .pp-window .pp-kbd { height: 100%; width: 100%; }
 .pp-window .pp-phone-large { height: 100%; display: flex; align-items: center; justify-content: center; }
 .pp-window .pp-phone-large .pp-phone-caption { display: none; }
-/* 键盘提示不挤占画面：浮在画面最底部 */
-.pp-window .pp-kbd > p { position: absolute; left: 0; right: 0; bottom: 6px; z-index: 2; margin: 0; color: rgba(255,255,255,.5); text-shadow: 0 1px 2px rgba(0,0,0,.6); pointer-events: none; }
 .pp-window .pp-phone-large .pp-phone-screen { height: 100%; width: auto; aspect-ratio: 300 / 640; max-width: 100%; border: none; border-radius: 0; }
 .pp-window .pp-navbar { flex: none; border-top: 1px solid var(--fb-line); background: var(--fb-surface); }
 /* 横屏（投屏窗口「旋转」或 App 自己横屏）：画面也横过来 */
@@ -269,5 +267,4 @@ body { background: var(--fb-bg); color: var(--fb-text); font-family: Inter, ui-s
 /* 电脑键盘直接打字进手机（KeyboardInput） */
 .pp-kbd { position: relative; }
 .pp-kbd-box { position: absolute; left: 50%; bottom: 40px; width: 1px; height: 1px; opacity: 0; resize: none; border: 0; padding: 0; pointer-events: none; }
-.pp-kbd-on { color: var(--ant-color-success, #52c41a); }
 .pp-dropping { outline: 2px dashed var(--ant-color-primary, #1677ff); outline-offset: 4px; border-radius: 8px; }
