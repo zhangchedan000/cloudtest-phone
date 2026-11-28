@@ -3,7 +3,8 @@
 // 它是个干净的桌面程序，加载板子上管家的管理界面（管家自带网页，端口 8443/HTTPS）。
 // 相比浏览器，客户端把烦人的东西都内部处理好：
 //   - 自动信任板子的自签证书（不弹「不安全」/ 证书警告）；
-//   - 把板子地址当「安全来源」，实时画面视频解码(WebCodecs)直接能用，不用再给浏览器加命令行标记；
+//   - 板子走 https:8443 本就是安全来源，实时画面视频解码(WebCodecs)直接能用，不用再加命令行标记
+//     （不会弹「不受支持的命令行标记」警告条）；
 //   - 没有地址栏书签栏，就是一个管理程序；
 //   - 点 X 缩小到系统托盘（后台继续跑），托盘里才真退出（2026-11-27 用户要求）；
 //   - 自己检查更新、下载新安装包、静默装好重启（不用每次手动下，2026-11-27 用户要求）。
@@ -55,16 +56,13 @@ function normalizeServer(raw) {
   } catch { return '' }
 }
 
-// 把所有已添加服务器的地址都标成「安全来源」+ 忽略自签证书错误（视频能播、不弹警告）。
-// 必须在 app ready 之前设好（Chromium 启动时读命令行）。
+// 忽略板子自签证书的错误（https:8443 用）。必须在 app ready 之前设好（Chromium 启动时读命令行）。
+// 板子走 https:8443 本就是「安全来源」，视频解码(WebCodecs)直接能用，不用再加命令行标记——
+// 以前给每个服务器硬塞一条 http://IP:8099 当安全来源，会弹「不受支持的命令行标记」警告，已去掉
+// （2026-11-28 用户要求）。只有用户真用 http 地址的服务器才加这个标记（那是他自己的选择）。
 function applySecurity(servers) {
   app.commandLine.appendSwitch('ignore-certificate-errors')
-  const origins = []
-  for (const sv of servers) {
-    if (!sv.url) continue
-    origins.push(sv.url)
-    try { const u = new URL(sv.url); origins.push('http://' + u.hostname + ':8099') } catch { /* ignore */ }
-  }
+  const origins = servers.map((sv) => String(sv && sv.url || '')).filter((u) => /^http:\/\//i.test(u))
   if (origins.length) app.commandLine.appendSwitch('unsafely-treat-insecure-origin-as-secure', origins.join(','))
 }
 
