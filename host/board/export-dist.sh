@@ -1,6 +1,6 @@
 #!/bin/sh
 # 在【正在用的板子】上把换板要的复用件统一打包到 /mmc/pp-dist（换新板时把这个文件夹整个拷走）：
-#   android-images.tar.gz     管家在用的安卓镜像（13/14/15/16 普通 + 14/15/16 谷歌，从 /etc/conf.d/prism-phone-agent 读）
+#   android-images.tar.gz     管家在用的安卓镜像（14/15/16 普通 + 14/15/16 谷歌，从 /etc/conf.d/prism-phone-agent 读；安卓13已退役见踩坑#174）
 #   build-sources.tar.gz      （加 --with-build-sources 才导）重建镜像用的底子：魔云腾 dobox Q14/Q15/Q16 + 官方 redroid 底子
 #   mihomo-arm64.gz           网络模块程序
 #   pp-rootcanal-arm64-bundle.tgz  蓝牙芯片模拟器（带 glibc 加载器，踩坑 #122；已有就不动）
