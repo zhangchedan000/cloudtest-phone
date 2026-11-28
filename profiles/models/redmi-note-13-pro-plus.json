@@ -5,6 +5,7 @@
   "verifyNote": "2026-11-15 核对：官网 mi.com 规格页确认 天玑 7200-Ultra、2712×1220、120Hz、446 ppi、8+256 / 12+512、出厂 MIUI 14（Android 13）；固件记录（代号 zircon）全球版最高 Android 16（OS3.0.303.0.WNOMIXM）。dpi 填的是 ppi，待真机核实；CPU 识别信息没有可靠来源，没填 | fingerprint(15) 真实 stock：设备树 github.com/zircon-development/android_device_xiaomi_zircon。A16(HyperOS3)全球增量 OS3.0.301.0.WNOMIXM（xmfirmwareupdater，package user-16.0）——build id 待真机 dump | buildProps(14) 和 fingerprint(14)：真实出厂 build.prop，来源 github.com/xdaGari/tadiphone-buildprop-archive 的 redmi/zircon/missi_phone_global-user-14-UP1A.231005.007-V816.0.2.0.UNOMIXM-release-keys（HyperOS 1 全球版），用 host/extract-buildprops.py 抠出各分区身份（各分区保持真机原样：system/product 分区是通用系统镜像的值，odm 分区指纹停在出厂安卓版本）。 | buildProps(15) 和 fingerprint(15)：整机转储 github.com/SLEZxE-dumps/redmi_zircon_dump（missi-user 15 AP3A.240905.015.A2 OS2.0.206.0.VNOMIXM，HyperOS 2 全球版）；原来的 A15 指纹（OS2.0.4.0，设备树）换成和转储一致的。",
   "gpuFamily": "Mali-G610",
   "market": "GLOBAL",
+  "cpuTree": "mt6886",
   "values": {
     "brand": "Redmi",
     "manufacturer": "Xiaomi",
@@ -30,7 +31,7 @@
     15,
     16
   ],
-  "cpuMismatch": "天玑 7200 是 ARMv9 的 Cortex-A715 / A510，板子 RK3588 是上一代的 A76 / A55：App 读到的指令集（getauxval / cpuinfo Features）是 A76 那一代，执行 ARMv9 新指令会崩，这项伪装不了，深度检测会看出来（踩坑 #147）",
+  "cpuMismatch": "已用合成的 mt6886 树（2×A715 + 6×A510，见 host/models/make-mt6886-tree.py，踩坑 #175）伪装 CPU 目录 / cpuinfo，核型号与天玑 7200 对上、浅层破绽已修。残留：板子 RK3588 是 ARMv8.2，App 读到的指令集（getauxval / cpuinfo Features）仍是 A76 那一代，执行 ARMv9 新指令会崩，深度检测仍能看出（和已上线的其它 ARMv9 机型同一档，硬件决定、改不了，踩坑 #147）",
   "imeiTacs": [
     "86152007",
     "86208607",

@@ -5,6 +5,7 @@
   "verifyNote": "2026-11-15 核对：天玑 7200 Pro、6.7 寸 AMOLED、120Hz（多家规格站一致，官网规格页没取到）；分辨率各家写 1080×2412 或 1084×2412，取 1080×2412；约 395 ppi（Kimovil）；出厂 Android 14（Nothing OS 2.5），2025-11 推送 Nothing OS 4.0（Android 16）。型号 A142 / 代号 Pacman 来自固件记录。dpi 是估计值，待真机核实；CPU 识别信息没有可靠来源，没填。A15 指纹 Nothing/Pacman/Pacman:15/AP3A.240905.015.A2/2508151642：来源 github spike0en/nothing_archive（Pacman_V3.2-250815-1642 全球版，EEA/IND/JPN 同 build id） | buildProps(14) 和 fingerprint(14)：真实出厂 build.prop，来源 github.com/xdaGari/tadiphone-buildprop-archive 的 nothing/pacman/sys_mssi_64_ww_armv82-user-14-UP1A.231005.007-2407012308-release-keys（Nothing OS 2.6，安卓 14 最后一版），用 host/extract-buildprops.py 抠出各分区身份（各分区保持真机原样：system/product 分区是通用系统镜像的值，odm 分区指纹停在出厂安卓版本）。 | buildProps(15) 和 fingerprint(15)：整机转储 github.com/RandomPush/nothing_pacman_dump（sys_mssi_64_ww_armv82-user 15 AP3A.240905.015.A2 2410312105，Nothing OS 3.0 全球版，地区文件 build_EEA/IND/JPN 不读）；原来的 A15 指纹（2508151642）换成和转储一致的。",
   "gpuFamily": "Mali-G610",
   "market": "GLOBAL",
+  "cpuTree": "mt6886",
   "values": {
     "brand": "Nothing",
     "manufacturer": "Nothing",
@@ -29,7 +30,7 @@
     15,
     16
   ],
-  "cpuMismatch": "天玑 7200 是 ARMv9 的 Cortex-A715 / A510，板子 RK3588 是上一代的 A76 / A55：App 读到的指令集（getauxval / cpuinfo Features）是 A76 那一代，执行 ARMv9 新指令会崩，这项伪装不了，深度检测会看出来（踩坑 #147）",
+  "cpuMismatch": "已用合成的 mt6886 树（2×A715 + 6×A510，见 host/models/make-mt6886-tree.py，踩坑 #175）伪装 CPU 目录 / cpuinfo，核型号与天玑 7200 对上、浅层破绽已修。残留：板子 RK3588 是 ARMv8.2，App 读到的指令集（getauxval / cpuinfo Features）仍是 A76 那一代，执行 ARMv9 新指令会崩，深度检测仍能看出（和已上线的其它 ARMv9 机型同一档，硬件决定、改不了，踩坑 #147）",
   "imeiTacs": [
     "35070641",
     "35448470"
