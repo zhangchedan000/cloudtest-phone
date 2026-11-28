@@ -651,6 +651,28 @@ def build_props_from(pkg, props):
     return {k: v for k, v in sorted(props.items()) if v and any(r.match(k) for r in KEEP)}
 
 
+def scrub_eng_build_props(bp):
+    """清掉工程版采集留下的 eng.* 版本号（有的魔云腾包是从工程机采的，如 vivo V2170A：主指纹里是正式值
+    compiler09241555，但各分区 ro.*.build.version.incremental / ro.build.description 却是 eng.compil.*——
+    `eng.` 一查就露，而且和主指纹对不上）。做法：从主指纹取正式 incremental，把带 eng. 的 incremental 和
+    description 里的 eng 版本号都换成它；厂商分区本来就不同的正式值（compiler…）不动。只在主指纹本身干净时做。"""
+    fp = bp.get("ro.build.fingerprint", "")
+    parts = fp.split("/")
+    if len(parts) < 2:
+        return bp
+    real_inc = parts[-2].split(":")[0]          # brand/product/device:rel/id/INCREMENTAL:tags
+    if not real_inc or re.search(r"eng\.|test-keys|userdebug|redroid", real_inc, re.I):
+        return bp                               # 主指纹自己就脏，取不到干净值，别乱改
+    out = dict(bp)
+    for k, v in bp.items():
+        if k.endswith(".build.version.incremental") and re.search(r"eng\.|userdebug", v, re.I):
+            out[k] = real_inc
+    desc = out.get("ro.build.description", "")
+    if re.search(r"eng\.", desc, re.I):
+        out["ro.build.description"] = re.sub(r"\beng\.\S+", real_inc, desc)  # 描述里的 eng.* 版本号换成正式值
+    return out
+
+
 def mem_gb(meminfo):
     m = re.search(r"MemTotal:\s+(\d+)", meminfo)
     if not m:
@@ -781,7 +803,7 @@ def convert(path, tac_db, host_gpu, host_cpus, loose=False):
     feats = features_of(pkg)
     if feats:
         prof["features"] = feats
-    bp = build_props_from(pkg, props)
+    bp = scrub_eng_build_props(build_props_from(pkg, props))
     if bp:
         prof["buildProps"] = {rel: bp}
     cpu = None
