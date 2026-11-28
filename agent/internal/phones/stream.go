@@ -28,8 +28,9 @@ type streamTracker struct {
 	next   uint64
 }
 
-// replace 顶掉这台手机正在播的那一路，登记新的一路，返回它的编号。
-func (t *streamTracker) replace(id string, cancel context.CancelFunc) uint64 {
+// replace 顶掉这台手机正在播的那一路，登记新的一路，返回它的编号和登记后正在播的总路数
+// （不同手机各算一路；同一台顶替不增加总数）。总路数用来按负载降质（见 degradeForLoad）。
+func (t *streamTracker) replace(id string, cancel context.CancelFunc) (gen uint64, active int) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	if t.cancel == nil {
@@ -42,7 +43,7 @@ func (t *streamTracker) replace(id string, cancel context.CancelFunc) uint64 {
 	t.next++
 	t.cancel[id] = cancel
 	t.gen[id] = t.next
-	return t.next
+	return t.next, len(t.cancel)
 }
 
 // finish 这一路结束：还是当前那一路就注销并返回 true；已经被新的一路顶掉了返回 false（别去动新的那一路）。
@@ -181,6 +182,47 @@ func copyWithFrameEnds(w io.Writer, r io.Reader, gap time.Duration) error {
 	}
 }
 
+// hwStreamSoftCap 同时在看这么多路以内，画面质量不动。超过后开始降质。
+// 为什么：RK3588 的硬件视频编码器（VPU）并发编码会话数有硬件上限（实测 6~7 路，踩坑 #176），
+// 超了的那一路分配不到硬件、会退回软件编码（c2.android）吃 CPU。日常是「管很多台、只盯一两台」，
+// 碰不到；真同时开很多路时，把码率/分辨率降下来——软编的那几路便宜些、硬编的也省带宽，比卡死强。
+const hwStreamSoftCap = 4
+
+// degradeForLoad 按当前同时在播的总路数给这一路降质：到软上限以内原样；超过后每多一路把码率往下压一档
+// （×3/4），地板 600kbps；再高（软上限 +2 起）把分辨率长边也封到 540，软编更省 CPU。纯函数，好单测。
+func degradeForLoad(opt StreamOptions, active int) StreamOptions {
+	if active <= hwStreamSoftCap {
+		return opt
+	}
+	br := opt.BitRate
+	if br < 200_000 || br > 20_000_000 {
+		br = 2_000_000 // 和 streamArgs 的默认值一致
+	}
+	for i := hwStreamSoftCap; i < active && br > 600_000; i++ {
+		br = br * 3 / 4
+	}
+	if br < 600_000 {
+		br = 600_000
+	}
+	opt.BitRate = br
+	if active >= hwStreamSoftCap+2 {
+		opt.Width, opt.Height = capLongSide(opt.Width, opt.Height, 540)
+	}
+	return opt
+}
+
+// capLongSide 把宽高按比例缩到长边不超过 max（已经更小就不动；缺尺寸就不动）。16 对齐留给 streamArgs。
+func capLongSide(w, h, max int) (int, int) {
+	long := w
+	if h > long {
+		long = h
+	}
+	if long <= 0 || long <= max {
+		return w, h
+	}
+	return w * max / long, h * max / long
+}
+
 // streamArgs screenrecord 的参数（参数不对就用默认值，不报错）。
 func streamArgs(opt StreamOptions) []string {
 	args := []string{"screenrecord", "--output-format=h264", "--time-limit", "180"}
@@ -202,7 +244,7 @@ func (s *Service) Stream(ctx context.Context, id string, opt StreamOptions, w io
 	}
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	gen := s.streams.replace(id, cancel)
+	gen, active := s.streams.replace(id, cancel)
 	name := containerName(id)
 	// 结束时只有自己还是当前那一路才去停 screenrecord：被顶掉的旧一路在新一路起来后才走到这里，
 	// 以前无条件 pkill 会把新一路的 screenrecord 也杀掉（两个窗口看同一台时互相踢、画面反复重连）。
@@ -220,6 +262,7 @@ func (s *Service) Stream(ctx context.Context, id string, opt StreamOptions, w io
 		}
 		go s.watchRotation(ctx, id, st.landscape(), cancel)
 	}
+	opt = degradeForLoad(opt, active) // 同时在看的路数多时降质，别把 VPU / CPU 压垮（踩坑 #176）
 	cmd := s.phoneCommand(ctx, id, streamArgs(opt)...)
 	out, err := cmd.StdoutPipe()
 	if err != nil {

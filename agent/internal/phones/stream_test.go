@@ -126,3 +126,52 @@ func TestFrameSplitterBoundaries(t *testing.T) {
 		}
 	}
 }
+
+func TestDegradeForLoad(t *testing.T) {
+	base := StreamOptions{Width: 720, Height: 1600, BitRate: 2_000_000}
+	// 软上限以内：原样不动
+	for _, n := range []int{1, 2, 3, 4} {
+		if got := degradeForLoad(base, n); got != base {
+			t.Errorf("active=%d 应原样，得到 %+v", n, got)
+		}
+	}
+	// 超过软上限：码率单调不增、且不低于地板、不高于原值
+	prev := base.BitRate
+	for n := 5; n <= 12; n++ {
+		got := degradeForLoad(base, n)
+		if got.BitRate > prev {
+			t.Errorf("active=%d 码率没降：%d > 上一档 %d", n, got.BitRate, prev)
+		}
+		if got.BitRate < 600_000 {
+			t.Errorf("active=%d 码率破地板：%d", n, got.BitRate)
+		}
+		if got.BitRate > base.BitRate {
+			t.Errorf("active=%d 码率反而超原值：%d", n, got.BitRate)
+		}
+		prev = got.BitRate
+	}
+	// 软上限 +2 起压分辨率（长边 540）
+	if got := degradeForLoad(base, hwStreamSoftCap+2); got.Height != 540 {
+		t.Errorf("高并发应把长边压到 540，得到 %dx%d", got.Width, got.Height)
+	}
+	// 码率缺省（0）也能降、不崩
+	if got := degradeForLoad(StreamOptions{Width: 540, Height: 1200}, 8); got.BitRate < 600_000 || got.BitRate > 2_000_000 {
+		t.Errorf("缺省码率降质越界：%d", got.BitRate)
+	}
+}
+
+func TestCapLongSide(t *testing.T) {
+	cases := []struct{ w, h, max, ww, hh int }{
+		{720, 1600, 540, 243, 540}, // 竖屏长边压到 540，等比
+		{1600, 720, 540, 540, 243}, // 横屏
+		{240, 520, 540, 240, 520},  // 长边 520 ≤ 540：不动
+		{360, 540, 540, 360, 540},  // 长边正好 540：不动
+		{0, 0, 540, 0, 0},          // 缺尺寸：不动
+	}
+	for _, c := range cases {
+		w, h := capLongSide(c.w, c.h, c.max)
+		if w != c.ww || h != c.hh {
+			t.Errorf("capLongSide(%d,%d,%d)=%d,%d 期望 %d,%d", c.w, c.h, c.max, w, h, c.ww, c.hh)
+		}
+	}
+}
