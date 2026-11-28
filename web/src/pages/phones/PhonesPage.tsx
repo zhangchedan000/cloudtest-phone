@@ -41,13 +41,12 @@ export function PhonesPage() {
     setOpenMode('view'); setOpen(p)
   }
   const edit = (p: Phone) => { setOpenMode('edit'); setOpen(p) }
-  // 点卡片画面：关机的直接开机，开着的放大（打开大屏）
+  // 点卡片画面：关机的只开机（卡片状态变「开机中」即可，不自动弹窗口，2026-11-28 用户要求——
+  // 想看画面等开好后再点一下卡片）；开着的点一下放大（打开大屏）。
   const clickScreen = (p: Phone) => {
     if (p.status === 'stopped' || p.status === 'error') {
       if (blocksStart(ws.issuesOf(p))) { message.warning('这台有错误没解决，禁止开机：点「编辑」看「检查」'); return }
       start([p.id])
-      // 开机时就把窗口弹出来：先显示「开机中…」，开好自动出画面
-      if (ws.mode === 'live') openPhoneWindow(p)
     } else view_(p)
   }
   const [creating, setCreating] = useState(false)
