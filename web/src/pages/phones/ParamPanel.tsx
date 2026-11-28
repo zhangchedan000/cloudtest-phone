@@ -70,7 +70,13 @@ export function ParamPanel({ phone, onSaved }: { phone: Phone; onSaved?: (restar
             style={{ width: 260 }}
             value={modelId}
             onChange={setModelId}
-            options={ws.models.map((m) => ({ value: m.id, label: `${String(m.values.marketName)}（${String(m.values.model)}）${m.verified ? '' : ' · 待核实'}` }))}
+            options={ws.models.map((m) => ({ value: m.id, label: `${String(m.values.marketName)}（${String(m.values.model)}）` }))}
+            optionRender={(opt) => {
+              // 机型显卡和板子相同 = 一致档（绿色，最稳）；否则伪装档（灰色）。按任一在线板子的显卡比。
+              const boardGpus = new Set(ws.hosts.filter((h) => h.online && h.gpuFamily !== 'software').map((h) => h.gpuFamily))
+              const cons = boardGpus.has(String(ws.models.find((m) => m.id === opt.value)?.gpuFamily))
+              return <span>{opt.label}{cons ? <Tag color="green" style={{ marginInlineStart: 6 }}>一致</Tag> : <Tag style={{ marginInlineStart: 6 }}>伪装</Tag>}</span>
+            }}
           />
           <Tooltip title="所有「随机」模式、没锁定的字段重新生成一次（相当于一键新机，不改机型）"><Button icon={<ReloadOutlined />} onClick={randomizeAll}>随机字段全部重新生成</Button></Tooltip>
           <Tooltip title="粘贴一份真机的 getprop 输出（买来的「真机参数」或自己扒的真机 dump），自动把品牌/型号/指纹/序列号/MAC 等身份套到这台手机上"><Button icon={<ImportOutlined />} onClick={() => setImportOpen(true)}>导入真机身份（真机参数）</Button></Tooltip>

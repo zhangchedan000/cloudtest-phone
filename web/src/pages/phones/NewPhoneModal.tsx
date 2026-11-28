@@ -1,4 +1,4 @@
-import { Alert, Checkbox, Form, Input, InputNumber, Modal, Select } from 'antd'
+import { Alert, Checkbox, Form, Input, InputNumber, Modal, Select, Tag } from 'antd'
 import { api } from '@/data/api'
 import { catalog } from '@/data/catalog'
 import { checkPhone } from '@/data/consistency'
@@ -35,6 +35,9 @@ export function NewPhoneModal({ open, onClose, presetHostId, presetName }: { ope
   const same = <T extends { serverId?: string }>(x: T) => (x.serverId ?? 'local') === (host?.serverId ?? 'local')
   const model = ws.models.find((m) => m.id === modelId)
   const gpuWarn = host && model && host.gpuFamily !== 'software' && host.gpuFamily !== model.gpuFamily
+  // 机型显卡和板子相同 = 一致档（最稳、不用伪装显卡）；否则伪装档。有选中机器就按它比，否则按任一在线板子。
+  const boardGpus = new Set(ws.hosts.filter((h) => h.online && h.gpuFamily !== 'software').map((h) => h.gpuFamily))
+  const sameAsBoard = (gpu: string) => (host && host.gpuFamily !== 'software' ? host.gpuFamily === gpu : boardGpus.has(gpu))
   // 安卓版本和机型联动：版本可选项 = 这台机器有镜像的版本；选机型时自动默认到「机型原生且有镜像」的最高版本。
   const availVers = host?.androidVersions?.length ? host.androidVersions : [14]
   const bestVer = (vs: number[] | undefined) => {
@@ -89,7 +92,10 @@ export function NewPhoneModal({ open, onClose, presetHostId, presetName }: { ope
             <div className="pp-form-2col">
               <Form.Item label="名称" name="name" rules={[{ required: true }]}><Input placeholder="留空自动取名" /></Form.Item>
               <Form.Item label="数量" name="count"><InputNumber min={1} max={20} style={{ width: '100%' }} /></Form.Item>
-              <Form.Item label="机型" name="modelId" rules={[{ required: true }]}><Select showSearch optionFilterProp="label" options={ws.models.map((m) => ({ value: m.id, label: `${String(m.values.marketName)} · ${m.gpuFamily}${m.verified ? '' : ' · 待核实'}` }))} /></Form.Item>
+              <Form.Item label="机型" name="modelId" rules={[{ required: true }]}><Select showSearch optionFilterProp="label"
+                options={ws.models.map((m) => ({ value: m.id, label: `${String(m.values.marketName)} · ${m.gpuFamily}` }))}
+                optionRender={(opt) => { const cons = sameAsBoard(String(ws.models.find((m) => m.id === opt.value)?.gpuFamily)); return <span>{opt.label}{cons ? <Tag color="green" style={{ marginInlineStart: 6 }}>一致</Tag> : <Tag style={{ marginInlineStart: 6 }}>伪装</Tag>}</span> }}
+              /></Form.Item>
               <Form.Item label="安卓版本（镜像）" name="androidVersion" extra={verOffModel ? `这款机型出厂是 Android ${model?.androidVersions?.join('/')}，选更高版本相当于「升级后」，部分数据用兜底，原生版最稳。` : undefined}><Select options={availVers.map((v) => ({ value: v, label: `Android ${v}${model?.androidVersions?.includes(v) ? '（机型原生）' : ''}` }))} /></Form.Item>
               <Form.Item label="代理" name="proxyId" rules={[{ required: true, message: '必须分配代理：没有代理禁止开机' }]}><Select options={ws.proxies.filter(same).map((p) => ({ value: p.id, label: p.name }))} /></Form.Item>
               <Form.Item label="分组" name="groupId"><Select allowClear options={ws.groups.filter(same).map((g) => ({ value: g.id, label: g.name }))} /></Form.Item>
